@@ -1,20 +1,15 @@
-import type { TelemetryCollector, TelemetryEvent } from "./TelemetryCollector.js"
+import { ConsoleTransport, LogLayer } from "loglayer"
 
-export const createConsoleTelemetry = (prefix = "[soma]"): TelemetryCollector => ({
-  flush: () => Promise.resolve(),
-  recordEvent: (event: TelemetryEvent) => {
-    const entry = {
-      data: event.data,
-      durationMs: event.durationMs,
-      error: event.error,
-      name: event.name,
-      timestamp: new Date(event.timestamp).toISOString(),
-      type: event.type,
-    }
-    if (event.error) {
-      console.error(`${prefix} ${event.type}`, JSON.stringify(entry))
-    } else {
-      console.log(`${prefix} ${event.type}`, JSON.stringify(entry))
-    }
-  },
-})
+import { createLogLayerTelemetry } from "./LogLayerTelemetry.js"
+import type { TelemetryCollector } from "./TelemetryCollector.js"
+
+export const createConsoleTelemetry = (prefix = "[soma]"): TelemetryCollector => {
+  const logger = new LogLayer({
+    prefix,
+    transport: new ConsoleTransport({
+      logger: console,
+    }),
+  })
+
+  return createLogLayerTelemetry(logger)
+}

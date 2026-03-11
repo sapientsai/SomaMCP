@@ -19,6 +19,7 @@ import { createProxiedTools } from "./gateway/toolProxy.js"
 import { createCapabilitiesTool } from "./introspection/capabilitiesTool.js"
 import { createConnectionsTool } from "./introspection/connectionsTool.js"
 import { createHealthTool } from "./introspection/healthTool.js"
+import { createLogLayerTelemetry } from "./telemetry/LogLayerTelemetry.js"
 import { NoopTelemetry } from "./telemetry/NoopTelemetry.js"
 import type { TelemetryCollector } from "./telemetry/TelemetryCollector.js"
 import { wrapPrompt, wrapResource, wrapTool } from "./telemetry/telemetryWrapper.js"
@@ -32,12 +33,14 @@ export const createCell = <T extends FastMCPSessionAuth = FastMCPSessionAuth>(
     enableDashboard,
     enableIntrospection,
     gateways,
+    logLayer,
     telemetry: telemetryOption,
     ...serverOptions
   } = options
 
   const cellName = serverOptions.name
-  const telemetry: TelemetryCollector = telemetryOption ?? NoopTelemetry
+  const telemetry: TelemetryCollector =
+    telemetryOption ?? (logLayer ? createLogLayerTelemetry(logLayer) : NoopTelemetry)
   const server = new FastMCP<T>(serverOptions as ServerOptions<T>)
   const gatewayManager = createGatewayManager(telemetry)
 

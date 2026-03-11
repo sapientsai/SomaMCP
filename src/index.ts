@@ -4,8 +4,12 @@ export type { CellCapabilities, CellHealth, CellInstance, CellOptions, CellTool 
 
 // Telemetry
 export type { TelemetryCollector, TelemetryEvent, TelemetryEventType } from "./telemetry/index.js"
-export { createConsoleTelemetry, NoopTelemetry } from "./telemetry/index.js"
+export { createConsoleTelemetry, createLogLayerTelemetry, NoopTelemetry } from "./telemetry/index.js"
 export { wrapPrompt, wrapResource, wrapTool } from "./telemetry/index.js"
+
+// Logging
+export { createDefaultLogger } from "./logging.js"
+export type { ILogLayer } from "loglayer"
 
 // Artifacts
 export type { ArtifactConfig, DirectoryArtifact, DynamicArtifact, StaticArtifact } from "./artifacts/index.js"

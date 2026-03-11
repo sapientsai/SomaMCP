@@ -45,6 +45,7 @@
     "fastmcp": "^3.34.0",
     "functype": "^0.49.0",
     "hono": "^4.12.5",
+    "loglayer": "^9.1.0",
     "zod": "^4.3.6"
   },
   "prettier": "ts-builds/prettier",

@@ -1,4 +1,5 @@
 export { createConsoleTelemetry } from "./ConsoleTelemetry.js"
+export { createLogLayerTelemetry } from "./LogLayerTelemetry.js"
 export { NoopTelemetry } from "./NoopTelemetry.js"
 export type { TelemetryCollector, TelemetryEvent, TelemetryEventType } from "./TelemetryCollector.js"
 export { wrapPrompt, wrapResource, wrapTool } from "./telemetryWrapper.js"
