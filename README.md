@@ -1,4 +1,4 @@
-# somamcp
+# SomaMCP
 
 Framework for building **MCP (Model Context Protocol)** servers with built-in telemetry, introspection, and a backend abstraction layer.
 
