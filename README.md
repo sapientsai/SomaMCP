@@ -49,12 +49,7 @@ await server.start({ transportType: "stdio" })
 Telemetry is opt-in via the `telemetry` option. Every tool/resource/prompt call is automatically wrapped with timing, error classification, and optional input/output capture.
 
 ```typescript
-import {
-  createServer,
-  createCompositeTelemetry,
-  createConsoleTelemetry,
-  createJsonFileTelemetry,
-} from "somamcp"
+import { createServer, createCompositeTelemetry, createConsoleTelemetry, createJsonFileTelemetry } from "somamcp"
 
 const telemetry = createCompositeTelemetry([
   createConsoleTelemetry(),
@@ -75,7 +70,9 @@ server.addTool({
   name: "processPayment",
   description: "Process a payment",
   parameters: z.object({ amount: z.number(), cardToken: z.string() }),
-  execute: async (args) => { /* ... */ },
+  execute: async (args) => {
+    /* ... */
+  },
   captureConfig: {
     captureLevel: "full",
     redactInputFields: ["cardToken"],
@@ -85,6 +82,7 @@ server.addTool({
 ```
 
 Capture levels:
+
 - `"full"` — input + output + metadata (default)
 - `"metadata"` — timing + name + ids only
 - `"none"` — no telemetry
@@ -192,29 +190,36 @@ createServer({
 ## API Surface
 
 **Core**
+
 - `createServer(options)` → `SomaServerInstance`
 - Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerCapabilities`, `ToolOptions`
 
 **Primitives** (somamcp-owned, no FastMCP leakage)
+
 - `Tool`, `Resource`, `Prompt`, `Context`, `Content`, `ContentResult`, `SessionAuth`, `UserError`
 
 **Telemetry**
+
 - `createConsoleTelemetry`, `createJsonFileTelemetry`, `createCompositeTelemetry`, `createLogLayerTelemetry`, `NoopTelemetry`
 - `classifyError`, `createEnrichedError`
 - Types: `TelemetryCollector`, `TelemetryEvent`, `CaptureLevel`, `ToolCaptureConfig`, `ErrorCategory`
 
 **Gateway**
+
 - `createGateway`, `createGatewayManager`, `createProxiedTools`
 - Types: `GatewayConfig`, `GatewayInstance`, `GatewayManagerInstance`, `GatewayStatus`
 
 **Artifacts**
+
 - `registerArtifacts`, `createDashboardArtifact`
 - Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`, `ArtifactConfig`
 
 **Content helpers**
+
 - `imageContent`, `audioContent`
 
 **Backend** (via `somamcp/backend`)
+
 - `createFastMCPBackend`
 - Types: `BackendAdapter`, `BackendFactory`, `BackendSession`
 
