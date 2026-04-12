@@ -1,5 +1,5 @@
 {
-  "name": "SomaMCP",
+  "name": "somamcp",
   "version": "1.0.1",
   "description": "Framework for building MCP servers with telemetry, introspection, and backend abstraction",
   "type": "module",
