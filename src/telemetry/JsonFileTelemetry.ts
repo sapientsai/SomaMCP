@@ -1,7 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises"
 import { dirname } from "node:path"
 
-import { Ref } from "functype"
+import { Option, Ref } from "functype"
 
 import type { TelemetryCollector, TelemetryEvent } from "./TelemetryCollector.js"
 
@@ -14,7 +14,7 @@ const DEFAULT_FLUSH_INTERVAL_MS = 1000
 
 export const createJsonFileTelemetry = (options: JsonFileTelemetryOptions): TelemetryCollector => {
   const buffer = Ref<TelemetryEvent[]>([])
-  const flushTimer = Ref<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const flushTimer = Ref<Option<ReturnType<typeof setTimeout>>>(Option.none())
   const dirEnsured = Ref(false)
 
   const writeBuffer = async (): Promise<void> => {
@@ -29,22 +29,24 @@ export const createJsonFileTelemetry = (options: JsonFileTelemetryOptions): Tele
   }
 
   const scheduleFlush = (): void => {
-    if (flushTimer.get()) return
+    if (flushTimer.get().isSome()) return
     flushTimer.set(
-      setTimeout(() => {
-        flushTimer.set(undefined)
-        void writeBuffer()
-      }, options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS),
+      Option(
+        setTimeout(() => {
+          flushTimer.set(Option.none())
+          void writeBuffer()
+        }, options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS),
+      ),
     )
   }
 
   return {
     flush: async () => {
-      const timer = flushTimer.get()
-      if (timer) {
-        clearTimeout(timer)
-        flushTimer.set(undefined)
-      }
+      flushTimer.get().match({
+        None: () => undefined,
+        Some: (timer) => clearTimeout(timer),
+      })
+      flushTimer.set(Option.none())
       await writeBuffer()
     },
     recordEvent: (event: TelemetryEvent) => {

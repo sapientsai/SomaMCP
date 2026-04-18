@@ -49,11 +49,7 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
   const startedAt = Ref(0)
 
   // Register gateways
-  if (gateways) {
-    for (const config of gateways) {
-      gatewayManager.add(config)
-    }
-  }
+  gateways?.forEach((config) => gatewayManager.add(config))
 
   const getHealth = (): ServerHealth => {
     const started = startedAt.get()
@@ -159,16 +155,12 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
 
     addPrompt,
     addPrompts: (prompts: Parameters<SomaServerInstance<T>["addPrompts"]>[0]): void => {
-      for (const prompt of prompts) {
-        addPrompt(prompt)
-      }
+      prompts.forEach(addPrompt)
     },
 
     addResource,
     addResources: (resources: Parameters<SomaServerInstance<T>["addResources"]>[0]): void => {
-      for (const resource of resources) {
-        addResource(resource)
-      }
+      resources.forEach(addResource)
     },
 
     addResourceTemplate: (...args: ReadonlyArray<unknown>): void => {
@@ -177,9 +169,7 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
 
     addTool,
     addTools: <P extends SchemaParams>(tools: Tool<T, P>[]): void => {
-      for (const tool of tools) {
-        addTool(tool)
-      }
+      tools.forEach((tool) => addTool(tool))
     },
 
     getApp: (): Hono => backend.getApp(),
@@ -216,14 +206,12 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
       // Connect gateways and proxy their tools
       await gatewayManager.connectAll()
 
-      for (const gateway of gatewayManager.getAll()) {
-        if (gateway.status === "connected" && gateway.config.proxyTools !== false) {
-          const proxiedTools = createProxiedTools<T>(gateway, telemetry)
-          for (const tool of proxiedTools) {
-            backend.addTool(tool)
-          }
-        }
-      }
+      gatewayManager
+        .getAll()
+        .filter((gateway) => gateway.status === "connected" && gateway.config.proxyTools !== false)
+        .forEach((gateway) => {
+          createProxiedTools<T>(gateway, telemetry).forEach((tool) => backend.addTool(tool))
+        })
     },
 
     async stop(): Promise<void> {

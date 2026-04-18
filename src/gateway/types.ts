@@ -1,4 +1,5 @@
 import type { Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js"
+import type { Option } from "functype"
 
 export type GatewayConfig = {
   id: string
@@ -37,7 +38,7 @@ export type GatewayManagerInstance = {
   add: (config: GatewayConfig) => GatewayInstance
   connectAll: () => Promise<void>
   disconnectAll: () => Promise<void>
-  get: (id: string) => GatewayInstance | undefined
+  get: (id: string) => Option<GatewayInstance>
   getAll: () => ReadonlyArray<GatewayInstance>
   getInfoAll: () => ReadonlyArray<GatewayInfo>
 }

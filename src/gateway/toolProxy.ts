@@ -1,7 +1,8 @@
 import { Try } from "functype"
 
-import { createEnrichedError } from "../telemetry/EnrichedError.js"
-import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
+import type { TelemetryCollector } from "@/telemetry"
+import { createEnrichedError } from "@/telemetry"
+
 import type { ContentResult, SessionAuth, Tool } from "../types/core.js"
 import type { GatewayInstance } from "./types.js"
 

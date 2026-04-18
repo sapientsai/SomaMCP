@@ -9,6 +9,7 @@ const DEFAULT_MAX_OUTPUT_SIZE = 10000
 const redactFields = (args: Record<string, unknown>, fields?: ReadonlyArray<string>): Record<string, unknown> => {
   if (!fields || fields.length === 0) return args
   return Object.fromEntries(
+    // eslint-disable-next-line functype/prefer-flatmap -- mapping [k,v] entries to [k,v] entries; flatMap would incorrectly destructure the tuples
     Object.entries(args).map(([key, value]) => [key, fields.includes(key) ? "[REDACTED]" : value]),
   )
 }
@@ -79,6 +80,7 @@ export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
   },
 })
 
+// eslint-disable-next-line functype/prefer-either -- wrapper must preserve the Resource.load Promise<ResourceResult> contract; errors are Promise rejections per MCP protocol
 export const wrapResource = <T extends SessionAuth>(
   resource: Resource<T>,
   telemetry: TelemetryCollector,
@@ -101,6 +103,7 @@ export const wrapResource = <T extends SessionAuth>(
           timestamp: start,
           type: "resource.error",
         })
+        // eslint-disable-next-line functype/prefer-either -- re-throw preserves Promise rejection semantics required by the MCP Resource contract
         throw error
       },
       (value) => {
@@ -117,6 +120,7 @@ export const wrapResource = <T extends SessionAuth>(
   },
 })
 
+// eslint-disable-next-line functype/prefer-either -- wrapper must preserve the Prompt.load Promise<PromptResult> contract; errors are Promise rejections per MCP protocol
 export const wrapPrompt = <T extends SessionAuth, Args extends PromptArgument<T>[] = PromptArgument<T>[]>(
   prompt: Prompt<T, Args>,
   telemetry: TelemetryCollector,
@@ -139,6 +143,7 @@ export const wrapPrompt = <T extends SessionAuth, Args extends PromptArgument<T>
           timestamp: start,
           type: "prompt.error",
         })
+        // eslint-disable-next-line functype/prefer-either -- re-throw preserves Promise rejection semantics required by the MCP Prompt contract
         throw error
       },
       (value) => {

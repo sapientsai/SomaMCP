@@ -34,10 +34,12 @@ const inferMime = (source: string, mimeMap: Record<string, string>, fallback: st
   return mimeMap[ext] ?? fallback
 }
 
+// eslint-disable-next-line functype/prefer-either -- helper feeds imageContent/audioContent which must return Promise<ImageContent>/Promise<AudioContent>; failures surface as Promise rejections per their public contract
 const loadRaw = async (input: ContentInput, label: string): Promise<{ data: Buffer; source?: string }> => {
   if ("url" in input) {
     const response = await fetch(input.url)
     if (!response.ok) {
+      // eslint-disable-next-line functype/prefer-either -- see function-level note above
       throw new Error(`Failed to fetch ${label} from URL (${input.url}): ${response.status} ${response.statusText}`)
     }
     return { data: Buffer.from(await response.arrayBuffer()), source: input.url }

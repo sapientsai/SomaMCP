@@ -11,9 +11,9 @@ describe("GatewayManager", () => {
     manager.add({ id: "b", url: "http://localhost:3002/mcp" })
 
     expect(manager.totalCount).toBe(2)
-    expect(manager.get("a")).toBeDefined()
-    expect(manager.get("b")).toBeDefined()
-    expect(manager.get("c")).toBeUndefined()
+    expect(manager.get("a").isSome()).toBe(true)
+    expect(manager.get("b").isSome()).toBe(true)
+    expect(manager.get("c").isNone()).toBe(true)
   })
 
   it("returns all gateways", () => {

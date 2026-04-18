@@ -1,4 +1,13 @@
 // somamcp-owned MCP primitive types — no imports from "fastmcp"
+//
+// These types are intentionally plain `T | undefined` rather than `Option<T>` because:
+//   1. They must be structurally compatible with the MCP SDK / FastMCP, StandardSchemaV1,
+//      and wire-format JSON. Wrapping in `Option` would break structural assignability and
+//      force consumers to import functype to construct basic MCP primitives.
+//   2. They cross serialization boundaries where `undefined` means "absent field".
+//
+// Internal mutable state uses `Option<T>`; these public protocol types do not.
+/* eslint-disable functype/prefer-option */
 
 // ── Auth ──────────────────────────────────────────────────────────────
 

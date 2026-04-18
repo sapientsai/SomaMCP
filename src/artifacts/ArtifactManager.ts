@@ -3,7 +3,7 @@ import type { Hono } from "hono"
 import type { ArtifactConfig } from "./types.js"
 
 export const registerArtifacts = (app: Hono, artifacts: ReadonlyArray<ArtifactConfig>): void => {
-  for (const artifact of artifacts) {
+  artifacts.forEach((artifact) => {
     switch (artifact.type) {
       case "static": {
         app.get(artifact.path, (c) =>
@@ -22,5 +22,5 @@ export const registerArtifacts = (app: Hono, artifacts: ReadonlyArray<ArtifactCo
         break
       }
     }
-  }
+  })
 }

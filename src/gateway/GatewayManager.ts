@@ -1,4 +1,7 @@
-import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
+import { Option } from "functype"
+
+import type { TelemetryCollector } from "@/telemetry"
+
 import { createGateway } from "./Gateway.js"
 import type { GatewayConfig, GatewayInfo, GatewayInstance, GatewayManagerInstance } from "./types.js"
 
@@ -27,8 +30,8 @@ export const createGatewayManager = (telemetry: TelemetryCollector): GatewayMana
       await Promise.allSettled([...gateways.values()].map((s) => s.disconnect()))
     },
 
-    get(id: string): GatewayInstance | undefined {
-      return gateways.get(id)
+    get(id: string): Option<GatewayInstance> {
+      return Option(gateways.get(id))
     },
 
     getAll(): ReadonlyArray<GatewayInstance> {
