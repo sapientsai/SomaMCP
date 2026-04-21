@@ -19,7 +19,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/node": "^24.12.2",
+    "@types/node": "^25.6.0",
     "rimraf": "^6.0.1",
     "tsdown": "^0.21.9",
     "tsx": "^4.19.2",
