@@ -55,7 +55,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "fastmcp": "^4.0.0",
-    "functype": "^0.60.0",
+    "functype": "^0.60.2",
     "functype-log": "^0.60.0",
     "hono": "^4.12.14",
     "zod": "^4.3.6"
@@ -64,7 +64,7 @@
   "devDependencies": {
     "@types/node": "^24.12.2",
     "get-port-please": "^3.2.0",
-    "ts-builds": "^2.7.0",
+    "ts-builds": "^2.7.1",
     "tsdown": "^0.21.9"
   },
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319"
