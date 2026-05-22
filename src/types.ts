@@ -3,6 +3,7 @@ import type { Hono } from "hono"
 
 import type { ArtifactConfig } from "./artifacts/types.js"
 import type { BackendSession } from "./backend/adapter.js"
+import type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
 import type { GatewayConfig, GatewayManagerInstance } from "./gateway/types.js"
 import type { TelemetryCollector, ToolCaptureConfig } from "./telemetry/TelemetryCollector.js"
 import type { Prompt, PromptArgument, Resource, SchemaParams, ServerStatus, SessionAuth, Tool } from "./types/core.js"
@@ -11,11 +12,16 @@ import type { ServerConfig, TransportConfig } from "./types/server.js"
 export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfig<T> & {
   artifacts?: ArtifactConfig[]
   backendOptions?: Record<string, unknown>
+  build?: BuildInfo
   enableDashboard?: boolean
   enableHealthEndpoint?: boolean
+  enableInfoEndpoint?: boolean
   enableIntrospection?: boolean
   gateways?: GatewayConfig[]
+  healthDetailPath?: string
   healthPath?: string
+  infoPath?: string
+  introspectionPrefix?: string
   logLayer?: DirectLogger
   telemetry?: TelemetryCollector
 }
@@ -38,6 +44,20 @@ export type ServerCapabilities = {
   tools: ReadonlyArray<{ description?: string; name: string }>
 }
 
+export type CapabilitiesSummary = {
+  prompts: number
+  resources: number
+  tools: number
+}
+
+export type ServerInfo = {
+  build: BuildInfo
+  capabilities: CapabilitiesSummary
+  name: string
+  runtime: RuntimeInfo
+  version: string
+}
+
 export type ToolOptions<T extends SessionAuth = SessionAuth, P extends SchemaParams = SchemaParams> = Tool<T, P> & {
   captureConfig?: ToolCaptureConfig
 }
@@ -57,6 +77,7 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   getCapabilities: () => ServerCapabilities
   getGatewayManager: () => GatewayManagerInstance
   getHealth: () => ServerHealth
+  getInfo: () => ServerInfo
   removePrompt: (name: string) => void
   removeResource: (name: string) => void
   removeTool: (name: string) => void

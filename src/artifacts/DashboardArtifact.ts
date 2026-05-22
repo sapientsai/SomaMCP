@@ -17,6 +17,7 @@ export const createDashboardArtifact = (
     })
   },
   path: "/dashboard",
+  protected: true,
   type: "dynamic",
 })
 

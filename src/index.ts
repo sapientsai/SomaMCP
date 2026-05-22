@@ -1,6 +1,18 @@
 // Core
 export { createServer } from "./Server.js"
-export type { ServerCapabilities, ServerHealth, SomaServerInstance, SomaServerOptions, ToolOptions } from "./types.js"
+export type {
+  CapabilitiesSummary,
+  ServerCapabilities,
+  ServerHealth,
+  ServerInfo,
+  SomaServerInstance,
+  SomaServerOptions,
+  ToolOptions,
+} from "./types.js"
+
+// Build info
+export type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
+export { getRuntimeInfo, readBuildInfoFromEnv, resolveBuildInfo } from "./buildInfo.js"
 
 // Types (somamcp-owned MCP primitives)
 export type {
@@ -62,16 +74,31 @@ export { createDefaultLogger } from "./logging.js"
 export type { DirectLogger } from "functype-log"
 
 // Artifacts
-export type { ArtifactConfig, DirectoryArtifact, DynamicArtifact, StaticArtifact } from "./artifacts/index.js"
+export type {
+  ArtifactAuthenticate,
+  ArtifactConfig,
+  DirectoryArtifact,
+  DynamicArtifact,
+  StaticArtifact,
+} from "./artifacts/index.js"
 export {
   createDashboardArtifact,
   createHealthArtifact,
+  createHealthDetailArtifact,
+  createInfoArtifact,
+  DEFAULT_HEALTH_DETAIL_PATH,
   DEFAULT_HEALTH_PATH,
+  DEFAULT_INFO_PATH,
   registerArtifacts,
 } from "./artifacts/index.js"
 
 // Introspection
-export { createCapabilitiesTool, createConnectionsTool, createHealthTool } from "./introspection/index.js"
+export {
+  createCapabilitiesTool,
+  createConnectionsTool,
+  createHealthTool,
+  createInfoTool,
+} from "./introspection/index.js"
 
 // Gateway
 export type {

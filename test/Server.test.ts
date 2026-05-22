@@ -107,15 +107,28 @@ describe("Server", () => {
     expect(app).toBeDefined()
   })
 
-  it("disables introspection tools when enableIntrospection is false", () => {
+  it("exposes server info via getInfo()", () => {
     const server = createServer({
+      build: { commit: "abc123", date: "2026-01-01", environment: "test" },
+      enableDashboard: false,
+      enableHealthEndpoint: false,
+      enableInfoEndpoint: false,
       enableIntrospection: false,
-      name: "no-intro",
-      version: "1.0.0",
+      name: "info-server",
+      version: "1.2.3",
     })
 
-    const capabilities = server.getCapabilities()
-    expect(capabilities.tools.find((t) => t.name === "soma_health")).toBeUndefined()
+    server.addTool({ execute: async () => "ok", name: "t1" })
+    server.addTool({ execute: async () => "ok", name: "t2" })
+
+    const info = server.getInfo()
+    expect(info.name).toBe("info-server")
+    expect(info.version).toBe("1.2.3")
+    expect(info.build.commit).toBe("abc123")
+    expect(info.build.environment).toBe("test")
+    expect(info.capabilities.tools).toBe(2)
+    expect(info.runtime.platform).toBeTruthy()
+    expect(info.runtime.nodeVersion).toBeTruthy()
   })
 
   it("getGatewayManager returns the manager", () => {

@@ -41,6 +41,74 @@ describe("ArtifactManager", () => {
     expect(body).toEqual({ ok: true })
   })
 
+  it("protected artifact returns 401 without authenticate", async () => {
+    const app = new Hono()
+    const artifact: ArtifactConfig = {
+      content: "secret",
+      contentType: "text/plain",
+      path: "/secret",
+      protected: true,
+      type: "static",
+    }
+
+    registerArtifacts(app, [artifact])
+
+    const res = await app.request("/secret")
+    expect(res.status).toBe(401)
+  })
+
+  it("protected artifact passes when authenticate resolves", async () => {
+    const app = new Hono()
+    const artifact: ArtifactConfig = {
+      content: "secret",
+      contentType: "text/plain",
+      path: "/secret",
+      protected: true,
+      type: "static",
+    }
+
+    registerArtifacts(app, [artifact], async () => ({ user: "alice" }))
+
+    const res = await app.request("/secret")
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe("secret")
+  })
+
+  it("protected artifact returns 401 when authenticate rejects", async () => {
+    const app = new Hono()
+    const artifact: ArtifactConfig = {
+      content: "secret",
+      contentType: "text/plain",
+      path: "/secret",
+      protected: true,
+      type: "static",
+    }
+
+    registerArtifacts(app, [artifact], async () => {
+      throw new Error("bad token")
+    })
+
+    const res = await app.request("/secret")
+    expect(res.status).toBe(401)
+  })
+
+  it("unprotected artifact ignores authenticate function", async () => {
+    const app = new Hono()
+    const artifact: ArtifactConfig = {
+      content: "public",
+      contentType: "text/plain",
+      path: "/public",
+      type: "static",
+    }
+
+    registerArtifacts(app, [artifact], async () => {
+      throw new Error("would reject")
+    })
+
+    const res = await app.request("/public")
+    expect(res.status).toBe(200)
+  })
+
   it("registers multiple artifacts", async () => {
     const app = new Hono()
     const artifacts: ArtifactConfig[] = [

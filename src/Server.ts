@@ -3,19 +3,27 @@ import type { Hono } from "hono"
 
 import { registerArtifacts } from "./artifacts/ArtifactManager.js"
 import { createDashboardArtifact } from "./artifacts/DashboardArtifact.js"
-import { createHealthArtifact } from "./artifacts/HealthArtifact.js"
+import { createHealthArtifact, createHealthDetailArtifact } from "./artifacts/HealthArtifact.js"
+import { createInfoArtifact } from "./artifacts/InfoArtifact.js"
+import type { ArtifactAuthenticate } from "./artifacts/types.js"
 import type { BackendSession } from "./backend/adapter.js"
 import { createFastMCPBackend } from "./backend/fastmcp.js"
+import { getRuntimeInfo, resolveBuildInfo } from "./buildInfo.js"
 import { createGatewayManager } from "./gateway/GatewayManager.js"
 import { createProxiedTools } from "./gateway/toolProxy.js"
-import { createCapabilitiesTool } from "./introspection/capabilitiesTool.js"
-import { createConnectionsTool } from "./introspection/connectionsTool.js"
-import { createHealthTool } from "./introspection/healthTool.js"
+import { createInfoTool } from "./introspection/infoTool.js"
 import { createLogLayerTelemetry } from "./telemetry/LogLayerTelemetry.js"
 import { NoopTelemetry } from "./telemetry/NoopTelemetry.js"
 import type { TelemetryCollector } from "./telemetry/TelemetryCollector.js"
 import { wrapPrompt, wrapResource, wrapTool } from "./telemetry/telemetryWrapper.js"
-import type { ServerCapabilities, ServerHealth, SomaServerInstance, SomaServerOptions, ToolOptions } from "./types.js"
+import type {
+  ServerCapabilities,
+  ServerHealth,
+  ServerInfo,
+  SomaServerInstance,
+  SomaServerOptions,
+  ToolOptions,
+} from "./types.js"
 import type { SchemaParams, SessionAuth, Tool } from "./types/core.js"
 import type { TransportConfig } from "./types/server.js"
 
@@ -25,17 +33,27 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
   const {
     artifacts,
     backendOptions,
+    build: buildOverride,
     enableDashboard,
     enableHealthEndpoint,
+    enableInfoEndpoint,
     enableIntrospection,
     gateways,
+    healthDetailPath,
     healthPath,
+    infoPath,
+    introspectionPrefix,
     logLayer,
     telemetry: telemetryOption,
     ...serverConfig
   } = options
 
   const serverName = serverConfig.name
+  const serverVersion = serverConfig.version
+  const build = resolveBuildInfo(buildOverride)
+  const runtime = getRuntimeInfo()
+  const prefix = introspectionPrefix ?? ""
+
   const telemetry: TelemetryCollector =
     telemetryOption ?? (logLayer ? createLogLayerTelemetry(logLayer) : NoopTelemetry)
   const backend = createFastMCPBackend<T>(serverConfig, backendOptions)
@@ -76,17 +94,31 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     tools: registeredTools,
   })
 
-  // Register introspection tools (default: enabled)
+  const getInfo = (): ServerInfo => ({
+    build,
+    capabilities: {
+      prompts: registeredPrompts.length,
+      resources: registeredResources.length,
+      tools: registeredTools.length,
+    },
+    name: serverName,
+    runtime,
+    version: serverVersion,
+  })
+
+  // Register introspection MCP tool (default: enabled). Only `info` — safe for agents.
   if (enableIntrospection !== false) {
-    backend.addTool(createHealthTool<T>(() => getHealth()))
-    backend.addTool(createCapabilitiesTool<T>(() => getCapabilities()))
-    backend.addTool(createConnectionsTool<T>(() => gatewayManager.getInfoAll()))
+    backend.addTool(createInfoTool<T>(() => getInfo(), `${prefix}info`))
   }
 
   // Register artifacts on the Hono app
   const allArtifacts = [...(artifacts ?? [])]
   if (enableHealthEndpoint !== false) {
     allArtifacts.push(createHealthArtifact(() => getHealth(), healthPath))
+    allArtifacts.push(createHealthDetailArtifact(() => getHealth(), healthDetailPath))
+  }
+  if (enableInfoEndpoint !== false) {
+    allArtifacts.push(createInfoArtifact(() => getInfo(), infoPath))
   }
   if (enableDashboard !== false) {
     allArtifacts.push(
@@ -98,7 +130,7 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     )
   }
   if (allArtifacts.length > 0) {
-    registerArtifacts(backend.getApp(), allArtifacts)
+    registerArtifacts(backend.getApp(), allArtifacts, serverConfig.authenticate as ArtifactAuthenticate | undefined)
   }
 
   // Wire session telemetry
@@ -185,6 +217,8 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     getGatewayManager: () => gatewayManager,
 
     getHealth,
+
+    getInfo,
 
     removePrompt: (name: string): void => {
       backend.removePrompt(name)
