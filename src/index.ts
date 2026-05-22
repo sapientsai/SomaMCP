@@ -63,7 +63,12 @@ export type { DirectLogger } from "functype-log"
 
 // Artifacts
 export type { ArtifactConfig, DirectoryArtifact, DynamicArtifact, StaticArtifact } from "./artifacts/index.js"
-export { createDashboardArtifact, registerArtifacts } from "./artifacts/index.js"
+export {
+  createDashboardArtifact,
+  createHealthArtifact,
+  DEFAULT_HEALTH_PATH,
+  registerArtifacts,
+} from "./artifacts/index.js"
 
 // Introspection
 export { createCapabilitiesTool, createConnectionsTool, createHealthTool } from "./introspection/index.js"

@@ -3,6 +3,7 @@ import type { Hono } from "hono"
 
 import { registerArtifacts } from "./artifacts/ArtifactManager.js"
 import { createDashboardArtifact } from "./artifacts/DashboardArtifact.js"
+import { createHealthArtifact } from "./artifacts/HealthArtifact.js"
 import type { BackendSession } from "./backend/adapter.js"
 import { createFastMCPBackend } from "./backend/fastmcp.js"
 import { createGatewayManager } from "./gateway/GatewayManager.js"
@@ -25,8 +26,10 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     artifacts,
     backendOptions,
     enableDashboard,
+    enableHealthEndpoint,
     enableIntrospection,
     gateways,
+    healthPath,
     logLayer,
     telemetry: telemetryOption,
     ...serverConfig
@@ -82,6 +85,9 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
 
   // Register artifacts on the Hono app
   const allArtifacts = [...(artifacts ?? [])]
+  if (enableHealthEndpoint !== false) {
+    allArtifacts.push(createHealthArtifact(() => getHealth(), healthPath))
+  }
   if (enableDashboard !== false) {
     allArtifacts.push(
       createDashboardArtifact(

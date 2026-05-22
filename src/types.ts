@@ -12,8 +12,10 @@ export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfi
   artifacts?: ArtifactConfig[]
   backendOptions?: Record<string, unknown>
   enableDashboard?: boolean
+  enableHealthEndpoint?: boolean
   enableIntrospection?: boolean
   gateways?: GatewayConfig[]
+  healthPath?: string
   logLayer?: DirectLogger
   telemetry?: TelemetryCollector
 }
