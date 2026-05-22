@@ -9,7 +9,6 @@ const DEFAULT_MAX_OUTPUT_SIZE = 10000
 const redactFields = (args: Record<string, unknown>, fields?: ReadonlyArray<string>): Record<string, unknown> => {
   if (!fields || fields.length === 0) return args
   return Object.fromEntries(
-    // eslint-disable-next-line functype/prefer-flatmap -- mapping [k,v] entries to [k,v] entries; flatMap would incorrectly destructure the tuples
     Object.entries(args).map(([key, value]) => [key, fields.includes(key) ? "[REDACTED]" : value]),
   )
 }
