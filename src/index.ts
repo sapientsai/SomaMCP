@@ -100,6 +100,30 @@ export {
   createInfoTool,
 } from "./introspection/index.js"
 
+// Feedback
+export type {
+  FeedbackEnrichmentContext,
+  FeedbackProvider,
+  FeedbackSeverity,
+  FeedbackSubmitFailure,
+  FeedbackSubmitResult,
+  FeedbackSubmitSuccess,
+  FeedbackToolOptions,
+  FeedbackType,
+  GithubFeedbackOptions,
+  NormalizedFeedback,
+  RedactionPattern,
+  RedactionResult,
+  WebhookFeedbackOptions,
+} from "./feedback/index.js"
+export {
+  createFeedbackTool,
+  createGithubFeedback,
+  createWebhookFeedback,
+  DEFAULT_REDACTION_PATTERNS,
+  redact,
+} from "./feedback/index.js"
+
 // Gateway
 export type {
   GatewayConfig,

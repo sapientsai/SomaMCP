@@ -1,8 +1,8 @@
 # SomaMCP
 
-Framework for building **MCP (Model Context Protocol)** servers with built-in telemetry, introspection, and a backend abstraction layer.
+Framework for building **MCP (Model Context Protocol)** servers with built-in telemetry, introspection, agent feedback, and a backend abstraction layer.
 
-somamcp wraps an underlying MCP framework (currently [FastMCP](https://github.com/punkpeye/fastmcp)) behind a `BackendAdapter` interface — giving you a stable API surface, automatic telemetry, gateway-based server composition, and HTTP artifacts out of the box.
+somamcp wraps an underlying MCP framework (currently [FastMCP](https://github.com/punkpeye/fastmcp)) behind a `BackendAdapter` interface — giving you a stable API surface, automatic telemetry, gateway-based server composition, identity/health endpoints with sensible security defaults, and HTTP artifacts out of the box.
 
 ## Features
 
@@ -11,8 +11,11 @@ somamcp wraps an underlying MCP framework (currently [FastMCP](https://github.co
 - **Error classification & enrichment** — errors are auto-classified (validation / timeout / gateway / auth / not_found / internal) with actionable suggestions for LLMs
 - **Per-tool capture config** — configure input/output capture levels, field redaction, and output size limits per tool
 - **Gateway system** — connect to remote MCP servers and proxy their tools as local tools
-- **Auto-introspection** — `soma_health`, `soma_capabilities`, `soma_connections` tools registered by default
-- **HTTP artifacts** — mount static or dynamic routes on the embedded [Hono](https://hono.dev) app, including an auto-generated dashboard
+- **Identity & build info** — `info` MCP tool returns name, version, build commit, runtime, and capability counts; auto-populated from `SOMAMCP_BUILD_*` env vars
+- **Two-tier health** — public `/health` (minimal, for Docker/k8s probes) + protected `/health/detail` (full operational state)
+- **Protected artifacts** — `protected: true` on any artifact reuses FastMCP's `authenticate` callback; dashboard and `/info` protected by default
+- **Agent feedback tool** — `createFeedbackTool` posts agent-reported issues to GitHub or any webhook, with automatic credential/PII redaction
+- **HTTP dashboard** — auto-generated overview at `/dashboard` (protected)
 - **Functional style** — powered by [functype](https://github.com/jordanburke/functype) (`Ref`, `Try`, `Either`)
 
 ## Installation
@@ -42,6 +45,86 @@ server.addTool({
 })
 
 await server.start({ transportType: "stdio" })
+```
+
+## Identity & Health
+
+SomaMCP auto-registers one MCP introspection tool and three HTTP endpoints:
+
+| Surface  | Default path / name | Protected | Returns                                                                          |
+| -------- | ------------------- | --------- | -------------------------------------------------------------------------------- |
+| MCP tool | `info`              | n/a       | `{ name, version, build, runtime, capabilities: { tools, resources, prompts } }` |
+| HTTP     | `/health`           | No        | `{ name, status }` — minimal, status code is the real signal (200 / 503)         |
+| HTTP     | `/health/detail`    | Yes       | Full `ServerHealth` (sessions, gateway topology)                                 |
+| HTTP     | `/info`             | Yes       | Same shape as the `info` MCP tool                                                |
+| HTTP     | `/dashboard`        | Yes       | Rendered HTML overview                                                           |
+
+**Why two health tiers?** The public `/health` exists for infrastructure probes (Docker `HEALTHCHECK`, k8s liveness/readiness, load balancers) — they only need a status code. Operational details (session counts, gateway URLs) are reconnaissance signals and live behind `protected: true`.
+
+### Build info
+
+Set these env vars at deploy time (e.g. in your Dockerfile or CI) so `info` reflects the actual build:
+
+```bash
+SOMAMCP_BUILD_COMMIT=abc123
+SOMAMCP_BUILD_DATE=2026-05-22T00:00:00Z
+SOMAMCP_BUILD_BRANCH=main
+SOMAMCP_ENVIRONMENT=production
+```
+
+Or pass them programmatically (override wins over env):
+
+```typescript
+createServer({
+  name: "my-server",
+  version: "1.0.0",
+  build: {
+    commit: process.env.GIT_SHA,
+    date: process.env.BUILD_DATE,
+    environment: "production",
+  },
+})
+```
+
+### Disabling / customizing
+
+```typescript
+createServer({
+  name: "my-server",
+  version: "1.0.0",
+  enableIntrospection: false, // remove the `info` MCP tool
+  enableHealthEndpoint: false, // remove /health and /health/detail
+  enableInfoEndpoint: false, // remove /info
+  enableDashboard: false, // remove /dashboard
+  healthPath: "/healthz", // custom paths
+  healthDetailPath: "/health/full",
+  infoPath: "/about",
+  introspectionPrefix: "soma_", // → `soma_info` tool name
+})
+```
+
+## Protected Artifacts
+
+Any artifact can opt into auth with `protected: true`. The route runs FastMCP's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
+
+```typescript
+createServer({
+  name: "my-server",
+  version: "1.0.0",
+  authenticate: async (req) => {
+    const token = req.headers.authorization?.replace("Bearer ", "")
+    if (token !== process.env.OPS_TOKEN) throw new Error("denied")
+    return { user: "ops" }
+  },
+  artifacts: [
+    {
+      type: "dynamic",
+      path: "/admin/stats",
+      protected: true,
+      handler: (c) => c.json({ secret: "stuff" }),
+    },
+  ],
+})
 ```
 
 ## Telemetry
@@ -129,15 +212,62 @@ const server = createServer({
 })
 ```
 
+## Agent Feedback
+
+Let agents file issues against your repo when they hit bugs or confusing behavior. The tool auto-redacts common credential patterns and PII, and includes a tool description that explicitly warns the LLM not to include proprietary data.
+
+```typescript
+import { createServer, createFeedbackTool, createGithubFeedback } from "somamcp"
+
+const server = createServer({ name: "my-mcp", version: "1.0.0" })
+
+server.addTool(
+  createFeedbackTool({
+    provider: createGithubFeedback({
+      repo: "myorg/my-mcp",
+      getToken: () => process.env.GITHUB_FEEDBACK_TOKEN,
+      defaultLabels: ["agent-feedback"],
+    }),
+    // Auto-attached to each issue (visible in the issue body)
+    enrichment: async () => ({
+      server: server.getInfo(),
+    }),
+    extraLabels: ["from-agent"],
+  }),
+)
+```
+
+**What gets redacted automatically** (best-effort, not a substitute for caution):
+
+- GitHub PATs (`ghp_*`, `github_pat_*`)
+- AWS access keys (`AKIA*`)
+- Stripe keys (`sk_live_*`, `pk_test_*`, etc.)
+- Slack tokens (`xoxb-*`, `xoxp-*`, etc.)
+- JWTs
+- OpenAI/Anthropic API keys
+- Bearer tokens (`Bearer <secret>`)
+- Email addresses
+- Private IPv4 addresses (RFC1918)
+- Internal hostnames (`*.internal`, `*.local`, etc.)
+
+The tool response includes a `redactionDetails` summary so the agent knows what was scrubbed. Add custom patterns via `redactionPatterns`.
+
+**Providers:**
+
+- `createGithubFeedback({ repo, getToken, defaultLabels?, baseUrl? })` — posts to GitHub Issues
+- `createWebhookFeedback({ url, headers?, transform? })` — generic JSON POST to any endpoint (Linear, Jira, Sentry, custom relay)
+
+**Token security:** the token only needs `issues: write` scope on the target repo. Use a GitHub App for fleet-scale (auditable, scoped, rotatable).
+
 ## Artifacts & Dashboard
 
-Mount HTTP routes on the embedded Hono app. A health dashboard is auto-mounted at `/dashboard` unless disabled.
+Mount HTTP routes on the embedded Hono app. A protected health dashboard is auto-mounted at `/dashboard` unless disabled.
 
 ```typescript
 const server = createServer({
   name: "my-server",
   version: "1.0.0",
-  enableDashboard: true, // default
+  enableDashboard: true, // default; requires `authenticate` to view
   artifacts: [
     {
       type: "dynamic",
@@ -153,14 +283,6 @@ await server.start({
 })
 ```
 
-## Introspection
-
-Three tools are auto-registered (disable with `enableIntrospection: false`):
-
-- **`soma_health`** — server status, uptime, active sessions, gateway count
-- **`soma_capabilities`** — registered tools, resources, prompts
-- **`soma_connections`** — gateway connection info
-
 ## Backend Abstraction
 
 The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. To use a non-FastMCP backend, implement `BackendFactory`:
@@ -174,7 +296,7 @@ const myBackend: BackendFactory = (config, backendOptions) => {
 }
 ```
 
-Framework-specific options (e.g. FastMCP's OAuth, ping, health endpoints) flow through `backendOptions`:
+Framework-specific options (e.g. FastMCP's OAuth, ping) flow through `backendOptions`:
 
 ```typescript
 createServer({
@@ -192,11 +314,16 @@ createServer({
 **Core**
 
 - `createServer(options)` → `SomaServerInstance`
-- Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerCapabilities`, `ToolOptions`
+- Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerInfo`, `ServerCapabilities`, `CapabilitiesSummary`, `ToolOptions`
 
 **Primitives** (somamcp-owned, no FastMCP leakage)
 
 - `Tool`, `Resource`, `Prompt`, `Context`, `Content`, `ContentResult`, `SessionAuth`, `UserError`
+
+**Build info**
+
+- `readBuildInfoFromEnv`, `resolveBuildInfo`, `getRuntimeInfo`
+- Types: `BuildInfo`, `RuntimeInfo`
 
 **Telemetry**
 
@@ -211,8 +338,19 @@ createServer({
 
 **Artifacts**
 
-- `registerArtifacts`, `createDashboardArtifact`
-- Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`, `ArtifactConfig`
+- `registerArtifacts`, `createDashboardArtifact`, `createHealthArtifact`, `createHealthDetailArtifact`, `createInfoArtifact`
+- Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`, `ArtifactConfig`, `ArtifactAuthenticate`
+
+**Introspection**
+
+- `createInfoTool` (auto-registered as `info`)
+- `createHealthTool`, `createCapabilitiesTool`, `createConnectionsTool` (legacy, exported for manual use)
+
+**Feedback**
+
+- `createFeedbackTool`, `createGithubFeedback`, `createWebhookFeedback`
+- `redact`, `DEFAULT_REDACTION_PATTERNS`
+- Types: `FeedbackProvider`, `FeedbackToolOptions`, `GithubFeedbackOptions`, `WebhookFeedbackOptions`, `RedactionPattern`, `RedactionResult`, `NormalizedFeedback`, `FeedbackSubmitResult`
 
 **Content helpers**
 
