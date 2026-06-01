@@ -1,6 +1,6 @@
 {
   "name": "somamcp",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Framework for building MCP servers with telemetry, introspection, and backend abstraction",
   "type": "module",
   "main": "./dist/index.js",
@@ -55,9 +55,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "fastmcp": "^4.0.1",
-    "functype": "^0.60.7",
-    "functype-log": "^0.60.7",
-    "hono": "^4.12.22",
+    "functype": "^1.1.0",
+    "functype-log": "^1.1.0",
+    "hono": "^4.12.23",
     "zod": "^4.4.3"
   },
   "prettier": "ts-builds/prettier",
@@ -65,7 +65,7 @@
     "@types/node": "^24.12.4",
     "get-port-please": "^3.2.0",
     "ts-builds": "^2.8.1",
-    "tsdown": "^0.22.0"
+    "tsdown": "^0.22.1"
   },
   "packageManager": "pnpm@10.33.3+sha512.a19744364a7e248b92657a4ca5973f9354d21caf982579674b1c539f32c7420c47138ad8b1254df07aba9bc782d9b3029e3db34d5dbff974326eb74dac8ff489"
 }
