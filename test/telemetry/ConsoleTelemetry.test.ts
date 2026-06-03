@@ -4,7 +4,8 @@ import { createConsoleTelemetry } from "../../src/telemetry/ConsoleTelemetry.js"
 import type { TelemetryEvent } from "../../src/telemetry/TelemetryCollector.js"
 
 describe("ConsoleTelemetry", () => {
-  it("logs events to console", () => {
+  it("routes events to stderr and keeps stdout clean (JSON-RPC channel on stdio)", () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {})
     const telemetry = createConsoleTelemetry()
@@ -19,9 +20,12 @@ describe("ConsoleTelemetry", () => {
 
     telemetry.recordEvent(event)
 
-    // functype-log routes info-level to console.info or console.log
-    const called = infoSpy.mock.calls.length > 0 || logSpy.mock.calls.length > 0
-    expect(called).toBe(true)
+    // Even info-level events must go to stderr — stdout carries JSON-RPC on the stdio transport.
+    expect(errorSpy).toHaveBeenCalled()
+    expect(infoSpy).not.toHaveBeenCalled()
+    expect(logSpy).not.toHaveBeenCalled()
+
+    errorSpy.mockRestore()
     infoSpy.mockRestore()
     logSpy.mockRestore()
   })

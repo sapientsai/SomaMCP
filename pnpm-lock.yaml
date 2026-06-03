@@ -14,11 +14,11 @@ importers:
         specifier: ^4.0.1
         version: 4.0.1
       functype:
-        specifier: ^1.2.0
-        version: 1.2.0
+        specifier: ^1.3.0
+        version: 1.3.0
       functype-log:
-        specifier: ^1.2.0
-        version: 1.2.0(functype@1.2.0)
+        specifier: ^1.3.0
+        version: 1.3.0(functype@1.3.0)
       hono:
         specifier: ^4.12.23
         version: 4.12.23
@@ -1870,9 +1870,9 @@ packages:
     resolution:
       { integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA== }
 
-  functype-log@1.2.0:
+  functype-log@1.3.0:
     resolution:
-      { integrity: sha512-cdU1S71e1iS7+aCN+qUK5Cn1GPtqpcqbWCuDR4En4iQvgAs7RX1/mTDCdgKMHSjszb7DSrd7VpIitfm1pyjEcw== }
+      { integrity: sha512-S3UuDR7zNGPTI2i/m9YobgA91sYLF3IzbTNqnArBal3FnpeYSRW2gtQnG/JR5EAmwKMqLkdTkTyKXyeTvBUpzw== }
     engines: { node: ">=18.17.0" }
     peerDependencies:
       functype: ">=0.60.0"
@@ -1889,9 +1889,9 @@ packages:
       { integrity: sha512-gsr17MX6UPwteSQ6uPm2hhGz0bBubAGE3HcBIw+HQF6nQlU2FFdPxUNAlhg2PYikahCKyw7WABKtVsJ/Glhk3Q== }
     hasBin: true
 
-  functype@1.2.0:
+  functype@1.3.0:
     resolution:
-      { integrity: sha512-8aStJmRgqg0SXtyu0fr583lbJ8PiDNeOo74JH1gdLxUrh3g3PHzUsHI7iW0vehLEEgXiSozsy5MkNCt7cu6Osw== }
+      { integrity: sha512-TIrF5tRbBnJuTYpT5IMM9sEfkp2dkjPS2ABpdxcKwWh2qwwQmtym0hXn+BtOkvTqFpvZ1N07oC3dk8O6SCGrbA== }
     hasBin: true
 
   fuse.js@7.4.0:
@@ -4468,9 +4468,9 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-log@1.2.0(functype@1.2.0):
+  functype-log@1.3.0(functype@1.3.0):
     dependencies:
-      functype: 1.2.0
+      functype: 1.3.0
       loglayer: 9.3.0
 
   functype-os@0.60.7(functype@0.60.7):
@@ -4479,7 +4479,7 @@ snapshots:
 
   functype@0.60.7: {}
 
-  functype@1.2.0: {}
+  functype@1.3.0: {}
 
   fuse.js@7.4.0: {}
 
