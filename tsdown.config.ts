@@ -5,6 +5,7 @@ const isProduction = process.env.NODE_ENV === "production"
 export default defineConfig({
   entry: {
     index: "src/index.ts",
+    "backend/index": "src/backend/index.ts",
   },
   format: ["esm"],
   dts: true,
