@@ -1,3 +1,11 @@
 packages:
   - "."
   - "examples/*"
+
+publicHoistPattern:
+  - "*eslint*"
+  - "*prettier*"
+  - "*vitest*"
+  - "typescript"
+  - "*rimraf*"
+  - "*cross-env*"
