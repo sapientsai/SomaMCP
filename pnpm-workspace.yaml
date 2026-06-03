@@ -9,3 +9,6 @@ publicHoistPattern:
   - "typescript"
   - "*rimraf*"
   - "*cross-env*"
+
+overrides:
+  vite: "7.3.3"
