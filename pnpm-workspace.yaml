@@ -14,11 +14,8 @@ overrides:
   vite: "7.3.3"
 
 minimumReleaseAgeExclude:
-  - eslint-config-functype@2.103.0
-  - eslint-plugin-functype@2.103.0
-  - functype@1.3.0
-  - functype-log@1.3.0
-  - functype-os@1.3.0
+  - "*functype*"
+  - "ts-builds"
 
 allowBuilds:
   esbuild: true
