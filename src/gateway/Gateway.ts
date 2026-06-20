@@ -68,7 +68,6 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
       currentStatus.set("connecting")
       const start = Date.now()
 
-      // eslint-disable-next-line functype/prefer-do-notation -- Do notation doesn't fit here: Option(...) calls are Ref-cell writes (side effects), not monadic binds; Try wraps a single async effect
       const attempt = await Try.fromPromise(
         (async () => {
           const t = new StreamableHTTPClientTransport(new URL(config.url))
