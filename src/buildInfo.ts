@@ -1,3 +1,5 @@
+import { Option } from "functype"
+
 export type BuildInfo = {
   branch?: string
   commit?: string
@@ -11,16 +13,13 @@ export type RuntimeInfo = {
   platform: string
 }
 
-const readEnv = (key: string): string | undefined => {
-  const value = process.env[key]
-  return value && value.length > 0 ? value : undefined
-}
+const readEnv = (key: string): Option<string> => Option(process.env[key]).filter((v) => v.length > 0)
 
 export const readBuildInfoFromEnv = (): BuildInfo => ({
-  branch: readEnv("SOMAMCP_BUILD_BRANCH"),
-  commit: readEnv("SOMAMCP_BUILD_COMMIT"),
-  date: readEnv("SOMAMCP_BUILD_DATE"),
-  environment: readEnv("SOMAMCP_ENVIRONMENT"),
+  branch: readEnv("SOMAMCP_BUILD_BRANCH").orUndefined(),
+  commit: readEnv("SOMAMCP_BUILD_COMMIT").orUndefined(),
+  date: readEnv("SOMAMCP_BUILD_DATE").orUndefined(),
+  environment: readEnv("SOMAMCP_ENVIRONMENT").orUndefined(),
 })
 
 export const resolveBuildInfo = (override?: BuildInfo): BuildInfo => {

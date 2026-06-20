@@ -1,3 +1,5 @@
+import { Map as FMap, Tuple } from "functype"
+
 export type RedactionPattern = {
   description: string
   name: string
@@ -75,19 +77,19 @@ export const redact = (
   input: string,
   patterns: ReadonlyArray<RedactionPattern> = DEFAULT_REDACTION_PATTERNS,
 ): RedactionResult => {
-  const { counts, text } = patterns.reduce<{ counts: ReadonlyMap<string, number>; text: string }>(
+  const { counts, text } = patterns.reduce<{ counts: FMap<string, number>; text: string }>(
     (acc, p) => {
       const matchCount = Array.from(acc.text.matchAll(p.pattern)).length
       if (matchCount === 0) return acc
       return {
-        counts: new Map(acc.counts).set(p.name, matchCount),
+        counts: acc.counts.add(Tuple<[string, number]>([p.name, matchCount])),
         text: acc.text.replace(p.pattern, p.replacement ?? REDACTED),
       }
     },
-    { counts: new Map<string, number>(), text: input },
+    { counts: FMap.empty<string, number>(), text: input },
   )
 
-  const matches = Array.from(counts.entries()).map(([name, count]) => ({ count, name }))
+  const matches = [...counts].map(([name, count]) => ({ count, name }))
   return {
     matches,
     redacted: matches.length > 0,

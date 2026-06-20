@@ -1,4 +1,4 @@
-import { Ref } from "functype"
+import { Option, Ref } from "functype"
 import type { Hono } from "hono"
 
 import { registerArtifacts } from "./artifacts/ArtifactManager.js"
@@ -130,7 +130,11 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     )
   }
   if (allArtifacts.length > 0) {
-    registerArtifacts(backend.getApp(), allArtifacts, serverConfig.authenticate as ArtifactAuthenticate | undefined)
+    registerArtifacts(
+      backend.getApp(),
+      allArtifacts,
+      Option(serverConfig.authenticate as ArtifactAuthenticate).orUndefined(),
+    )
   }
 
   // Wire session telemetry

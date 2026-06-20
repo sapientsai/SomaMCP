@@ -1,10 +1,12 @@
+import { Option, Set as FSet, Try } from "functype"
+
 import type { FeedbackProvider, FeedbackSubmitResult, NormalizedFeedback } from "../types.js"
 
 export type GithubFeedbackOptions = {
   baseUrl?: string
   defaultLabels?: ReadonlyArray<string>
   fetchImpl?: typeof fetch
-  getToken: () => string | undefined
+  getToken: () => Option<string>
   repo: `${string}/${string}`
 }
 
@@ -22,20 +24,21 @@ export const createGithubFeedback = (options: GithubFeedbackOptions): FeedbackPr
   return {
     name: "github",
     submit: async (payload: NormalizedFeedback): Promise<FeedbackSubmitResult> => {
-      const token = options.getToken()
-      if (!token) {
+      const tokenOpt = options.getToken()
+      if (tokenOpt.isEmpty) {
         return { error: "No GitHub token configured", success: false }
       }
+      const token = tokenOpt.orThrow(new Error("unreachable"))
 
       const labels = [...(options.defaultLabels ?? []), ...payload.labels]
       const body = JSON.stringify({
         body: payload.body,
-        labels: Array.from(new Set(labels)),
+        labels: FSet(labels).toArray(),
         title: payload.title,
       })
 
-      try {
-        const res = await doFetch(`${baseUrl}/repos/${options.repo}/issues`, {
+      const attempt = await Try.fromPromise(
+        doFetch(`${baseUrl}/repos/${options.repo}/issues`, {
           body,
           headers: {
             Accept: "application/vnd.github+json",
@@ -44,28 +47,34 @@ export const createGithubFeedback = (options: GithubFeedbackOptions): FeedbackPr
             "X-GitHub-Api-Version": "2022-11-28",
           },
           method: "POST",
-        })
+        }),
+      )
 
-        const data = (await res.json().catch(() => ({}))) as GithubIssueResponse
-
-        if (!res.ok) {
-          return {
-            error: `GitHub API ${String(res.status)}: ${data.message ?? res.statusText}`,
-            success: false,
-          }
-        }
-
-        return {
-          id: data.number !== undefined ? String(data.number) : undefined,
-          success: true,
-          url: data.html_url,
-        }
-      } catch (error) {
-        return {
+      return attempt.foldAsync<FeedbackSubmitResult>(
+        (error) => ({
           error: error instanceof Error ? error.message : "Unknown error submitting to GitHub",
           success: false,
-        }
-      }
+        }),
+        async (res) => {
+          const data = (await res.json().catch(() => ({}))) as GithubIssueResponse
+
+          if (!res.ok) {
+            return {
+              error: `GitHub API ${String(res.status)}: ${data.message ?? res.statusText}`,
+              success: false,
+            }
+          }
+
+          return {
+            id: Option(data.number).fold(
+              () => undefined,
+              (n) => String(n),
+            ),
+            success: true,
+            url: data.html_url,
+          }
+        },
+      )
     },
   }
 }

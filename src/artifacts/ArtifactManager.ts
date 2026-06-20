@@ -1,3 +1,4 @@
+import { Option, Try } from "functype"
 import type { Context, Hono, MiddlewareHandler } from "hono"
 
 import type { ArtifactAuthenticate, ArtifactConfig } from "./types.js"
@@ -10,10 +11,11 @@ const createAuthMiddleware =
     if (!authenticate) {
       return unauthorized(c)
     }
-    try {
-      const req = (c.env as { incoming?: unknown } | undefined)?.incoming ?? c.req.raw
-      await authenticate(req)
-    } catch {
+    const req = Option(c.env as { incoming?: unknown })
+      .flatMap((e) => Option(e.incoming))
+      .orElse(c.req.raw)
+    const result = await Try.fromPromise(authenticate(req))
+    if (result.isFailure()) {
       return unauthorized(c)
     }
     await next()

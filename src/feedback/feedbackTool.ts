@@ -1,3 +1,4 @@
+import { Map as FMap, Option, Tuple } from "functype"
 import { z } from "zod"
 
 import type { SessionAuth, Tool } from "../types/core.js"
@@ -44,43 +45,42 @@ const PARAMETERS = z.object({
 
 type FeedbackToolParams = z.infer<typeof PARAMETERS>
 
-const formatRedactionSummary = (titleRes: RedactionResult, bodyRes: RedactionResult): string | undefined => {
-  if (!titleRes.redacted && !bodyRes.redacted) return undefined
-  const seen = new Map<string, number>()
-  for (const m of [...titleRes.matches, ...bodyRes.matches]) {
-    seen.set(m.name, (seen.get(m.name) ?? 0) + m.count)
-  }
-  const lines = Array.from(seen.entries()).map(([name, count]) => `- ${name}: ${String(count)}`)
-  return ["⚠️ Automatic redactions applied:", ...lines].join("\n")
+const formatRedactionSummary = (titleRes: RedactionResult, bodyRes: RedactionResult): Option<string> => {
+  if (!titleRes.redacted && !bodyRes.redacted) return Option.none()
+  const seen = [...titleRes.matches, ...bodyRes.matches].reduce(
+    (acc, m) => acc.add(Tuple<[string, number]>([m.name, acc.get(m.name).orElse(0) + m.count])),
+    FMap.empty<string, number>(),
+  )
+  const lines = [...seen].map(([name, count]) => `- ${name}: ${String(count)}`)
+  return Option(["⚠️ Automatic redactions applied:", ...lines].join("\n"))
 }
 
-const formatEnrichment = (ctx: Record<string, unknown> | undefined): string | undefined => {
-  if (!ctx || Object.keys(ctx).length === 0) return undefined
-  return ["---", "**Context (auto-collected):**", "```json", JSON.stringify(ctx, null, 2), "```"].join("\n")
-}
+const formatEnrichment = (ctx: Option<Record<string, unknown>>): Option<string> =>
+  ctx
+    .filter((c) => Object.keys(c).length > 0)
+    .map((c) => ["---", "**Context (auto-collected):**", "```json", JSON.stringify(c, null, 2), "```"].join("\n"))
 
 const buildBody = (
   description: string,
   type: FeedbackType,
-  severity: FeedbackSeverity | undefined,
-  redactionSummary: string | undefined,
-  enrichmentBlock: string | undefined,
-): string => {
-  const parts: string[] = []
-  parts.push(`**Type:** ${type}`)
-  if (severity) parts.push(`**Severity:** ${severity}`)
-  parts.push("")
-  parts.push(description)
-  if (redactionSummary) {
-    parts.push("")
-    parts.push(redactionSummary)
-  }
-  if (enrichmentBlock) {
-    parts.push("")
-    parts.push(enrichmentBlock)
-  }
-  return parts.join("\n")
-}
+  severity: Option<FeedbackSeverity>,
+  redactionSummary: Option<string>,
+  enrichmentBlock: Option<string>,
+): string =>
+  [
+    `**Type:** ${type}`,
+    ...severity.map((s) => `**Severity:** ${s}`).toArray(),
+    "",
+    description,
+    ...redactionSummary
+      .map((r) => ["", r])
+      .toArray()
+      .flat(),
+    ...enrichmentBlock
+      .map((e) => ["", e])
+      .toArray()
+      .flat(),
+  ].join("\n")
 
 export const createFeedbackTool = <T extends SessionAuth>(options: FeedbackToolOptions): Tool<T, typeof PARAMETERS> => {
   const patterns = options.redactionPatterns ?? DEFAULT_REDACTION_PATTERNS
@@ -96,12 +96,12 @@ export const createFeedbackTool = <T extends SessionAuth>(options: FeedbackToolO
       const bodyRes = redact(args.description, patterns)
 
       const enrichment = options.enrichment
-        ? await options.enrichment({ severity: args.severity, type: args.type })
-        : undefined
+        ? Option(await options.enrichment({ severity: args.severity, type: args.type }))
+        : Option.none<Record<string, unknown>>()
 
       const redactionSummary = formatRedactionSummary(titleRes, bodyRes)
       const enrichmentBlock = formatEnrichment(enrichment)
-      const finalBody = buildBody(bodyRes.text, args.type, args.severity, redactionSummary, enrichmentBlock)
+      const finalBody = buildBody(bodyRes.text, args.type, Option(args.severity), redactionSummary, enrichmentBlock)
 
       const labels = [
         args.type,
@@ -119,7 +119,7 @@ export const createFeedbackTool = <T extends SessionAuth>(options: FeedbackToolO
         return JSON.stringify(
           {
             error: result.error,
-            redacted: redactionSummary !== undefined,
+            redacted: redactionSummary.isSome(),
             success: false,
           },
           null,
@@ -131,7 +131,7 @@ export const createFeedbackTool = <T extends SessionAuth>(options: FeedbackToolO
         {
           id: result.id,
           provider: options.provider.name,
-          redacted: redactionSummary !== undefined,
+          redacted: redactionSummary.isSome(),
           redactionDetails: [...titleRes.matches, ...bodyRes.matches],
           success: true,
           url: result.url,

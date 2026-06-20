@@ -1,3 +1,5 @@
+import { Try } from "functype"
+
 import type { FeedbackProvider, FeedbackSubmitResult, NormalizedFeedback } from "../types.js"
 
 export type WebhookFeedbackOptions = {
@@ -14,31 +16,33 @@ export const createWebhookFeedback = (options: WebhookFeedbackOptions): Feedback
   return {
     name: "webhook",
     submit: async (payload: NormalizedFeedback): Promise<FeedbackSubmitResult> => {
-      try {
-        const res = await doFetch(options.url, {
+      const attempt = await Try.fromPromise(
+        doFetch(options.url, {
           body: JSON.stringify(transform(payload)),
           headers: {
             "Content-Type": "application/json",
             ...(options.headers ?? {}),
           },
           method: "POST",
-        })
+        }),
+      )
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => "")
-          return {
-            error: `Webhook ${String(res.status)}: ${text || res.statusText}`,
-            success: false,
-          }
-        }
-
-        return { success: true }
-      } catch (error) {
-        return {
+      return attempt.foldAsync(
+        (error) => ({
           error: error instanceof Error ? error.message : "Unknown error posting to webhook",
           success: false,
-        }
-      }
+        }),
+        async (res) => {
+          if (!res.ok) {
+            const text = await res.text().catch(() => "")
+            return {
+              error: `Webhook ${String(res.status)}: ${text || res.statusText}`,
+              success: false,
+            }
+          }
+          return { success: true }
+        },
+      )
     },
   }
 }
