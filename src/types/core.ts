@@ -113,8 +113,7 @@ export type Tool<T extends SessionAuth = SessionAuth, P extends SchemaParams = S
 export type Completion = { hasMore?: boolean; total?: number; values: string[] }
 
 export type ResourceResult =
-  | { blob: string; mimeType?: string; uri?: string }
-  | { mimeType?: string; text: string; uri?: string }
+  { blob: string; mimeType?: string; uri?: string } | { mimeType?: string; text: string; uri?: string }
 
 export type Resource<T extends SessionAuth = SessionAuth> = {
   complete?: (name: string, value: string, auth?: T) => Promise<Completion>

@@ -12,13 +12,13 @@ MCP server built on somamcp, not just this one.
 
 ## Summary
 
-| # | Add | Priority | API change? | Why (grounded) |
-|---|-----|----------|-------------|----------------|
-| 1 | Method-aware **protected routes** (`addRoute`) | **High** | new API (minor) | We hand-mounted `POST /upload` via `getApp().post()` and **self-applied the auth gate** — a per-consumer security footgun. |
-| 2 | **Normalized `authenticate` request** (or header helper) | Medium | additive | One `authenticate` callback must shape-sniff `http.IncomingMessage` vs Hono `Request`. We wrote `extractAuthHeader()` boilerplate. |
-| 3 | **Content-array + image tool returns** (confirm + helper) | Medium-High | docs/test + helper | A real tool (`download_file`) is **blocked/unported** because content-array/image returns aren't confirmed to pass through. |
-| 4 | Surface dropped **httpStream options** (cors/stateless/SSL) | Low | additive | `TransportConfig` drops FastMCP options. Not needed for headless app-only; real gap for browser-facing servers. |
-| 5 | **Example**: httpStream + custom route + authenticate | Low | docs | No example wires these together; we were the first. |
+| #   | Add                                                         | Priority    | API change?        | Why (grounded)                                                                                                                     |
+| --- | ----------------------------------------------------------- | ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Method-aware **protected routes** (`addRoute`)              | **High**    | new API (minor)    | We hand-mounted `POST /upload` via `getApp().post()` and **self-applied the auth gate** — a per-consumer security footgun.         |
+| 2   | **Normalized `authenticate` request** (or header helper)    | Medium      | additive           | One `authenticate` callback must shape-sniff `http.IncomingMessage` vs Hono `Request`. We wrote `extractAuthHeader()` boilerplate. |
+| 3   | **Content-array + image tool returns** (confirm + helper)   | Medium-High | docs/test + helper | A real tool (`download_file`) is **blocked/unported** because content-array/image returns aren't confirmed to pass through.        |
+| 4   | Surface dropped **httpStream options** (cors/stateless/SSL) | Low         | additive           | `TransportConfig` drops FastMCP options. Not needed for headless app-only; real gap for browser-facing servers.                    |
+| 5   | **Example**: httpStream + custom route + authenticate       | Low         | docs               | No example wires these together; we were the first.                                                                                |
 
 #1–#3 are the ones with concrete call-site evidence. #1 alone lets `packages/graph` delete its
 `authorizeCaller` + `mountUploadRoute` + `extractAuthHeader` and inherit the gate.
@@ -28,12 +28,14 @@ MCP server built on somamcp, not just this one.
 ## 1. Method-aware protected routes — **High**
 
 ### Problem (lived, not theoretical)
+
 somamcp's artifact pipeline auto-applies the `authenticate` middleware (`ArtifactManager.ts` —
 `app.use(path, createAuthMiddleware(authenticate))`) but only registers **`app.get`** routes. There is
 no POST/PUT artifact type. So a write endpoint must be hand-mounted via the `getApp()` escape hatch and
 is **not** covered by any built-in auth.
 
 In `packages/graph` this forced:
+
 - `src/upload/upload-route.ts` → `mountUploadRoute(app, auth, apiKey)` calling `app.post('/upload', …)`
   and `app.put('/upload', …)` directly, and
 - a hand-rolled `authorizeCaller(bearer, apiKey)` that re-implements the bearer/ticket check that the
@@ -43,6 +45,7 @@ Every consumer that mounts a write route must remember to gate it. "Unprotected 
 hard to do by accident, not the default.
 
 ### Proposed API
+
 A first-class route registrar on `SomaServerInstance`, with the same `protected` semantics as artifacts:
 
 ```ts
@@ -66,6 +69,7 @@ Implementation: reuse `createAuthMiddleware(authenticate)` (already in `Artifact
 `DynamicArtifact` variant so it flows through the existing artifacts config.
 
 ### Migration impact
+
 `packages/graph` replaces `mountUploadRoute` + `authorizeCaller` with
 `server.addRoute({ method: ["POST","PUT"], path: "/upload", protected: true, handler })`. Net deletion
 of code. Additive for somamcp (no breaking change); ship in a minor.
@@ -75,6 +79,7 @@ of code. Additive for somamcp (no breaking change); ship in a minor.
 ## 2. Normalized `authenticate` request shape — **Medium**
 
 ### Problem
+
 somamcp passes `authenticate` an `http.IncomingMessage` on the MCP transport path (FastMCP) but a Hono
 `Request` on `protected` artifact routes (`ArtifactManager.ts` reads `c.env.incoming` / `c.req.raw`). A
 single `authenticate` callback therefore has to handle both shapes. `packages/graph` wrote:
@@ -83,10 +88,10 @@ single `authenticate` callback therefore has to handle both shapes. `packages/gr
 const extractAuthHeader = (request: unknown): string | undefined => {
   const headers = (request as { headers?: unknown })?.headers
   if (headers && typeof (headers as { get?: unknown }).get === "function") {
-    return (headers as Headers).get("authorization") ?? undefined        // Hono Request
+    return (headers as Headers).get("authorization") ?? undefined // Hono Request
   }
   const h = headers as Record<string, string | string[] | undefined> | undefined
-  const raw = h?.authorization ?? h?.Authorization                       // http.IncomingMessage
+  const raw = h?.authorization ?? h?.Authorization // http.IncomingMessage
   return Array.isArray(raw) ? raw[0] : raw
 }
 ```
@@ -94,6 +99,7 @@ const extractAuthHeader = (request: unknown): string | undefined => {
 That's boilerplate every consumer will re-invent.
 
 ### Proposed
+
 Either (a) normalize the object passed to `authenticate` to a single shape across both paths, or (b)
 export a helper `getRequestHeader(request: unknown, name: string): string | undefined` that hides the
 shape difference. (b) is non-breaking and pairs with #1's `HonoContext`.
@@ -103,10 +109,16 @@ shape difference. (b) is non-breaking and pairs with #1's `HonoContext`.
 ## 3. Content-array + image tool returns — **Medium-High**
 
 ### Problem
+
 A tool `execute` that returns inline images / multimodal content uses the MCP content-array shape:
 
 ```ts
-return { content: [{ type: "text", text }, { type: "image", data, mimeType }] }
+return {
+  content: [
+    { type: "text", text },
+    { type: "image", data, mimeType },
+  ],
+}
 ```
 
 FastMCP supports this, but it's **not confirmed/documented that somamcp's `wrapTool` passes
@@ -115,11 +127,13 @@ uncertainty, `packages/graph` **deferred porting `download_file`** (which return
 base64) from the gateway — a real capability blocked on an unknown.
 
 ### Proposed
+
 - Add a test + doc proving `execute` may return a string **or** a `{ content: [...] }` array (including
   `{ type: "image", data, mimeType }`), passed through to the backend unchanged.
 - Optionally re-export an `imageContent({ buffer })`-style helper so consumers don't reach into fastmcp.
 
 ### Impact
+
 Unblocks `download_file` and any image/multimodal tool across the fleet.
 
 ---
