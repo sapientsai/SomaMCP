@@ -22,4 +22,5 @@ export type {
   ToolAnnotations,
 } from "./core.js"
 export { UserError } from "./core.js"
-export type { Logger, ServerConfig, TransportConfig } from "./server.js"
+export type { RouteConfig, RouteMethod } from "./routes.js"
+export type { HttpStreamConfig, Logger, ServerConfig, TransportConfig } from "./server.js"

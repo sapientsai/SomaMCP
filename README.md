@@ -14,6 +14,7 @@ somamcp wraps an underlying MCP framework (currently [FastMCP](https://github.co
 - **Identity & build info** — `info` MCP tool returns name, version, build commit, runtime, and capability counts; auto-populated from `SOMAMCP_BUILD_*` env vars
 - **Two-tier health** — public `/health` (minimal, for Docker/k8s probes) + protected `/health/detail` (full operational state)
 - **Protected artifacts** — `protected: true` on any artifact reuses FastMCP's `authenticate` callback; dashboard and `/info` protected by default
+- **Method-aware protected routes** — `addRoute({ method, path, protected, handler })` for custom `POST`/`PUT`/etc. endpoints behind the same `authenticate` gate
 - **Agent feedback tool** — `createFeedbackTool` posts agent-reported issues to GitHub or any webhook, with automatic credential/PII redaction
 - **HTTP dashboard** — auto-generated overview at `/dashboard` (protected)
 - **Functional style** — powered by [functype](https://github.com/jordanburke/functype) (`Ref`, `Try`, `Either`)
@@ -108,11 +109,16 @@ createServer({
 Any artifact can opt into auth with `protected: true`. The route runs FastMCP's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
 
 ```typescript
+import { createServer, getRequestHeader } from "somamcp"
+
 createServer({
   name: "my-server",
   version: "1.0.0",
+  // `authenticate` receives either a Hono Request (routes/artifacts) or an
+  // http.IncomingMessage (MCP transport). `getRequestHeader` hides the shape difference.
   authenticate: async (req) => {
-    const token = req.headers.authorization?.replace("Bearer ", "")
+    const header = getRequestHeader(req, "authorization")
+    const token = header?.replace(/^Bearer /, "")
     if (token !== process.env.OPS_TOKEN) throw new Error("denied")
     return { user: "ops" }
   },
@@ -124,6 +130,45 @@ createServer({
       handler: (c) => c.json({ secret: "stuff" }),
     },
   ],
+})
+```
+
+## Protected Routes
+
+For write endpoints, or anything the GET-only artifact shape doesn't cover, use `addRoute`. Same `authenticate` gate, method-aware, with optional `onUnauthorized` for custom 401 responses.
+
+```typescript
+server.addRoute({
+  method: ["POST", "PUT"],
+  path: "/upload",
+  protected: true,
+  handler: async (c) => {
+    const bytes = (await c.req.arrayBuffer()).byteLength
+    return c.json({ bytes, status: "accepted" })
+  },
+  onUnauthorized: (c) =>
+    c.json({ error: "unauthorized", hint: "provide Bearer" }, 401, { "WWW-Authenticate": "Bearer" }),
+})
+```
+
+**Route ordering.** Hono dispatches by registration order. `addRoute` registers immediately, alongside artifacts and introspection routes. Concrete non-overlapping paths compose safely in any order; for wildcards or overlapping prefixes, register earlier to take precedence.
+
+See [`examples/protected-upload-server`](examples/protected-upload-server) for a runnable end-to-end wiring: httpStream + `authenticate` + `addRoute` + a tool returning a content-array (text + inline image).
+
+## Content-Array Tool Returns
+
+A tool's `execute` may return a plain string **or** a full content-array with multimodal parts — telemetry passes the return value through unchanged. Use the exported `imageContent` / `audioContent` helpers to build parts without reaching into the backend.
+
+```typescript
+import { createServer, imageContent } from "somamcp"
+
+server.addTool({
+  name: "hello_pixel",
+  description: "Text + inline image",
+  parameters: z.object({ name: z.string() }),
+  execute: async ({ name }) => ({
+    content: [{ type: "text", text: `hello, ${name}` }, await imageContent({ path: "./banner.png" })],
+  }),
 })
 ```
 
@@ -340,6 +385,15 @@ createServer({
 
 - `registerArtifacts`, `createDashboardArtifact`, `createHealthArtifact`, `createHealthDetailArtifact`, `createInfoArtifact`
 - Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`, `ArtifactConfig`, `ArtifactAuthenticate`
+
+**Auth & Routes**
+
+- `createAuthMiddleware`, `getRequestHeader`
+- Types: `Authenticate`, `OnUnauthorized`, `AuthMiddlewareConfig`, `RouteConfig`, `RouteMethod`
+
+**Transport**
+
+- Types: `TransportConfig`, `HttpStreamConfig` (accepts `cors`, `stateless`, `eventStore`, `sslCert` / `sslKey` / `sslCa`, plus `port` / `host` / `endpoint` / `enableJsonResponse`)
 
 **Introspection**
 

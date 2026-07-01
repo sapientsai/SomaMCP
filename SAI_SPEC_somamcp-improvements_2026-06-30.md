@@ -19,13 +19,13 @@ MCP server built on somamcp, not just this one.
 
 ## Summary
 
-| #   | Add                                                         | Priority    | API change?        | Why (grounded)                                                                                                                     |
-| --- | ----------------------------------------------------------- | ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Method-aware **protected routes** (`addRoute`)              | **High**    | new API (minor)    | We hand-mounted `POST /upload` via `getApp().post()` and **self-applied the auth gate** — a per-consumer security footgun.         |
-| 2   | **Normalized `authenticate` request** (or header helper)    | Medium      | additive           | One `authenticate` callback must shape-sniff `http.IncomingMessage` vs Hono `Request`. We wrote `extractAuthHeader()` boilerplate. |
-| 3   | **Content-array + image tool returns** (lock in)            | test + doc  | docs/test          | **Already works** (`wrapTool` passes content-array through; `imageContent` exported) — just needs a test + doc. `download_file` unblocked. |
-| 4   | Surface dropped **httpStream options** (cors/stateless/SSL) | Low         | additive           | `TransportConfig` drops FastMCP options. Not needed for headless app-only; real gap for browser-facing servers.                    |
-| 5   | **Example**: httpStream + custom route + authenticate       | Low         | docs               | No example wires these together; we were the first.                                                                                |
+| #   | Add                                                         | Priority   | API change?     | Why (grounded)                                                                                                                             |
+| --- | ----------------------------------------------------------- | ---------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | Method-aware **protected routes** (`addRoute`)              | **High**   | new API (minor) | We hand-mounted `POST /upload` via `getApp().post()` and **self-applied the auth gate** — a per-consumer security footgun.                 |
+| 2   | **Normalized `authenticate` request** (or header helper)    | Medium     | additive        | One `authenticate` callback must shape-sniff `http.IncomingMessage` vs Hono `Request`. We wrote `extractAuthHeader()` boilerplate.         |
+| 3   | **Content-array + image tool returns** (lock in)            | test + doc | docs/test       | **Already works** (`wrapTool` passes content-array through; `imageContent` exported) — just needs a test + doc. `download_file` unblocked. |
+| 4   | Surface dropped **httpStream options** (cors/stateless/SSL) | Low        | additive        | `TransportConfig` drops FastMCP options. Not needed for headless app-only; real gap for browser-facing servers.                            |
+| 5   | **Example**: httpStream + custom route + authenticate       | Low        | docs            | No example wires these together; we were the first.                                                                                        |
 
 #1–#3 are the ones with concrete call-site evidence. #1 alone lets `packages/graph` delete its
 `authorizeCaller` + `mountUploadRoute` + `extractAuthHeader` and inherit the gate.
@@ -77,7 +77,7 @@ Implementation: reuse `createAuthMiddleware(authenticate)` (already in `Artifact
 
 ### Notes (from review)
 
-- **Route ordering.** Hono dispatches by registration order. `addRoute` should document *when* it may be
+- **Route ordering.** Hono dispatches by registration order. `addRoute` should document _when_ it may be
   called relative to `start()` — which registers the introspection routes + artifacts. A concrete
   `POST /upload` is fine after `start()`, but a wildcard path could shadow built-ins. Recommend allowing
   `addRoute` pre-`start()` (registered before the introspection/artifact routes) and documenting the

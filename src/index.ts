@@ -38,8 +38,19 @@ export type {
   Tool,
   ToolAnnotations,
 } from "./types/index.js"
-export type { Logger, ServerConfig, TransportConfig } from "./types/index.js"
+export type {
+  HttpStreamConfig,
+  Logger,
+  RouteConfig,
+  RouteMethod,
+  ServerConfig,
+  TransportConfig,
+} from "./types/index.js"
 export { UserError } from "./types/index.js"
+
+// Auth helpers (for `authenticate` callbacks + custom middleware)
+export type { Authenticate, AuthMiddlewareConfig, OnUnauthorized } from "./auth/index.js"
+export { createAuthMiddleware, getRequestHeader } from "./auth/index.js"
 
 // Content helpers
 export { audioContent, imageContent } from "./content/index.js"

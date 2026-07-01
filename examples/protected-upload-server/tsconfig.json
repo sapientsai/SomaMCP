@@ -1,0 +1,8 @@
+{
+  "extends": "ts-builds/tsconfig",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*", "tsdown.config.ts"]
+}
