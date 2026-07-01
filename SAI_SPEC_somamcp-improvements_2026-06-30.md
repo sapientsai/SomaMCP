@@ -8,6 +8,13 @@ Microsoft Graph server — a custom `/upload` HTTP route with API-key auth, plus
 image-returning tool — not theoretical. Every item is a **fleet-wide** improvement: it benefits any
 MCP server built on somamcp, not just this one.
 
+> **Reviewed 2026-06-30** against the somamcp tree — all code references verified accurate. Two
+> corrections folded in below: **#3 is already satisfied in code** (`wrapTool`'s success path returns the
+> value unchanged — `telemetryWrapper.ts:76` — so content-array/image returns pass through today, and
+> `imageContent`/`audioContent` are already exported at `src/index.ts:45`), so it drops to a **test + doc**
+> task and **`download_file` is NOT blocked — it can be ported now**. **#2** commits to the additive
+> helper (b). Recommended cut: ship **#1 + #2(b) as `1.1.0`**, close #3 with a test + doc, bundle #4 + #5.
+
 ---
 
 ## Summary
@@ -16,7 +23,7 @@ MCP server built on somamcp, not just this one.
 | --- | ----------------------------------------------------------- | ----------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Method-aware **protected routes** (`addRoute`)              | **High**    | new API (minor)    | We hand-mounted `POST /upload` via `getApp().post()` and **self-applied the auth gate** — a per-consumer security footgun.         |
 | 2   | **Normalized `authenticate` request** (or header helper)    | Medium      | additive           | One `authenticate` callback must shape-sniff `http.IncomingMessage` vs Hono `Request`. We wrote `extractAuthHeader()` boilerplate. |
-| 3   | **Content-array + image tool returns** (confirm + helper)   | Medium-High | docs/test + helper | A real tool (`download_file`) is **blocked/unported** because content-array/image returns aren't confirmed to pass through.        |
+| 3   | **Content-array + image tool returns** (lock in)            | test + doc  | docs/test          | **Already works** (`wrapTool` passes content-array through; `imageContent` exported) — just needs a test + doc. `download_file` unblocked. |
 | 4   | Surface dropped **httpStream options** (cors/stateless/SSL) | Low         | additive           | `TransportConfig` drops FastMCP options. Not needed for headless app-only; real gap for browser-facing servers.                    |
 | 5   | **Example**: httpStream + custom route + authenticate       | Low         | docs               | No example wires these together; we were the first.                                                                                |
 
@@ -68,6 +75,19 @@ Implementation: reuse `createAuthMiddleware(authenticate)` (already in `Artifact
 `app.on(methods, path, ...)` instead of `app.get`. Optionally also add a method-aware
 `DynamicArtifact` variant so it flows through the existing artifacts config.
 
+### Notes (from review)
+
+- **Route ordering.** Hono dispatches by registration order. `addRoute` should document *when* it may be
+  called relative to `start()` — which registers the introspection routes + artifacts. A concrete
+  `POST /upload` is fine after `start()`, but a wildcard path could shadow built-ins. Recommend allowing
+  `addRoute` pre-`start()` (registered before the introspection/artifact routes) and documenting the
+  order guarantee.
+- **`onUnauthorized` knob.** `createAuthMiddleware` currently hardcodes a `401 { error: "Unauthorized" }`
+  with no `WWW-Authenticate` header or customization. If shipping #1, add an optional
+  `RouteConfig.onUnauthorized?: (c) => Response` so consumers can shape the 401.
+- **Testing.** Model the `addRoute` tests on `test/artifacts/ArtifactManager.test.ts` (protected vs
+  unprotected, method dispatch, 401-on-throw).
+
 ### Migration impact
 
 `packages/graph` replaces `mountUploadRoute` + `authorizeCaller` with
@@ -98,43 +118,45 @@ const extractAuthHeader = (request: unknown): string | undefined => {
 
 That's boilerplate every consumer will re-invent.
 
-### Proposed
+### Proposed (decided: option b)
 
-Either (a) normalize the object passed to `authenticate` to a single shape across both paths, or (b)
-export a helper `getRequestHeader(request: unknown, name: string): string | undefined` that hides the
-shape difference. (b) is non-breaking and pairs with #1's `HonoContext`.
+Export a helper `getRequestHeader(request: unknown, name: string): string | undefined` that hides the
+shape difference. Purely additive and pairs with #1's `HonoContext`.
+
+Normalizing the object passed to `authenticate` to a single shape (option a) is rejected for now: it
+would **break any consumer already shape-sniffing** (including `packages/graph`'s `extractAuthHeader`).
+Leave normalization for a future major.
 
 ---
 
-## 3. Content-array + image tool returns — **Medium-High**
+## 3. Content-array + image tool returns — **test + doc only** (already works)
 
-### Problem
+### Status (corrected by review)
 
-A tool `execute` that returns inline images / multimodal content uses the MCP content-array shape:
+This **already works in somamcp today** — it was an unknown to us, not a gap:
 
-```ts
-return {
-  content: [
-    { type: "text", text },
-    { type: "image", data, mimeType },
-  ],
-}
-```
+- `wrapTool`'s success path returns the tool's value **unchanged** (`telemetryWrapper.ts:76`), so a
+  content-array return passes straight through to the FastMCP backend:
 
-FastMCP supports this, but it's **not confirmed/documented that somamcp's `wrapTool` passes
-content-array (and image) returns through unchanged** (vs. coercing to a string). Because of that
-uncertainty, `packages/graph` **deferred porting `download_file`** (which returns inline images and raw
-base64) from the gateway — a real capability blocked on an unknown.
+  ```ts
+  return {
+    content: [
+      { type: "text", text },
+      { type: "image", data, mimeType },
+    ],
+  }
+  ```
+
+- `imageContent` and `audioContent` are **already exported** (`src/index.ts:45`) — no new helper needed.
+
+`packages/graph` deferred `download_file` on this uncertainty; that uncertainty is now resolved, so
+**`download_file` is not blocked and can be ported today.**
 
 ### Proposed
 
-- Add a test + doc proving `execute` may return a string **or** a `{ content: [...] }` array (including
-  `{ type: "image", data, mimeType }`), passed through to the backend unchanged.
-- Optionally re-export an `imageContent({ buffer })`-style helper so consumers don't reach into fastmcp.
-
-### Impact
-
-Unblocks `download_file` and any image/multimodal tool across the fleet.
+Just lock the behavior in: add a `wrapTool` test asserting a `{ content: [...] }` (incl.
+`{ type: "image", data, mimeType }`) return passes through unchanged, and a short doc line. **No new
+code.**
 
 ---
 
@@ -156,11 +178,14 @@ the spelunking — and would double as the test fixture for #1–#3.
 
 ## Versioning & rollout
 
-- #1 (`addRoute`) and #2 (normalized request) touch the public surface → **minor bump** (e.g. `1.1.0`).
-- #3/#5 are docs/tests/helpers (patch-able); #4 is additive.
-- After shipping, `packages/graph` adopts #1+#2 and deletes `upload-route.ts`'s `authorizeCaller` +
-  `mountUploadRoute` + `extractAuthHeader`, and (pending the `download_file` decision) #3 unblocks that
-  port.
+- Ship **#1 (`addRoute`) + #2(b) (`getRequestHeader`) as `1.1.0`** — both touch the public surface.
+- **#3 is a test + doc** (no code); **#4** additive; **#5** docs. Bundle #4 + #5 into the same release.
+- **Semver footnote:** `1.0.15` already shipped a de-facto breaking change
+  (`GithubFeedbackOptions.getToken` → `Option<string>`), so strict semver is already loose here. Either
+  retroactively treat the next cut as `1.1.0` or commit to "1.x is patch-anywhere" — just be consistent.
+- After shipping, `packages/graph` adopts #1 + #2(b) and deletes `upload-route.ts`'s `authorizeCaller` +
+  `mountUploadRoute` + `extractAuthHeader`. `download_file` can be ported **independently** (not gated on
+  any somamcp change — see #3).
 
 ## Non-goals
 
