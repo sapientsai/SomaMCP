@@ -58,6 +58,51 @@ describe("telemetryWrapper", () => {
       })
     })
 
+    it("passes a content-array return through unchanged (text + image)", async () => {
+      const telemetry = createMockTelemetry()
+      const contentReturn = {
+        content: [
+          { text: "here you go", type: "text" as const },
+          { data: "iVBORw0KGgoAAAANS==", mimeType: "image/png", type: "image" as const },
+        ],
+      }
+      const tool = {
+        execute: vi.fn().mockResolvedValue(contentReturn),
+        name: "download-file",
+      }
+
+      const wrapped = wrapTool(tool, telemetry)
+      const result = await wrapped.execute({}, createMockContext())
+
+      // wrapTool's success branch returns `value` unchanged — content arrays
+      // (including image parts) reach the backend as authored.
+      expect(result).toBe(contentReturn)
+      expect(result).toEqual({
+        content: [
+          { text: "here you go", type: "text" },
+          { data: "iVBORw0KGgoAAAANS==", mimeType: "image/png", type: "image" },
+        ],
+      })
+      expect(telemetry.events[0]).toMatchObject({ name: "download-file", type: "tool.execute" })
+    })
+
+    it("passes a ContentResult (content + isError) through unchanged", async () => {
+      const telemetry = createMockTelemetry()
+      const contentReturn = {
+        content: [{ text: "resource not found", type: "text" as const }],
+        isError: true,
+      }
+      const tool = {
+        execute: vi.fn().mockResolvedValue(contentReturn),
+        name: "lookup",
+      }
+
+      const wrapped = wrapTool(tool, telemetry)
+      const result = await wrapped.execute({}, createMockContext())
+
+      expect(result).toBe(contentReturn)
+    })
+
     it("captures sessionId and requestId from context", async () => {
       const telemetry = createMockTelemetry()
       const tool = {

@@ -23,6 +23,19 @@ const truncateOutput = (result: unknown, maxSize: number = DEFAULT_MAX_OUTPUT_SI
 
 const toTry = <T>(promise: Promise<T>): Promise<Try<T>> => Try.fromPromise(promise)
 
+/**
+ * Wrap a tool's `execute` in telemetry + error enrichment.
+ *
+ * The success path returns the tool's return value **unchanged**, so any of the
+ * supported shapes reach the backend intact: a plain string, a `ContentResult`
+ * (`{ content: [...], isError? }`), or a content-array with multimodal parts
+ * (`{ type: "image", data, mimeType }`, `audio`, `resource`, etc.). Use the
+ * exported `imageContent` / `audioContent` helpers to build parts without
+ * reaching into the backend.
+ *
+ * The failure path converts an error to a `ContentResult` with `isError: true`
+ * and the enriched error payload as the text content.
+ */
 export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
   tool: Tool<T, P>,
   telemetry: TelemetryCollector,

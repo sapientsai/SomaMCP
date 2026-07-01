@@ -6,6 +6,8 @@ import { createDashboardArtifact } from "./artifacts/DashboardArtifact.js"
 import { createHealthArtifact, createHealthDetailArtifact } from "./artifacts/HealthArtifact.js"
 import { createInfoArtifact } from "./artifacts/InfoArtifact.js"
 import type { ArtifactAuthenticate } from "./artifacts/types.js"
+import type { Authenticate } from "./auth/index.js"
+import { createAuthMiddleware } from "./auth/index.js"
 import type { BackendSession } from "./backend/adapter.js"
 import { createFastMCPBackend } from "./backend/fastmcp.js"
 import { getRuntimeInfo, resolveBuildInfo } from "./buildInfo.js"
@@ -25,6 +27,7 @@ import type {
   ToolOptions,
 } from "./types.js"
 import type { SchemaParams, SessionAuth, Tool } from "./types/core.js"
+import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
 export const createServer = <T extends SessionAuth = SessionAuth>(
@@ -184,6 +187,16 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     })
   }
 
+  const addRoute = (route: RouteConfig): void => {
+    const app = backend.getApp()
+    const methods = Array.isArray(route.method) ? [...route.method] : [route.method]
+    if (route.protected) {
+      const authenticate = Option(serverConfig.authenticate as Authenticate).orUndefined()
+      app.use(route.path, createAuthMiddleware({ authenticate, onUnauthorized: route.onUnauthorized }))
+    }
+    app.on(methods, route.path, (c) => route.handler(c))
+  }
+
   return {
     get name() {
       return serverName
@@ -208,6 +221,8 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     addResourceTemplate: (...args: ReadonlyArray<unknown>): void => {
       backend.addResourceTemplate(...args)
     },
+
+    addRoute,
 
     addTool,
     addTools: <P extends SchemaParams>(tools: Tool<T, P>[]): void => {

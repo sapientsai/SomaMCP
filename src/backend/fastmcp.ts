@@ -90,8 +90,12 @@ export const createFastMCPBackend = <T extends SessionAuth = SessionAuth>(
         return
       }
       if (transport.transportType === "httpStream") {
+        // somamcp's HttpStreamConfig is a structural superset of FastMCP's
+        // fastmcp-specific types (CorsOptions, EventStore) are kept out of the
+        // public surface — cast to unknown at the boundary.
+        type FastMCPHttpStream = NonNullable<Parameters<FastMCP<FT>["start"]>[0]>["httpStream"]
         await server.start({
-          httpStream: transport.httpStream,
+          httpStream: transport.httpStream as unknown as FastMCPHttpStream,
           transportType: "httpStream",
         })
       } else {

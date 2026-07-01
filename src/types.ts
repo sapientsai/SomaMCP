@@ -7,6 +7,7 @@ import type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
 import type { GatewayConfig, GatewayManagerInstance } from "./gateway/types.js"
 import type { TelemetryCollector, ToolCaptureConfig } from "./telemetry/TelemetryCollector.js"
 import type { Prompt, PromptArgument, Resource, SchemaParams, ServerStatus, SessionAuth, Tool } from "./types/core.js"
+import type { RouteConfig } from "./types/routes.js"
 import type { ServerConfig, TransportConfig } from "./types/server.js"
 
 export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfig<T> & {
@@ -71,6 +72,7 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   addResource: (resource: Resource<T>) => void
   addResources: (resources: Resource<T>[]) => void
   addResourceTemplate: (...args: ReadonlyArray<unknown>) => void
+  addRoute: (route: RouteConfig) => void
   addTool: <P extends SchemaParams>(tool: Tool<T, P>) => void
   addTools: <P extends SchemaParams>(tools: Tool<T, P>[]) => void
   getApp: () => Hono

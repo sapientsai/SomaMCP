@@ -1,25 +1,7 @@
-import { Option, Try } from "functype"
-import type { Context, Hono, MiddlewareHandler } from "hono"
+import type { Hono } from "hono"
 
+import { createAuthMiddleware } from "../auth/index.js"
 import type { ArtifactAuthenticate, ArtifactConfig } from "./types.js"
-
-const unauthorized = (c: Context): Response => c.json({ error: "Unauthorized" }, 401)
-
-const createAuthMiddleware =
-  (authenticate?: ArtifactAuthenticate): MiddlewareHandler =>
-  async (c, next) => {
-    if (!authenticate) {
-      return unauthorized(c)
-    }
-    const req = Option(c.env as { incoming?: unknown })
-      .flatMap((e) => Option(e.incoming))
-      .orElse(c.req.raw)
-    const result = await Try.fromPromise(authenticate(req))
-    if (result.isFailure()) {
-      return unauthorized(c)
-    }
-    await next()
-  }
 
 export const registerArtifacts = (
   app: Hono,
@@ -28,7 +10,7 @@ export const registerArtifacts = (
 ): void => {
   artifacts.forEach((artifact) => {
     if (artifact.protected) {
-      app.use(artifact.path, createAuthMiddleware(authenticate))
+      app.use(artifact.path, createAuthMiddleware({ authenticate }))
     }
 
     switch (artifact.type) {
