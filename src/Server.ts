@@ -117,9 +117,38 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     version: serverVersion,
   })
 
+  /**
+   * Record a tool in the capability inventory.
+   *
+   * Every path that reaches `backend.addTool` must also come through here, or
+   * the tool is served but invisible to `info` / `getCapabilities()` — which is
+   * how `info` itself, and proxied gateway tools, went uncounted.
+   *
+   * Deduplicated by name: `start()` may run more than once, and MCP tool names
+   * are unique, so re-registering must not inflate the count.
+   */
+  const trackTool = (tool: { description?: string; name: string }): void => {
+    if (registeredTools.some((registered) => registered.name === tool.name)) return
+    registeredTools.push({ description: tool.description, name: tool.name })
+  }
+
+  /**
+   * Drop a capability from the inventory by name.
+   *
+   * Skipped when the backend cannot actually remove anything (the edge backend
+   * only warns), because a capability that is still served must still be counted.
+   */
+  const untrack = (inventory: Array<{ name: string }>, name: string): void => {
+    if (backend.supportsRemoval === false) return
+    const index = inventory.findIndex((entry) => entry.name === name)
+    if (index >= 0) inventory.splice(index, 1)
+  }
+
   // Register introspection MCP tool (default: enabled). Only `info` — safe for agents.
   if (enableIntrospection !== false) {
-    backend.addTool(createInfoTool<T>(() => getInfo(), `${prefix}info`))
+    const infoTool = createInfoTool<T>(() => getInfo(), `${prefix}info`)
+    backend.addTool(infoTool)
+    trackTool(infoTool)
   }
 
   // Register artifacts on the Hono app
@@ -170,10 +199,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     const captureConfig = "captureConfig" in tool ? tool.captureConfig : undefined
     const wrapped = wrapTool(tool, telemetry, captureConfig)
     backend.addTool(wrapped)
-    registeredTools.push({
-      description: tool.description,
-      name: tool.name,
-    })
+    trackTool(tool)
   }
 
   const addResource = (resource: Parameters<SomaServerInstance<T>["addResource"]>[0]): void => {
@@ -250,16 +276,21 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
 
     getInfo,
 
+    // The inventory has to shrink too, or capability counts drift upward as
+    // capabilities are removed.
     removePrompt: (name: string): void => {
       backend.removePrompt(name)
+      untrack(registeredPrompts, name)
     },
 
     removeResource: (name: string): void => {
       backend.removeResource(name)
+      untrack(registeredResources, name)
     },
 
     removeTool: (name: string): void => {
       backend.removeTool(name)
+      untrack(registeredTools, name)
     },
 
     async start(transport?: TransportConfig): Promise<void> {
@@ -280,7 +311,10 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
         .getAll()
         .filter((gateway) => gateway.status === "connected" && gateway.config.proxyTools !== false)
         .forEach((gateway) => {
-          createProxiedTools<T>(gateway, telemetry).forEach((tool) => backend.addTool(tool))
+          createProxiedTools<T>(gateway, telemetry).forEach((tool) => {
+            backend.addTool(tool)
+            trackTool(tool)
+          })
         })
     },
 

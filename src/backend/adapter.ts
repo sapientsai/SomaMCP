@@ -39,6 +39,16 @@ export type BackendAdapter<T extends SessionAuth = SessionAuth> = {
 
   on: <E extends keyof BackendEvents<T>>(event: E, handler: BackendEvents<T>[E]) => void
 
+  /**
+   * Whether `removeTool` / `removeResource` / `removePrompt` actually take
+   * effect. Defaults to true when absent.
+   *
+   * The edge backend sets this false: EdgeFastMCP exposes no removal API, so its
+   * `remove*` calls only warn. Capability counts must not shrink for a tool that
+   * is still being served.
+   */
+  readonly supportsRemoval?: boolean
+
   removePrompt: (name: string) => void
   removeResource: (name: string) => void
   removeTool: (name: string) => void

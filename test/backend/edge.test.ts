@@ -105,10 +105,55 @@ describe("createEdgeBackend", () => {
     })
 
     expect(server.getInfo().name).toBe("edge-server")
-    // The built-in `info` tool registers straight on the backend and is not
-    // counted here — only tools added via addTool are.
+    // Counts the built-in `info` tool as well as `echo` — the count must match
+    // what tools/list actually serves.
+    expect(server.getInfo().capabilities.tools).toBe(2)
+    expect(
+      server
+        .getCapabilities()
+        .tools.map((t) => t.name)
+        .sort(),
+    ).toEqual(["echo", "info"])
+  })
+
+  it("reports a capability count matching what tools/list serves", async () => {
+    const server = createServer({ ...baseConfig })
+    server.addTool({
+      description: "Echo",
+      execute: async () => "ok",
+      name: "echo",
+      parameters: z.object({}),
+    })
+
+    const body = (await (await server.fetch(rpc("tools/list"))).json()) as {
+      result: { tools: Array<{ name: string }> }
+    }
+
+    // The reported bug: info reported 4 while 5 tools were exposed, because the
+    // `info` tool registered straight on the backend and was never inventoried.
+    expect(server.getInfo().capabilities.tools).toBe(body.result.tools.length)
+  })
+
+  it("keeps counting a tool the edge backend cannot actually remove", async () => {
+    const server = createServer({ ...baseConfig, enableIntrospection: false })
+    server.addTool({
+      description: "Echo",
+      execute: async () => "ok",
+      name: "echo",
+      parameters: z.object({}),
+    })
     expect(server.getInfo().capabilities.tools).toBe(1)
-    expect(server.getCapabilities().tools).toEqual([{ description: "Echo a message", name: "echo" }])
+
+    // EdgeFastMCP has no removal API, so `echo` is still served. The count must
+    // not drop, or it would understate what tools/list returns.
+    server.removeTool("echo")
+    expect(server.getInfo().capabilities.tools).toBe(1)
+
+    const body = (await (await server.fetch(rpc("tools/list"))).json()) as {
+      result: { tools: Array<{ name: string }> }
+    }
+    expect(body.result.tools).toHaveLength(1)
+    expect(server.getInfo().capabilities.tools).toBe(body.result.tools.length)
   })
 
   it("start and stop are inert", async () => {

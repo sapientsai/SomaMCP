@@ -180,4 +180,42 @@ describe("Server", () => {
 
     expect(server.name).toBe("priority-server")
   })
+
+  it("counts the built-in info tool in its own capability count", () => {
+    const server = createServer({ name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+
+    // Reported from a deployed server: capabilities.tools said 4 while 5 tools
+    // were exposed, because `info` registered straight on the backend.
+    expect(server.getInfo().capabilities.tools).toBe(2)
+    expect(
+      server
+        .getCapabilities()
+        .tools.map((t) => t.name)
+        .sort(),
+    ).toEqual(["greet", "info"])
+  })
+
+  it("omits the info tool from the count when introspection is disabled", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
+  })
+
+  it("drops a removed tool from the count on a backend that supports removal", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
+
+    server.removeTool("greet")
+    expect(server.getInfo().capabilities.tools).toBe(0)
+    expect(server.getCapabilities().tools).toEqual([])
+  })
+
+  it("does not double-count a tool registered twice", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    server.addTool({ execute: async () => "hi again", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
+  })
 })

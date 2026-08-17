@@ -190,10 +190,13 @@ export const createEdgeBackend = <T extends SessionAuth = SessionAuth>(
     // The stateless edge transport emits no connect/disconnect events.
     on: () => {},
 
-    // EdgeFastMCP exposes no removal API; registration is one-way.
+    // EdgeFastMCP exposes no removal API; registration is one-way. The flag keeps
+    // capability counts honest — a "removed" tool is still served, so it must
+    // still be counted.
     removePrompt: () => unsupported("removePrompt"),
     removeResource: () => unsupported("removeResource"),
     removeTool: () => unsupported("removeTool"),
+    supportsRemoval: false,
 
     // Edge runtimes are request-driven — there is nothing to start or stop.
     start: async () => {},

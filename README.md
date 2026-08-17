@@ -379,9 +379,12 @@ The root `somamcp` barrel exports `createJsonFileTelemetry`, `imageContent`, and
 | Multi-result resources (`load()` returning array)  | ✅               | ⚠️ first result only, warns       |
 | `reportProgress` / `streamContent` in tools        | ✅               | ⚠️ inert no-ops                   |
 | `removeTool` / `removeResource` / `removePrompt`   | ✅               | ⚠️ warns, does nothing            |
+| `supportsRemoval`                                  | `true`           | `false`                           |
 | `addResourceTemplate`                              | ✅               | ⚠️ warns, does nothing            |
 
 The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has no server→client channel, and treats resources as single-valued. They log through `config.logger` rather than failing, so passing a `logger` is recommended on edge.
+
+**Capability counts.** `getInfo().capabilities` counts every tool actually served — including the built-in `info` tool and any proxied gateway tools. Because the edge backend reports `supportsRemoval: false`, a `removeTool` there leaves the count untouched: the tool is still being served, so it is still counted.
 
 **Auth.** `EdgeFastMCPOptions` has no `authenticate` field, so somamcp gates the MCP endpoint itself with the same middleware that protects artifacts and routes. Behaviour matches Node: configure `authenticate`, and unauthenticated MCP calls get a 401.
 
