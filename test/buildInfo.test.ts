@@ -79,4 +79,62 @@ describe("getRuntimeInfo", () => {
       globalThis.process = original
     }
   })
+
+  /**
+   * Swap in a fake global for the duration of a callback.
+   *
+   * Uses defineProperty rather than assignment: `navigator` is an accessor with
+   * only a getter on Node 22+, so `globalThis.navigator = x` throws.
+   */
+  const withGlobal = (key: string, value: unknown, run: () => void): void => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, key)
+    Object.defineProperty(globalThis, key, { configurable: true, value, writable: true })
+    try {
+      run()
+    } finally {
+      if (original) Object.defineProperty(globalThis, key, original)
+      else delete (globalThis as Record<string, unknown>)[key]
+    }
+  }
+
+  it("reports edge on Cloudflare Workers even though nodejs_compat provides process", () => {
+    // The 1.2.0 regression: Workers with nodejs_compat supplies a real
+    // process.versions.node (v22.x), so a process-first check called it "node".
+    // Production /info returned runtime "node", nodeVersion "v22.19.0".
+    expect(process.versions.node).toBeDefined()
+
+    withGlobal("navigator", { userAgent: "Cloudflare-Workers" }, () => {
+      const info = getRuntimeInfo()
+      expect(info.runtime).toBe("edge")
+      // Node fields describe the compat shim, not the runtime — report unknown.
+      expect(info.nodeVersion).toBe("unknown")
+      expect(info.arch).toBe("unknown")
+      expect(info.platform).toBe("Cloudflare-Workers")
+    })
+  })
+
+  it("reports edge on Deno", () => {
+    withGlobal("Deno", { version: { deno: "2.0.0" } }, () => {
+      expect(getRuntimeInfo().runtime).toBe("edge")
+    })
+  })
+
+  it("reports edge on Vercel Edge", () => {
+    withGlobal("EdgeRuntime", "vercel", () => {
+      expect(getRuntimeInfo().runtime).toBe("edge")
+    })
+  })
+
+  it("still reports node for an unrelated navigator user agent", () => {
+    // A browser-ish UA must not be mistaken for an edge runtime.
+    withGlobal("navigator", { userAgent: "Mozilla/5.0" }, () => {
+      expect(getRuntimeInfo().runtime).toBe("node")
+    })
+  })
+
+  it("still reports node when navigator exists without a userAgent", () => {
+    withGlobal("navigator", {}, () => {
+      expect(getRuntimeInfo().runtime).toBe("node")
+    })
+  })
 })

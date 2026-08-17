@@ -24,7 +24,33 @@ export type RuntimeInfo = {
 const nodeProcess = (): Option<Partial<NodeJS.Process>> =>
   Option((globalThis as { process?: Partial<NodeJS.Process> }).process)
 
-const isNode = (): boolean => nodeProcess().flatMap((p) => Option(p.versions?.node)).isEmpty === false
+const globalValue = (key: string): Option<unknown> => Option((globalThis as Record<string, unknown>)[key])
+
+/** Cloudflare Workers reports exactly this string; it is their documented signal. */
+const CLOUDFLARE_WORKERS_UA = "Cloudflare-Workers"
+
+const userAgent = (): Option<string> =>
+  globalValue("navigator").flatMap((n) => Option((n as { userAgent?: string }).userAgent))
+
+/**
+ * Positively identify an edge runtime.
+ *
+ * This is checked BEFORE `process`, and the order is the whole point: Cloudflare
+ * Workers running with `nodejs_compat` supplies a working `process.versions.node`
+ * (v22.x), so a process-first check reports Workers as "node" — which is what
+ * shipped in 1.2.0. Absence of `process` is not a reliable edge signal, only a
+ * sufficient one; these globals are the reliable part.
+ *
+ * Bun is deliberately NOT listed. It is a Node-family server runtime with full
+ * Node APIs, so "node" is the accurate answer there even though `somamcp/edge`
+ * runs on it.
+ */
+const isEdge = (): boolean =>
+  userAgent().contains(CLOUDFLARE_WORKERS_UA) ||
+  globalValue("Deno").isEmpty === false ||
+  globalValue("EdgeRuntime").isEmpty === false
+
+const isNode = (): boolean => !isEdge() && nodeProcess().flatMap((p) => Option(p.versions?.node)).isEmpty === false
 
 const readEnv = (key: string): Option<string> =>
   nodeProcess()
@@ -68,7 +94,8 @@ export const getRuntimeInfo = (): RuntimeInfo =>
         arch: UNKNOWN,
         nodeVersion: UNKNOWN,
         // Workers reports "Cloudflare-Workers" here; it is the only platform signal
-        // available. Read through a cast for the same reason as `nodeProcess` above.
-        platform: Option((globalThis as { navigator?: { userAgent?: string } }).navigator?.userAgent).orElse(UNKNOWN),
+        // available. Node fields are reported as unknown even under nodejs_compat,
+        // where they would describe the compatibility shim rather than the runtime.
+        platform: userAgent().orElse(UNKNOWN),
         runtime: "edge",
       }

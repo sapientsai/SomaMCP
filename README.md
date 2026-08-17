@@ -393,7 +393,9 @@ The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has n
 
 **Route precedence.** somamcp owns the outer Hono app and falls through to `EdgeFastMCP` for anything unmatched. This ordering is deliberate: `EdgeFastMCP` registers its own `/health` at construction, and Hono is first-match-wins, so mounting it first would shadow somamcp's health artifact.
 
-**Runtime reporting.** `getInfo().runtime` reports the runtime _family_: `"node"` whenever a Node-compatible `process` global is present. Bun, and Workers with `nodejs_compat` enabled, therefore report `"node"` even under `somamcp/edge`.
+**Runtime reporting.** `getInfo().runtime` is `"edge"` on Cloudflare Workers, Deno, and Vercel Edge, and `"node"` otherwise. Edge runtimes are detected positively — `navigator.userAgent === "Cloudflare-Workers"`, or a `Deno` / `EdgeRuntime` global — rather than by the absence of `process`, because Workers with `nodejs_compat` supplies a working `process.versions.node`. On edge, `arch` / `nodeVersion` / `platform` report `"unknown"` or the user agent, rather than describing the compatibility shim.
+
+Bun deliberately reports `"node"`: it is a Node-family server runtime with full Node APIs, so that is the accurate answer even though `somamcp/edge` runs there.
 
 ## Backend Abstraction
 
