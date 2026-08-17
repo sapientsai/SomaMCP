@@ -74,6 +74,8 @@ export const createFastMCPBackend = <T extends SessionAuth = SessionAuth>(
       server.addTool(tool as unknown as FMCPTool<FT, FMCPToolParameters>)
     },
 
+    fetch: async (request: Request): Promise<Response> => server.getApp().fetch(request),
+
     getApp: (): Hono => server.getApp(),
 
     on: (event, handler) => {

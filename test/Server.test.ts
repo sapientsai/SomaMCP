@@ -1,7 +1,7 @@
 import { directSilentLogger } from "functype-log"
 import { describe, expect, it } from "vitest"
 
-import { createServer } from "../src/Server.js"
+import { createServer } from "../src/index.js"
 import type { TelemetryCollector, TelemetryEvent } from "../src/telemetry/TelemetryCollector.js"
 
 const createCollector = (): TelemetryCollector & {

@@ -8,7 +8,7 @@ import {
   DEFAULT_HEALTH_DETAIL_PATH,
   DEFAULT_HEALTH_PATH,
 } from "../../src/artifacts/HealthArtifact.js"
-import { createServer } from "../../src/Server.js"
+import { createServer } from "../../src/index.js"
 import type { ServerHealth } from "../../src/types.js"
 
 const stoppedHealth: ServerHealth = {

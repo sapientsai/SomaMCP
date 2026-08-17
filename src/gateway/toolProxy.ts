@@ -1,7 +1,9 @@
 import { Try } from "functype"
 
-import type { TelemetryCollector } from "@/telemetry"
-import { createEnrichedError } from "@/telemetry"
+// Imported from the specific modules rather than the "@/telemetry" barrel: that
+// barrel re-exports JsonFileTelemetry, which drags `node:fs` into the edge bundle.
+import { createEnrichedError } from "@/telemetry/EnrichedError"
+import type { TelemetryCollector } from "@/telemetry/TelemetryCollector"
 
 import type { ContentResult, SessionAuth, Tool } from "../types/core.js"
 import type { GatewayInstance } from "./types.js"

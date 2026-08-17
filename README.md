@@ -328,9 +328,86 @@ await server.start({
 })
 ```
 
+## Edge Runtimes (Cloudflare Workers, Deno Deploy, Bun)
+
+Import from `somamcp/edge` instead of `somamcp`. The API is identical — `backend` just defaults to `createEdgeBackend` rather than the Node FastMCP backend.
+
+```typescript
+import { createServer } from "somamcp/edge"
+import { z } from "zod"
+
+const server = createServer({
+  name: "my-worker",
+  version: "1.0.0",
+  // Workers has no process.env — pass build info from the fetch handler's `env`.
+  build: { commit: "abc123", environment: "production" },
+})
+
+server.addTool({
+  name: "greet",
+  description: "Greet someone by name",
+  parameters: z.object({ name: z.string() }),
+  execute: async ({ name }) => `Hello, ${name}!`,
+})
+
+export default {
+  fetch: (request: Request) => server.fetch(request),
+}
+```
+
+`server.fetch` serves both the MCP endpoint and every artifact/route you register, so `/health`, `/info`, and `/dashboard` work as they do on Node.
+
+### Why a separate entry point
+
+The root `somamcp` barrel exports `createJsonFileTelemetry`, `imageContent`, and `audioContent`, which import `node:fs`. Importing it from a Worker pulls Node built-ins into the bundle. `somamcp/edge` is built as a separate pass with no shared chunks, and `pnpm check:edge` fails the build if any `node:` import reaches the edge output.
+
+### Feature parity
+
+| Feature                                            | Node (`somamcp`) | Edge (`somamcp/edge`)             |
+| -------------------------------------------------- | ---------------- | --------------------------------- |
+| Tools, resources, prompts                          | ✅               | ✅                                |
+| Artifacts, `addRoute`, auth middleware             | ✅               | ✅                                |
+| `authenticate` on the MCP endpoint                 | ✅               | ✅ — enforced by somamcp          |
+| `/health`, `/health/detail`, `/info`, `/dashboard` | ✅               | ✅                                |
+| `info` introspection tool                          | ✅               | ✅                                |
+| Telemetry (console, composite, custom)             | ✅               | ✅                                |
+| Tool errors (`isError`)                            | ✅               | ✅ — sent as JSON-RPC errors      |
+| File telemetry, `imageContent` / `audioContent`    | ✅               | ❌ — need `node:fs`               |
+| stdio transport                                    | ✅               | ❌ — HTTP only                    |
+| Sessions, `connect` / `disconnect` events          | ✅               | ❌ — stateless                    |
+| Gateways (proxying remote MCP servers)             | ✅               | ⚠️ requires `start()` — see below |
+| Multi-result resources (`load()` returning array)  | ✅               | ⚠️ first result only, warns       |
+| `reportProgress` / `streamContent` in tools        | ✅               | ⚠️ inert no-ops                   |
+| `removeTool` / `removeResource` / `removePrompt`   | ✅               | ⚠️ warns, does nothing            |
+| `addResourceTemplate`                              | ✅               | ⚠️ warns, does nothing            |
+
+The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has no server→client channel, and treats resources as single-valued. They log through `config.logger` rather than failing, so passing a `logger` is recommended on edge.
+
+**Auth.** `EdgeFastMCPOptions` has no `authenticate` field, so somamcp gates the MCP endpoint itself with the same middleware that protects artifacts and routes. Behaviour matches Node: configure `authenticate`, and unauthenticated MCP calls get a 401.
+
+**Tool errors.** `EdgeFastMCP` builds its response as `result: { content }` and discards `isError`, which would make a failed tool look successful. The edge adapter rethrows on `isError` so the client receives a JSON-RPC error instead.
+
+**Gateways** need `await server.start()` to connect and register proxied tools. Workers forbids network I/O at module scope, so call it lazily inside your first request rather than at the top level. Without it, gateway tools are never registered.
+
+**Registering routes late.** Hono builds its router on the first request and then rejects new routes ("matcher is already built"). Register every artifact and `addRoute` before serving traffic — on edge that means at module scope, not inside the fetch handler.
+
+**Route precedence.** somamcp owns the outer Hono app and falls through to `EdgeFastMCP` for anything unmatched. This ordering is deliberate: `EdgeFastMCP` registers its own `/health` at construction, and Hono is first-match-wins, so mounting it first would shadow somamcp's health artifact.
+
+**Runtime reporting.** `getInfo().runtime` reports the runtime _family_: `"node"` whenever a Node-compatible `process` global is present. Bun, and Workers with `nodejs_compat` enabled, therefore report `"node"` even under `somamcp/edge`.
+
 ## Backend Abstraction
 
-The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. To use a non-FastMCP backend, implement `BackendFactory`:
+The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. `createServer` accepts a `backend` factory — this is how `somamcp/edge` swaps in the edge adapter:
+
+```typescript
+import { createServer } from "somamcp"
+import { createEdgeBackend } from "somamcp/edge"
+
+// equivalent to importing createServer from "somamcp/edge"
+const server = createServer({ name: "my-server", version: "1.0.0", backend: createEdgeBackend })
+```
+
+To use a different backend entirely, implement `BackendFactory`:
 
 ```typescript
 import { createFastMCPBackend } from "somamcp/backend"

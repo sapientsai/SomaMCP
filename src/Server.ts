@@ -8,8 +8,7 @@ import { createInfoArtifact } from "./artifacts/InfoArtifact.js"
 import type { ArtifactAuthenticate } from "./artifacts/types.js"
 import type { Authenticate } from "./auth/index.js"
 import { createAuthMiddleware } from "./auth/index.js"
-import type { BackendSession } from "./backend/adapter.js"
-import { createFastMCPBackend } from "./backend/fastmcp.js"
+import type { BackendFactory, BackendSession } from "./backend/adapter.js"
 import { getRuntimeInfo, resolveBuildInfo } from "./buildInfo.js"
 import { createGatewayManager } from "./gateway/GatewayManager.js"
 import { createProxiedTools } from "./gateway/toolProxy.js"
@@ -30,11 +29,20 @@ import type { SchemaParams, SessionAuth, Tool } from "./types/core.js"
 import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
-export const createServer = <T extends SessionAuth = SessionAuth>(
-  options: SomaServerOptions<T>,
+/**
+ * Backend-agnostic server core.
+ *
+ * `backend` is required here on purpose. Defaulting it would mean a static import
+ * of the Node FastMCP backend, which lands in every bundle that reaches this
+ * module — including `somamcp/edge`. The entry barrels supply the default instead:
+ * `somamcp` binds createFastMCPBackend, `somamcp/edge` binds createEdgeBackend.
+ */
+export const createServerCore = <T extends SessionAuth = SessionAuth>(
+  options: SomaServerOptions<T> & { backend: BackendFactory<T> },
 ): SomaServerInstance<T> => {
   const {
     artifacts,
+    backend: backendFactory,
     backendOptions,
     build: buildOverride,
     enableDashboard,
@@ -59,7 +67,7 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
 
   const telemetry: TelemetryCollector =
     telemetryOption ?? (logLayer ? createLogLayerTelemetry(logLayer) : NoopTelemetry)
-  const backend = createFastMCPBackend<T>(serverConfig, backendOptions)
+  const backend = backendFactory(serverConfig, backendOptions)
   const gatewayManager = createGatewayManager(telemetry)
 
   const registeredTools: Array<{ description?: string; name: string }> = []
@@ -228,6 +236,9 @@ export const createServer = <T extends SessionAuth = SessionAuth>(
     addTools: <P extends SchemaParams>(tools: Tool<T, P>[]): void => {
       tools.forEach((tool) => addTool(tool))
     },
+
+    fetch: async (request: Request): Promise<Response> =>
+      backend.fetch ? backend.fetch(request) : backend.getApp().fetch(request),
 
     getApp: (): Hono => backend.getApp(),
 

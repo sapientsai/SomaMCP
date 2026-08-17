@@ -1,13 +1,29 @@
+// somamcp/edge — edge-runtime entry point (Cloudflare Workers, Deno Deploy, Bun).
+//
+// This barrel deliberately imports from source modules rather than the package
+// barrels. `./index.js`, `./telemetry/index.js`, and `./content/index.js` all
+// re-export helpers that import `node:fs` (createJsonFileTelemetry,
+// imageContent, audioContent), which would drag Node built-ins into a Workers
+// bundle. Anything exported here must be reachable without touching `node:*`.
+
 // Core
-import { createFastMCPBackend } from "./backend/fastmcp.js"
+import { createEdgeBackend } from "./backend/edge.js"
 import { createServerCore } from "./Server.js"
 import type { SomaServerInstance, SomaServerOptions } from "./types.js"
 import type { SessionAuth } from "./types/core.js"
 
-/** Create a server backed by FastMCP (Node). For edge runtimes, use `somamcp/edge`. */
+/**
+ * Create a server backed by the edge runtime adapter. Identical to the `somamcp`
+ * `createServer` except that `backend` defaults to `createEdgeBackend`.
+ *
+ * ```ts
+ * const server = createServer({ name: "my-server", version: "1.0.0" })
+ * export default { fetch: (req: Request) => server.fetch(req) }
+ * ```
+ */
 export const createServer = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T>,
-): SomaServerInstance<T> => createServerCore({ ...options, backend: options.backend ?? createFastMCPBackend<T> })
+): SomaServerInstance<T> => createServerCore({ ...options, backend: options.backend ?? createEdgeBackend<T> })
 
 export { createServerCore } from "./Server.js"
 export type {
@@ -20,6 +36,11 @@ export type {
   ToolOptions,
 } from "./types.js"
 
+// Edge backend
+export type { BackendAdapter, BackendFactory, BackendSession } from "./backend/adapter.js"
+export type { EdgeBackendOptions } from "./backend/edge.js"
+export { createEdgeBackend } from "./backend/edge.js"
+
 // Build info
 export type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
 export { getRuntimeInfo, readBuildInfoFromEnv, resolveBuildInfo } from "./buildInfo.js"
@@ -31,8 +52,10 @@ export type {
   Content,
   ContentResult,
   Context,
+  HttpStreamConfig,
   ImageContent,
   InferSchemaOutput,
+  Logger,
   Progress,
   Prompt,
   PromptArgument,
@@ -41,35 +64,29 @@ export type {
   ResourceContent,
   ResourceLink,
   ResourceResult,
+  RouteConfig,
+  RouteMethod,
   SchemaParams,
+  ServerConfig,
   ServerStatus,
   SessionAuth,
   TextContent,
   Tool,
   ToolAnnotations,
-} from "./types/index.js"
-export type {
-  HttpStreamConfig,
-  Logger,
-  RouteConfig,
-  RouteMethod,
-  ServerConfig,
   TransportConfig,
 } from "./types/index.js"
 export { UserError } from "./types/index.js"
 
-// Auth helpers (for `authenticate` callbacks + custom middleware)
+// Auth helpers
 export type { Authenticate, AuthMiddlewareConfig, OnUnauthorized } from "./auth/index.js"
 export { createAuthMiddleware, getRequestHeader } from "./auth/index.js"
 
-// Content helpers
-export { audioContent, imageContent } from "./content/index.js"
-
-// Backend
-export type { BackendAdapter, BackendFactory, BackendSession } from "./backend/index.js"
-export { createFastMCPBackend } from "./backend/index.js"
-
-// Telemetry
+// Telemetry — file-backed collectors are Node-only and intentionally absent.
+export { createCompositeTelemetry } from "./telemetry/CompositeTelemetry.js"
+export { createConsoleTelemetry } from "./telemetry/ConsoleTelemetry.js"
+export type { EnrichedErrorResponse } from "./telemetry/EnrichedError.js"
+export { classifyError, createEnrichedError } from "./telemetry/EnrichedError.js"
+export { NoopTelemetry } from "./telemetry/NoopTelemetry.js"
 export type {
   CaptureLevel,
   ErrorCategory,
@@ -77,22 +94,8 @@ export type {
   TelemetryEvent,
   TelemetryEventType,
   ToolCaptureConfig,
-} from "./telemetry/index.js"
-export type { EnrichedErrorResponse, JsonFileTelemetryOptions } from "./telemetry/index.js"
-export {
-  classifyError,
-  createCompositeTelemetry,
-  createConsoleTelemetry,
-  createEnrichedError,
-  createJsonFileTelemetry,
-  createLogLayerTelemetry,
-  NoopTelemetry,
-} from "./telemetry/index.js"
-export { wrapPrompt, wrapResource, wrapTool } from "./telemetry/index.js"
-
-// Logging
-export { createDefaultLogger } from "./logging.js"
-export type { DirectLogger } from "functype-log"
+} from "./telemetry/TelemetryCollector.js"
+export { wrapPrompt, wrapResource, wrapTool } from "./telemetry/telemetryWrapper.js"
 
 // Artifacts
 export type {
@@ -145,7 +148,7 @@ export {
   redact,
 } from "./feedback/index.js"
 
-// Gateway
+// Gateway — uses StreamableHTTPClientTransport (fetch-based), edge-safe.
 export type {
   GatewayConfig,
   GatewayInfo,

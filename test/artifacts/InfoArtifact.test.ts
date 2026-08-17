@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { createServer } from "../../src/Server.js"
+import { createServer } from "../../src/index.js"
 import type { ServerInfo } from "../../src/types.js"
 
 describe("InfoArtifact + info tool", () => {

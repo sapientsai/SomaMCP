@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { readBuildInfoFromEnv, resolveBuildInfo } from "../src/buildInfo.js"
+import { getRuntimeInfo, readBuildInfoFromEnv, resolveBuildInfo } from "../src/buildInfo.js"
 
 describe("buildInfo", () => {
   const originalEnv = { ...process.env }
@@ -54,5 +54,29 @@ describe("buildInfo", () => {
     const resolved = resolveBuildInfo({ branch: "feature" })
     expect(resolved.commit).toBe("from-env")
     expect(resolved.branch).toBe("feature")
+  })
+})
+
+describe("getRuntimeInfo", () => {
+  it("reports node when the process global is present", () => {
+    const info = getRuntimeInfo()
+    expect(info.runtime).toBe("node")
+    expect(info.nodeVersion).toBe(process.version)
+  })
+
+  it("reports edge without throwing when there is no process global", () => {
+    const original = globalThis.process
+    // Edge runtimes (Workers without nodejs_compat) have no `process` at all —
+    // touching it unguarded would throw on every createServer call.
+    // @ts-expect-error deliberately removing a global to simulate an edge runtime
+    delete globalThis.process
+    try {
+      const info = getRuntimeInfo()
+      expect(info.runtime).toBe("edge")
+      expect(info.nodeVersion).toBe("unknown")
+      expect(() => readBuildInfoFromEnv()).not.toThrow()
+    } finally {
+      globalThis.process = original
+    }
   })
 })

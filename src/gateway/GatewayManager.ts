@@ -1,7 +1,8 @@
 import type { Option } from "functype"
 import { Map as FMap, Ref, Tuple } from "functype"
 
-import type { TelemetryCollector } from "@/telemetry"
+// Specific module, not the "@/telemetry" barrel — see the note in toolProxy.ts.
+import type { TelemetryCollector } from "@/telemetry/TelemetryCollector"
 
 import { createGateway } from "./Gateway.js"
 import type { GatewayConfig, GatewayInfo, GatewayInstance, GatewayManagerInstance } from "./types.js"
