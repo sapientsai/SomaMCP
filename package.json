@@ -60,7 +60,7 @@
   "homepage": "https://github.com/sapientsai/SomaMCP#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "fastmcp": "^4.16.13",
+    "fastmcp": "^4.17.1",
     "functype": "^1.9.0",
     "functype-log": "^1.9.0",
     "hono": "^4.13.5",

@@ -15,8 +15,8 @@ importers:
         specifier: ^1.30.0
         version: 1.30.0(supports-color@7.2.0)(zod@4.5.4)
       fastmcp:
-        specifier: ^4.16.13
-        version: 4.16.13(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(jose@6.2.10)(supports-color@7.2.0)
+        specifier: ^4.17.1
+        version: 4.17.1(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(jose@6.2.10)(supports-color@7.2.0)
       functype:
         specifier: ^1.9.0
         version: 1.9.0
@@ -1687,8 +1687,8 @@ packages:
   fast-uri@3.1.4:
     resolution: {integrity: sha512-8JnbkQ4juDyvYs4mgFGQqg4yCYtFDtUtmp2QIQq11ZZe5CFQ5wcqm1rqDgAh/QdMySuBnPzMUiJUNZG5N/AiQw==}
 
-  fastmcp@4.16.13:
-    resolution: {integrity: sha512-hfIZZHmHuHHwuERH8W+enj21QnhEGMZQUtCX7CAwqsk4L9yFan3+HnFb/bMWya0dvQ/x7slGW5EcGZmO/PkWXg==}
+  fastmcp@4.17.1:
+    resolution: {integrity: sha512-+aYDGUWYI5CFuJSWZlgeXngQAEozqe1X2Om/VjO4lILx0o2ThVhmaQbSXeuUCxNhpXeszaYdi+JhlO1mlxuGMA==}
     hasBin: true
     peerDependencies:
       ajv: ^8.0.0
@@ -2194,10 +2194,6 @@ packages:
 
   picocolors@1.1.1:
     resolution: {integrity: sha512-xceH2snhtb5M9liqDsmEw56le376mTZkEX/jEb/RxNFyegNul7eNslCXP9FDj/Lcu0X8KEyMceP2ntpaHrDEVA==}
-
-  picomatch@4.0.5:
-    resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
-    engines: {node: '>=12'}
 
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
@@ -4149,7 +4145,7 @@ snapshots:
 
   fast-uri@3.1.4: {}
 
-  fastmcp@4.16.13(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(jose@6.2.10)(supports-color@7.2.0):
+  fastmcp@4.17.1(ajv-formats@3.0.1(ajv@8.20.0))(ajv@8.20.0)(jose@6.2.10)(supports-color@7.2.0):
     dependencies:
       '@modelcontextprotocol/sdk': 1.30.0(supports-color@7.2.0)(zod@4.5.4)
       '@standard-schema/spec': 1.1.0
@@ -4175,10 +4171,6 @@ snapshots:
       - effect
       - supports-color
       - sury
-
-  fdir@6.5.0(picomatch@4.0.5):
-    optionalDependencies:
-      picomatch: 4.0.5
 
   fdir@6.5.0(picomatch@4.0.7):
     optionalDependencies:
@@ -4632,8 +4624,6 @@ snapshots:
   pathe@2.0.3: {}
 
   picocolors@1.1.1: {}
-
-  picomatch@4.0.5: {}
 
   picomatch@4.0.7: {}
 
@@ -5159,8 +5149,8 @@ snapshots:
   vite@7.3.3(@types/node@24.13.3)(tsx@4.23.13):
     dependencies:
       esbuild: 0.27.7
-      fdir: 6.5.0(picomatch@4.0.5)
-      picomatch: 4.0.5
+      fdir: 6.5.0(picomatch@4.0.7)
+      picomatch: 4.0.7
       postcss: 8.5.21
       rollup: 4.62.2
       tinyglobby: 0.2.17
