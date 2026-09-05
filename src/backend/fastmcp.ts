@@ -42,6 +42,11 @@ export const createFastMCPBackend = <T extends SessionAuth = SessionAuth>(
     instructions: config.instructions,
     logger: config.logger,
     name: config.name,
+    // Spread above still wins for anything not named here, so a caller can reach a fastmcp
+    // option somamcp does not model. This one is named because it is the keepalive that
+    // stateless deployments actually need, and leaving it discoverable only through an
+    // untyped Record is how it gets missed.
+    ...(config.streamKeepalive ? { streamKeepalive: config.streamKeepalive } : {}),
     version: config.version,
   }
 
