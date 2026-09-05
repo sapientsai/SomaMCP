@@ -476,6 +476,11 @@ createServer({
 **Transport**
 
 - Types: `TransportConfig`, `HttpStreamConfig` (accepts `cors`, `stateless`, `eventStore`, `sslCert` / `sslKey` / `sslCa`, plus `port` / `host` / `endpoint` / `enableJsonResponse`)
+- `streamKeepalive` on `ServerConfig` — `{ enabled, intervalMs }`, written onto an in-flight tool call's own
+  response stream so a proxy does not close it as idle during a long, silent call. **Pair it with
+  `httpStream.stateless`**: a transport-level ping needs the standing server-to-client stream that stateless
+  does not have, so this is the only keepalive left. It sits on `ServerConfig` rather than `HttpStreamConfig`
+  because the backend builds its server before `start()` sees the transport. Ignored by the edge backend.
 
 **Introspection**
 

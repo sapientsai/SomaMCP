@@ -17,6 +17,31 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
   instructions?: string
   logger?: Logger
   name: string
+  /**
+   * Periodic writes onto an in-flight tool call's own response stream, so a proxy or load
+   * balancer does not close the connection as idle while a long-running tool produces no
+   * output — a large document read, say.
+   *
+   * This is the only keepalive that survives `httpStream.stateless`. A transport-level ping
+   * needs the standing server-to-client stream, and stateless has none; these travel on the
+   * request's own stream instead. If you set `stateless` and have anything with an idle
+   * timeout in front of you, you want this too.
+   *
+   * Set at construction rather than on `httpStream`, because the backend builds its server
+   * before `start()` ever sees the transport config.
+   *
+   * Honoured by the fastmcp backend. The edge backend ignores it — Workers and Deno Deploy
+   * terminate the connection themselves, so there is nothing for somamcp to keep alive.
+   */
+  streamKeepalive?: {
+    /** Whether to write keepalives. Opt-in. */
+    enabled?: boolean
+    /**
+     * Gap between keepalives. Keep it comfortably under the shortest idle timeout on the
+     * path — an AWS ALB defaults to 60s. Defaults to 20s in the fastmcp backend.
+     */
+    intervalMs?: number
+  }
   version: `${number}.${number}.${number}`
 }
 
