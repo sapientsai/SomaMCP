@@ -481,6 +481,8 @@ createServer({
   `httpStream.stateless`**: a transport-level ping needs the standing server-to-client stream that stateless
   does not have, so this is the only keepalive left. It sits on `ServerConfig` rather than `HttpStreamConfig`
   because the backend builds its server before `start()` sees the transport. Ignored by the edge backend.
+  Leave `httpStream.enableJsonResponse` **off**: in JSON-response mode the MCP SDK skips the SSE write for
+  request-related notifications, so the keepalive is accepted, costs an interval timer, and does nothing.
 
 **Introspection**
 

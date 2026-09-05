@@ -1,4 +1,17 @@
+import type { ServerOptions } from "fastmcp"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+import type { ServerConfig } from "../../src/types/server"
+
+// Compile-time guard against field-name drift. The runtime tests below assert somamcp's own
+// field names, so a misspelling coordinated between the type and the test would still pass —
+// and fastmcp ignores an unknown key silently, which is the whole failure mode. This makes any
+// field somamcp models that fastmcp does not accept a typecheck error instead.
+type SomaKeepalive = NonNullable<ServerConfig["streamKeepalive"]>
+type FastMCPKeepalive = NonNullable<ServerOptions<Record<string, unknown>>["streamKeepalive"]>
+type NoDriftedFields = Exclude<keyof SomaKeepalive, keyof FastMCPKeepalive> extends never ? true : never
+const driftGuard: NoDriftedFields = true
+void driftGuard
 
 // Capture what the adapter hands FastMCP's constructor. The adapter does not expose the server
 // it builds, and replicating the spread inside the test would assert fastmcp's behaviour rather

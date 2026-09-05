@@ -41,6 +41,12 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
      * path — an AWS ALB defaults to 60s. Defaults to 20s in the fastmcp backend.
      */
     intervalMs?: number
+    /**
+     * Level reported on the keepalive notification. Defaults to `debug` in the fastmcp
+     * backend, which is usually what you want — these fire every interval, for the whole
+     * length of every long call.
+     */
+    logLevel?: "alert" | "critical" | "debug" | "emergency" | "error" | "info" | "notice" | "warning"
   }
   version: `${number}.${number}.${number}`
 }
