@@ -1,4 +1,4 @@
-import { Option, Set as FSet, Try } from "functype"
+import { Option, Set, Try } from "functype"
 
 import type { FeedbackProvider, FeedbackSubmitResult, NormalizedFeedback } from "../types.js"
 
@@ -33,7 +33,7 @@ export const createGithubFeedback = (options: GithubFeedbackOptions): FeedbackPr
       const labels = [...(options.defaultLabels ?? []), ...payload.labels]
       const body = JSON.stringify({
         body: payload.body,
-        labels: FSet(labels).toArray(),
+        labels: Set(labels).toArray(),
         title: payload.title,
       })
 

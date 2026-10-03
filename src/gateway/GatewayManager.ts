@@ -1,5 +1,5 @@
 import type { Option } from "functype"
-import { Map as FMap, Ref, Tuple } from "functype"
+import { Map, Ref, Tuple } from "functype"
 
 // Specific module, not the "@/telemetry" barrel — see the note in toolProxy.ts.
 import type { TelemetryCollector } from "@/telemetry/TelemetryCollector"
@@ -8,7 +8,7 @@ import { createGateway } from "./Gateway.js"
 import type { GatewayConfig, GatewayInfo, GatewayInstance, GatewayManagerInstance } from "./types.js"
 
 export const createGatewayManager = (telemetry: TelemetryCollector): GatewayManagerInstance => {
-  const gateways = Ref(FMap.empty<string, GatewayInstance>())
+  const gateways = Ref(Map.empty<string, GatewayInstance>())
   const values = (): GatewayInstance[] => [...gateways.get()].map(([, g]) => g)
 
   return {

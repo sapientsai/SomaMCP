@@ -1,4 +1,4 @@
-import { Map as FMap, Tuple } from "functype"
+import { Map, Tuple } from "functype"
 
 export type RedactionPattern = {
   description: string
@@ -77,7 +77,7 @@ export const redact = (
   input: string,
   patterns: ReadonlyArray<RedactionPattern> = DEFAULT_REDACTION_PATTERNS,
 ): RedactionResult => {
-  const { counts, text } = patterns.reduce<{ counts: FMap<string, number>; text: string }>(
+  const { counts, text } = patterns.reduce<{ counts: Map<string, number>; text: string }>(
     (acc, p) => {
       const matchCount = Array.from(acc.text.matchAll(p.pattern)).length
       if (matchCount === 0) return acc
@@ -86,7 +86,7 @@ export const redact = (
         text: acc.text.replace(p.pattern, p.replacement ?? REDACTED),
       }
     },
-    { counts: FMap.empty<string, number>(), text: input },
+    { counts: Map.empty<string, number>(), text: input },
   )
 
   const matches = [...counts].map(([name, count]) => ({ count, name }))

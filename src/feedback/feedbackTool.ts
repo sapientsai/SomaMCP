@@ -1,4 +1,4 @@
-import { Map as FMap, Option, Tuple } from "functype"
+import { Map, Option, Tuple } from "functype"
 import { z } from "zod"
 
 import type { SessionAuth, Tool } from "../types/core.js"
@@ -49,7 +49,7 @@ const formatRedactionSummary = (titleRes: RedactionResult, bodyRes: RedactionRes
   if (!titleRes.redacted && !bodyRes.redacted) return Option.none()
   const seen = [...titleRes.matches, ...bodyRes.matches].reduce(
     (acc, m) => acc.add(Tuple<[string, number]>([m.name, acc.get(m.name).orElse(0) + m.count])),
-    FMap.empty<string, number>(),
+    Map.empty<string, number>(),
   )
   const lines = [...seen].map(([name, count]) => `- ${name}: ${String(count)}`)
   return Option(["⚠️ Automatic redactions applied:", ...lines].join("\n"))

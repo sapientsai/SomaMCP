@@ -92,7 +92,6 @@ export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
   },
 })
 
-// eslint-disable-next-line functype/prefer-either -- wrapper must preserve the Resource.load Promise<ResourceResult> contract; errors are Promise rejections per MCP protocol
 export const wrapResource = <T extends SessionAuth>(
   resource: Resource<T>,
   telemetry: TelemetryCollector,
@@ -132,7 +131,6 @@ export const wrapResource = <T extends SessionAuth>(
   },
 })
 
-// eslint-disable-next-line functype/prefer-either -- wrapper must preserve the Prompt.load Promise<PromptResult> contract; errors are Promise rejections per MCP protocol
 export const wrapPrompt = <T extends SessionAuth, Args extends PromptArgument<T>[] = PromptArgument<T>[]>(
   prompt: Prompt<T, Args>,
   telemetry: TelemetryCollector,

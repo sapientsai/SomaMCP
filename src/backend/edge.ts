@@ -75,11 +75,7 @@ export type EdgeBackendOptions = {
  * EdgeFastMCP, which serves the MCP endpoint. This ordering matters — EdgeFastMCP
  * registers its own `/health` at construction, and Hono is first-match-wins, so
  * mounting it first would shadow somamcp's health artifact.
- *
- * The prefer-either disable below is for the nested tool-execute throw, which
- * EdgeFastMCP requires; this factory itself never throws.
  */
-// eslint-disable-next-line functype/prefer-either -- see note above
 export const createEdgeBackend = <T extends SessionAuth = SessionAuth>(
   config: ServerConfig<T>,
   backendOptions?: Record<string, unknown>,

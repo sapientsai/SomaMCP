@@ -6,7 +6,6 @@ import { Option, Ref, Try } from "functype"
 import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
 import type { GatewayConfig, GatewayInstance, GatewayStatus } from "./types.js"
 
-// eslint-disable-next-line functype/prefer-either -- factory returns GatewayInstance by design; callTool's throw is required by the Promise<unknown> contract
 export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollector): GatewayInstance => {
   const client = Ref<Option<Client>>(Option.none())
   const transport = Ref<Option<StreamableHTTPClientTransport>>(Option.none())
