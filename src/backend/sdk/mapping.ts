@@ -34,6 +34,10 @@ type ObjectSchema = SdkTool["inputSchema"]
 
 const EMPTY_OBJECT_SCHEMA: ObjectSchema = { properties: {}, type: "object" }
 
+/** Whether the schema can describe itself as JSON Schema, which clients need to see its arguments. */
+export const hasJsonSchema = (params: SchemaParams): boolean =>
+  Option((params as JsonSchemaCapable)["~standard"].jsonSchema).isSome()
+
 /** JSON Schema for a tool's arguments; an empty object schema when the schema can't produce one. */
 export const toJsonSchema = (params: Option<SchemaParams>): ObjectSchema =>
   params
@@ -102,10 +106,14 @@ export const createToolContext = <T extends SessionAuth>(
   session: Option<T>,
   toolName: string,
 ): Context<T> => {
+  // Notifications are best-effort: they reject once the client has hung up, and a
+  // rejection nobody awaits would take the process down (FastMCP swallows them too).
+  const notify = (notification: Parameters<typeof ctx.mcpReq.notify>[0]): Promise<void> =>
+    ctx.mcpReq.notify(notification).catch(() => {})
   const log =
     (level: LogLevel) =>
     (message: string, data?: unknown): void => {
-      void ctx.mcpReq.log(level, data === undefined ? message : { data, message })
+      ctx.mcpReq.log(level, data === undefined ? message : { data, message }).catch(() => {})
     }
   const progressToken = Option(ctx.mcpReq._meta?.progressToken)
   const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY])
@@ -116,8 +124,7 @@ export const createToolContext = <T extends SessionAuth>(
     reportProgress: async ({ progress, total }) => {
       await progressToken.fold(
         async () => {},
-        (token) =>
-          ctx.mcpReq.notify({ method: "notifications/progress", params: { progress, progressToken: token, total } }),
+        (token) => notify({ method: "notifications/progress", params: { progress, progressToken: token, total } }),
       )
     },
     requestId: String(ctx.mcpReq.id),
@@ -125,7 +132,7 @@ export const createToolContext = <T extends SessionAuth>(
     sessionId: ctx.sessionId,
     // Same custom notification FastMCP sends, so clients that read it keep working.
     streamContent: async (content) => {
-      await ctx.mcpReq.notify({
+      await notify({
         method: "notifications/tool/streamContent",
         params: { content: Array.isArray(content) ? content : [content], toolName },
       })

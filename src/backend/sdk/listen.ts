@@ -18,7 +18,8 @@ export const listenHttp = async (app: Hono, config: HttpStreamConfig): Promise<L
     const server = serve(
       {
         fetch: app.fetch,
-        hostname: config.host,
+        // FastMCP's default: bind to loopback unless a host is given explicitly.
+        hostname: config.host ?? "localhost",
         port: config.port,
         ...(createServer
           ? { createServer, serverOptions: { ca: config.sslCa, cert: config.sslCert, key: config.sslKey } }
@@ -29,6 +30,8 @@ export const listenHttp = async (app: Hono, config: HttpStreamConfig): Promise<L
           close: () =>
             new Promise<void>((done, fail) => {
               server.close((error) => (error ? fail(error) : done()))
+              // Idle keep-alive sockets would otherwise hold close() open until they time out.
+              if ("closeAllConnections" in server) server.closeAllConnections()
             }),
         }),
     )

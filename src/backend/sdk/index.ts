@@ -8,6 +8,7 @@ import type { HttpStreamConfig, ServerConfig, TransportConfig } from "../../type
 import type { BackendAdapter, BackendSession } from "../adapter.js"
 import { type AnyPrompt, type AnyTool, buildServer, type Registry } from "./handlers.js"
 import type { Listener } from "./listen.js"
+import { hasJsonSchema } from "./mapping.js"
 
 export type SdkBackendOptions = {
   /** MCP endpoint path when serving through `fetch`. `start({ httpStream: { endpoint } })` overrides it. Defaults to "/mcp". */
@@ -61,7 +62,12 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
   const drop = <V>(store: Ref<Map<string, V>>, name: string): void => {
     store.set(store.get().remove(name))
   }
-  const identity = { instructions: config.instructions, name: config.name, version: config.version }
+  const identity = {
+    authRequired: config.authenticate !== undefined,
+    instructions: config.instructions,
+    name: config.name,
+    version: config.version,
+  }
 
   const keepAliveMs = Option(config.streamKeepalive)
     .filter((k) => k.enabled === true)
@@ -94,7 +100,8 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
       },
     )
 
-  const handler = Ref(createHandler(defaultResponseMode))
+  const responseMode = Ref<"auto" | "json" | "sse">(defaultResponseMode)
+  const handler = Ref(createHandler(responseMode.get()))
   const mcpPath = Ref(
     Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.mcpPath))
@@ -110,11 +117,29 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
   const unauthorized = (c: HonoContext, reason: unknown): Response =>
     reason instanceof Response ? reason : c.json({ error: "Unauthorized" }, 401)
 
+  /**
+   * `authenticate`, with FastMCP's failure semantics: a synchronous throw counts
+   * as a rejection, and a nullish result counts as a failed authentication (the
+   * idiomatic way to signal one, and what FastMCP's OAuth provider returns).
+   */
+  const authenticateRequest = (
+    authenticate: NonNullable<ServerConfig<T>["authenticate"]>,
+    request: unknown,
+  ): Promise<T> =>
+    Promise.resolve()
+      .then(() => authenticate(request))
+      .then((auth) =>
+        Option(auth).fold(
+          () => Promise.reject(new Error("Authentication required")),
+          (session) => Promise.resolve(session),
+        ),
+      )
+
   const serveMcp = async (c: HonoContext): Promise<Response> => {
     const request = c.req.raw
     if (!config.authenticate) return handler.get().fetch(request)
     // Not Try.fromPromise: it would wrap a rejected Response, which must reach the client as-is.
-    return config.authenticate(request).then(
+    return authenticateRequest(config.authenticate, request).then(
       (session) =>
         handler.get().fetch(request, {
           authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
@@ -147,6 +172,7 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     if (http.enableJsonResponse === true) {
       if (keepAliveMs.isSome())
         warn("enableJsonResponse disables streamKeepalive: JSON responses cannot carry keepalive frames.")
+      responseMode.set("json")
       handler.set(createHandler("json"))
     }
     if (http.stateless === false) warn("stateful sessions are not supported by the SDK backend; serving statelessly.")
@@ -156,10 +182,14 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
   const startStdio = async (): Promise<Listener> => {
     const { listenStdio } = await import("./listen.js")
     // stdio has no request to authenticate. As on FastMCP, call authenticate once
-    // with no request and serve without a session if it fails.
+    // with no request and serve without a session if it fails; tools gated by
+    // canAccess are then hidden.
     const session = config.authenticate
-      ? (await Try.fromPromise(config.authenticate(undefined))).fold(
-          () => Option.none<T>(),
+      ? (await Try.fromPromise(authenticateRequest(config.authenticate, undefined))).fold(
+          (error) => {
+            logger.forEach((l) => l.error("[somamcp/sdk] authentication failed for stdio transport:", error.message))
+            return Option.none<T>()
+          },
           (auth) => Option(auth),
         )
       : Option.none<T>()
@@ -195,6 +225,11 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
       put(templates, template.name, template)
     },
     addTool: (tool) => {
+      if (tool.parameters && !hasJsonSchema(tool.parameters)) {
+        warn(
+          `tool "${tool.name}": its schema has no ~standard.jsonSchema, so clients see an empty argument list. Use zod 4, ArkType, or Valibot with @valibot/to-json-schema.`,
+        )
+      }
       put(tools, tool.name, tool as unknown as AnyTool<T>)
     },
 
@@ -229,12 +264,16 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     },
 
     stop: async () => {
+      // Handler first: closing it aborts in-flight exchanges, which would otherwise
+      // hold the listener's close open until a long streamed call finished.
+      await handler.get().close()
       await listener.get().fold(
         async () => {},
         (l) => l.close(),
       )
       listener.set(Option.none())
-      await handler.get().close()
+      // A closed handler answers every request with an error; give start() a fresh one.
+      handler.set(createHandler(responseMode.get()))
       state.set("stopped")
     },
   }

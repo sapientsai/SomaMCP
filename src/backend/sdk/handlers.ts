@@ -45,6 +45,8 @@ export type Registry<T extends SessionAuth> = {
 }
 
 export type ServerIdentity = {
+  /** Whether `authenticate` is configured. With no session, tools gated by `canAccess` are then hidden. */
+  authRequired: boolean
   instructions?: string
   name: string
   version: string
@@ -111,7 +113,13 @@ export const buildServer = <T extends SessionAuth>(
 ): Server => {
   const auth = session.orUndefined()
 
-  const canUse = (tool: AnyTool<T>): boolean => !tool.canAccess || tool.canAccess(auth as T)
+  // Mirrors FastMCP's toolsVisibleTo: canAccess only ever sees a real session. With
+  // none, gated tools are hidden when authentication is configured and shown otherwise.
+  const canUse = (tool: AnyTool<T>): boolean =>
+    session.fold(
+      () => !(identity.authRequired && tool.canAccess),
+      (s) => !tool.canAccess || tool.canAccess(s),
+    )
   const findTool = (name: string): Option<AnyTool<T>> => registry.tools().get(name).filter(canUse)
 
   const server = new Server(
@@ -155,12 +163,18 @@ export const buildServer = <T extends SessionAuth>(
     )
   }
 
+  /**
+   * An unknown (or hidden) tool is a protocol error, as in SDK 2.x and the spec;
+   * the same message for both, so a hidden tool's existence is not revealed.
+   * Invalid arguments stay a tool error the model can read and retry from.
+   * @interop SDK request handlers report JSON-RPC errors by throwing.
+   */
+  const resolveTool = (name: string): AnyTool<T> =>
+    findTool(name).orThrow(() => new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown tool: ${name}`))
+
   server.setRequestHandler("tools/call", (request, ctx) => {
     const { arguments: args, name } = request.params
-    return findTool(name).foldAsync(
-      () => Promise.resolve(errorResult(`Unknown tool: ${name}`)),
-      (tool) => callTool(tool, args ?? {}, createToolContext(ctx, session, name)),
-    )
+    return callTool(resolveTool(name), args ?? {}, createToolContext(ctx, session, name))
   })
 
   server.setRequestHandler("resources/list", () => ({

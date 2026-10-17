@@ -103,6 +103,48 @@ describe("createSdkBackend on Node", () => {
       expect(server.getHealth().status).toBe("running")
     })
 
+    it("restarts after stop()", async () => {
+      const port = await getRandomPort()
+      const http = { host: "127.0.0.1", port }
+      const server = makeServer()
+      await server.start({ httpStream: http, transportType: "httpStream" })
+      await server.stop()
+      await server.start({ httpStream: http, transportType: "httpStream" })
+      running.push(server)
+      const client = await connectModern(network, new URL(`http://127.0.0.1:${port}/mcp`))
+      expect((await client.listTools()).tools.map((t) => t.name)).toContain("echo")
+    })
+
+    it("stop() does not wait for an in-flight streamed call", async () => {
+      const port = await getRandomPort()
+      const server = createServer({
+        backend: createSdkBackend,
+        name: "slow",
+        streamKeepalive: { enabled: true, intervalMs: 50 },
+        version: "1.0.0",
+      })
+      server.addTool({
+        execute: () => new Promise((resolve) => setTimeout(() => resolve("late"), 5_000)),
+        name: "slow",
+        parameters: z.object({}),
+      })
+      await server.start({ httpStream: { host: "127.0.0.1", port }, transportType: "httpStream" })
+      const client = await connectModern(network, new URL(`http://127.0.0.1:${port}/mcp`))
+      void client.callTool({ arguments: {}, name: "slow" }).catch(() => {})
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const started = performance.now()
+      await server.stop()
+      expect(performance.now() - started).toBeLessThan(1_000)
+    })
+
+    it("binds to localhost when no host is given, as FastMCP does", async () => {
+      const port = await getRandomPort()
+      const server = makeServer()
+      await server.start({ httpStream: { port }, transportType: "httpStream" })
+      running.push(server)
+      expect((await fetch(`http://localhost:${port}/health`)).status).toBe(200)
+    })
+
     it("rejects start() when the port is taken", async () => {
       const { url } = await listen()
       const second = makeServer()
@@ -129,6 +171,32 @@ describe("createSdkBackend on Node", () => {
       )
       await client.connect(await startStdio())
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
+    })
+
+    it("hides canAccess-gated tools when stdio authentication fails", async () => {
+      const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+      const server = createServer({
+        authenticate: () => Promise.reject(new Error("no credentials on stdio")),
+        backend: createSdkBackend,
+        backendOptions: { stdioTransport: serverEnd },
+        logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn: vi.fn() },
+        name: "stdio-auth",
+        version: "1.0.0",
+      })
+      server.addTool({
+        canAccess: (auth) => (auth as { role: string }).role === "admin",
+        execute: () => Promise.resolve("secret"),
+        name: "gated",
+        parameters: z.object({}),
+      })
+      server.addTool({ execute: () => Promise.resolve("ok"), name: "open", parameters: z.object({}) })
+      await server.start({ transportType: "stdio" })
+      running.push(server)
+      const client = new ModernClient({ name: "s", version: "1.0.0" }, { versionNegotiation: { mode: "auto" } })
+      await client.connect(clientEnd)
+      const names = (await client.listTools()).tools.map((t) => t.name)
+      expect(names).toContain("open")
+      expect(names).not.toContain("gated")
     })
 
     it("serves an SDK 1.x client with the 2025 handshake", async () => {

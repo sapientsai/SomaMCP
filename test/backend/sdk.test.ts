@@ -1,7 +1,9 @@
+import { Option } from "functype"
 import { describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
 import { createSdkBackend } from "../../src/backend/index.js"
+import { createToolContext } from "../../src/backend/sdk/mapping.js"
 import { createServer as createEdgeServer } from "../../src/edge.js"
 import { createServer } from "../../src/index.js"
 import { UserError } from "../../src/types/core.js"
@@ -343,6 +345,41 @@ describe("createSdkBackend", () => {
       expect(textOf(call)).toContain("hello admin")
     })
 
+    it.each(ERAS)("a hidden tool can't be called, and looks like an unknown one (%s)", async (_era, connect) => {
+      const server = secured()
+      addAdminTool(server)
+      const client = await connect(withHeader(server, "authorization", "Bearer user"))
+      await expect(client.callTool({ arguments: {}, name: "admin" })).rejects.toThrow(/Unknown tool: admin/)
+      await expect(client.callTool({ arguments: {}, name: "nope" })).rejects.toThrow(/Unknown tool: nope/)
+    })
+
+    it("treats a nullish authenticate result as unauthenticated, as FastMCP does", async () => {
+      const server = makeServer({ authenticate: () => Promise.resolve(null as never) })
+      expect((await server.fetch(rawRequest("tools/list"))).status).toBe(401)
+    })
+
+    it("treats a synchronously throwing authenticate as unauthenticated", async () => {
+      const server = makeServer({
+        authenticate: (() => {
+          throw new Error("no headers on this request")
+        }) as never,
+      })
+      expect((await server.fetch(rawRequest("tools/list"))).status).toBe(401)
+    })
+
+    it("never calls canAccess without a session when authenticate is not configured", async () => {
+      const server = makeServer()
+      server.addTool({
+        // Written the natural way: it would throw if handed undefined.
+        canAccess: (auth) => (auth as { role: string }).role === "admin",
+        execute: () => Promise.resolve("ok"),
+        name: "gated",
+        parameters: z.object({}),
+      })
+      // No authenticate: like FastMCP, every tool is visible.
+      expect((await (await connectModern(server)).listTools()).tools.map((t) => t.name)).toContain("gated")
+    })
+
     it("answers 401 when authenticate rejects", async () => {
       expect((await secured().fetch(rawRequest("tools/list"))).status).toBe(401)
     })
@@ -354,6 +391,31 @@ describe("createSdkBackend", () => {
       const res = await server.fetch(rawRequest("tools/list"))
       expect(res.status).toBe(403)
       expect(await res.text()).toBe("go away")
+    })
+  })
+
+  describe("hardening", () => {
+    it("swallows notifications that fail after the client hung up", async () => {
+      const failing = () => Promise.reject(new Error("Not connected"))
+      const ctx = { mcpReq: { _meta: { progressToken: 1 }, id: 1, log: failing, notify: failing } } as never
+      const context = createToolContext(ctx, Option.none<{ role: string }>(), "t")
+      context.log.info("after disconnect")
+      await context.reportProgress({ progress: 1 })
+      await context.streamContent({ text: "x", type: "text" })
+      // An unhandled rejection here would fail the run.
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+
+    it("warns when a tool's schema can't describe itself as JSON Schema", () => {
+      const warn = vi.fn()
+      const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn }
+      const server = makeServer({ logger })
+      server.addTool({
+        execute: () => Promise.resolve("ok"),
+        name: "opaque",
+        parameters: { "~standard": { validate: (value: unknown) => ({ value }), vendor: "custom", version: 1 } },
+      })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('tool "opaque"'))
     })
   })
 
