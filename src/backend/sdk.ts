@@ -3,7 +3,10 @@ import {
   type CallToolResult,
   createMcpHandler,
   type GetPromptResult,
+  ProtocolError,
+  ProtocolErrorCode,
   type ReadResourceResult,
+  ResourceNotFoundError,
   Server,
   type ServerContext,
 } from "@modelcontextprotocol/server"
@@ -40,9 +43,9 @@ type JsonSchemaCapable = {
 const EMPTY_OBJECT_SCHEMA = { properties: {}, type: "object" } as const
 
 /** Standard JSON Schema (`~standard.jsonSchema`), implemented by zod 4, ArkType and Valibot. */
-const toInputSchema = (params: SchemaParams | undefined): Record<string, unknown> =>
-  Option(params as JsonSchemaCapable | undefined)
-    .flatMap((p) => Option(p["~standard"].jsonSchema))
+const toInputSchema = (params: Option<SchemaParams>): Record<string, unknown> =>
+  params
+    .flatMap((p) => Option((p as JsonSchemaCapable)["~standard"].jsonSchema))
     .map((js) => js.input({ target: "draft-2020-12" }))
     .orElse(EMPTY_OBJECT_SCHEMA)
 
@@ -62,7 +65,7 @@ const toResourceContents = (resource: Resource<SessionAuth>, loaded: ResourceRes
     ...("blob" in r ? { blob: r.blob } : { text: r.text }),
   }))
 
-const createContext = <T extends SessionAuth>(ctx: ServerContext, session: T | undefined): Context<T> => {
+const createContext = <T extends SessionAuth>(ctx: ServerContext, session: Option<T>): Context<T> => {
   const log =
     (level: "debug" | "error" | "info" | "warning") =>
     (message: string, data?: unknown): void => {
@@ -77,7 +80,7 @@ const createContext = <T extends SessionAuth>(ctx: ServerContext, session: T | u
       await ctx.mcpReq.notify({ method: "notifications/progress", params: { progress, progressToken, total } })
     },
     requestId: String(ctx.mcpReq.id),
-    session,
+    session: session.orUndefined(),
     sessionId: ctx.sessionId,
     // SPIKE: no streamContent mapping yet (FastMCP-specific extension).
     streamContent: async () => {},
@@ -95,7 +98,9 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
   config: ServerConfig<T>,
   backendOptions?: Record<string, unknown>,
 ): BackendAdapter<T> => {
-  const mcpPath = (backendOptions as SdkBackendOptions | undefined)?.mcpPath ?? "/mcp"
+  const mcpPath = Option(backendOptions as SdkBackendOptions)
+    .flatMap((o) => Option(o.mcpPath))
+    .orElse("/mcp")
 
   // Mutable registries are the point: the factory below replays them on every request,
   // so add/remove take effect on the next request with no list-changed plumbing.
@@ -107,8 +112,9 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
    * One low-level Server per request, with a fixed set of handlers that read the
    * registries. Construction cost is independent of how many tools are registered.
    */
-  const buildServer = (session: T | undefined): Server => {
-    const visible = (): AnyTool<T>[] => [...tools.values()].filter((t) => !t.canAccess || t.canAccess(session as T))
+  const buildServer = (session: Option<T>): Server => {
+    const visible = (): AnyTool<T>[] =>
+      [...tools.values()].filter((t) => !t.canAccess || t.canAccess(session.orUndefined() as T))
 
     const server = new Server(
       { name: config.name, version: config.version },
@@ -123,9 +129,9 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
         _meta: t._meta,
         annotations: t.annotations,
         description: t.description,
-        inputSchema: toInputSchema(t.parameters) as { type: "object" },
+        inputSchema: toInputSchema(Option(t.parameters)) as { type: "object" },
         name: t.name,
-        ...(t.outputSchema ? { outputSchema: toInputSchema(t.outputSchema) as { type: "object" } } : {}),
+        ...(t.outputSchema ? { outputSchema: toInputSchema(Option(t.outputSchema)) as { type: "object" } } : {}),
       })),
     }))
 
@@ -151,12 +157,14 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
       })),
     }))
 
-    server.setRequestHandler("resources/read", async (request): Promise<ReadResourceResult> => {
-      const resource = [...resources.values()].find((r) => r.uri === request.params.uri)
-      if (!resource) throw new Error(`Unknown resource: ${request.params.uri}`)
-      const loaded = await resource.load(session)
+    /** @interop SDK request handlers report JSON-RPC errors by throwing. */
+    const readResource = async (uri: string): Promise<ReadResourceResult> => {
+      const resource = [...resources.values()].find((r) => r.uri === uri)
+      if (!resource) throw new ResourceNotFoundError(uri)
+      const loaded = await resource.load(session.orUndefined())
       return { contents: toResourceContents(resource as Resource<SessionAuth>, loaded) }
-    })
+    }
+    server.setRequestHandler("resources/read", (request) => readResource(request.params.uri))
 
     server.setRequestHandler("prompts/list", () => ({
       prompts: [...prompts.values()].map((p) => ({
@@ -166,34 +174,41 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
       })),
     }))
 
-    server.setRequestHandler("prompts/get", async (request): Promise<GetPromptResult> => {
-      const prompt = prompts.get(request.params.name)
-      if (!prompt) throw new Error(`Unknown prompt: ${request.params.name}`)
-      const loaded = await prompt.load(request.params.arguments ?? {}, session)
+    /** @interop SDK request handlers report JSON-RPC errors by throwing. */
+    const getPrompt = async (name: string, args: Record<string, string>): Promise<GetPromptResult> => {
+      const prompt = prompts.get(name)
+      if (!prompt) throw new ProtocolError(ProtocolErrorCode.InvalidParams, `Unknown prompt: ${name}`)
+      const loaded = await prompt.load(args, session.orUndefined())
       return typeof loaded === "string"
         ? { messages: [{ content: { text: loaded, type: "text" }, role: "user" }] }
         : (loaded as GetPromptResult)
-    })
+    }
+    server.setRequestHandler("prompts/get", (request) => getPrompt(request.params.name, request.params.arguments ?? {}))
 
     return server
   }
 
-  // Auth runs once per request in front of the handler; the factory reads the result.
-  const sessionFor = new globalThis.WeakMap<Request, T | undefined>()
+  // Auth runs once per request in front of the handler. The result rides through
+  // `authInfo`, which the SDK passes to the factory unchanged on both eras. (Keying a
+  // WeakMap by the Request does not work: the 2025 leg hands the factory a clone.)
+  const SESSION_KEY = "somamcp/session"
 
-  const handler = createMcpHandler(({ requestInfo }) => buildServer(requestInfo && sessionFor.get(requestInfo)), {
-    keepAliveMs: config.streamKeepalive?.enabled ? config.streamKeepalive.intervalMs : undefined,
-  })
+  const handler = createMcpHandler(
+    ({ authInfo }) => buildServer(Option(authInfo).flatMap((a) => Option(a.extra?.[SESSION_KEY] as T))),
+    {
+      keepAliveMs: config.streamKeepalive?.enabled ? config.streamKeepalive.intervalMs : undefined,
+    },
+  )
 
   const app = new Hono()
   app.all(mcpPath, async (c) => {
     const request = c.req.raw
-    if (config.authenticate) {
-      const auth = await Try.fromPromise(config.authenticate(request))
-      if (auth.isFailure()) return c.json({ error: "Unauthorized" }, 401)
-      sessionFor.set(request, auth.orThrow())
-    }
-    return handler.fetch(request)
+    if (!config.authenticate) return handler.fetch(request)
+    const auth = await Try.fromPromise(config.authenticate(request))
+    if (auth.isFailure()) return c.json({ error: "Unauthorized" }, 401)
+    return handler.fetch(request, {
+      authInfo: { clientId: "", extra: { [SESSION_KEY]: auth.orThrow() }, scopes: [], token: "" },
+    })
   })
 
   return {

@@ -104,7 +104,15 @@ const ENVELOPE = {
 describe("Q2: both protocol eras from one endpoint", () => {
   it("control: today's FastMCP edge backend rejects a 2026-07-28 client", async () => {
     const edge = createEdgeServer({ enableDashboard: false, name: "edge", version: "1.0.0" })
-    await expect(modernClient(edge)).rejects.toThrow()
+    const res = await edge.fetch(
+      rpc(
+        { id: 1, jsonrpc: "2.0", method: "server/discover", params: { _meta: ENVELOPE } },
+        { "mcp-method": "server/discover", "mcp-protocol-version": "2026-07-28" },
+      ),
+    )
+    expect(res.status).toBe(400)
+    expect(await res.text()).toContain("Unsupported protocol version: 2026-07-28")
+    await expect(modernClient(edge)).rejects.toThrow(/did not offer pinned protocol version 2026-07-28/)
   })
 
   it("SDK 2.x client pinned to 2026-07-28 connects, lists and calls", async () => {
@@ -209,6 +217,16 @@ describe("somamcp semantics", () => {
     const adminTools = (await (await modernClient(withToken("Bearer admin"))).listTools()).tools.map((t) => t.name)
     expect(userTools).not.toContain("admin")
     expect(adminTools).toContain("admin")
+    const legacyUserTools = (await (await legacyClient(withToken("Bearer user"))).listTools()).tools.map((t) => t.name)
+    const legacyAdminTools = (await (await legacyClient(withToken("Bearer admin"))).listTools()).tools.map(
+      (t) => t.name,
+    )
+    expect(legacyUserTools).not.toContain("admin")
+    expect(legacyAdminTools).toContain("admin")
+    const legacyAdminCall = await (
+      await legacyClient(withToken("Bearer admin"))
+    ).callTool({ arguments: {}, name: "admin" })
+    expect(JSON.stringify(legacyAdminCall)).toContain("secret")
     expect((await server.fetch(rpc({ id: 1, jsonrpc: "2.0", method: "tools/list" }))).status).toBe(401)
   })
 
