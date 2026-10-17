@@ -24,6 +24,8 @@ const rpc = (method: string, params?: unknown, id = 1, headers: Record<string, s
 
 const callTool = (name: string, args: Record<string, unknown> = {}) => rpc("tools/call", { arguments: args, name })
 
+type ToolCallBody = { error?: unknown; result?: { content: unknown[]; isError?: boolean } }
+
 describe("createEdgeBackend", () => {
   it("is accepted as a backend factory by createServer", () => {
     const server = createServer({ ...baseConfig })
@@ -211,7 +213,7 @@ describe("createEdgeBackend", () => {
   })
 
   describe("tool errors", () => {
-    it("surfaces a thrown tool error as a JSON-RPC error, not a success", async () => {
+    it("surfaces a thrown tool error as an isError result, not a success", async () => {
       const server = createServer({ ...baseConfig })
       server.addTool({
         description: "Always fails",
@@ -225,12 +227,12 @@ describe("createEdgeBackend", () => {
       // The telemetry wrapper converts throws into `isError: true`, and EdgeFastMCP
       // drops `isError` — without the adapter rethrowing, this would look like a
       // successful call.
-      const body = (await (await server.fetch(callTool("explode"))).json()) as Record<string, unknown>
-      expect(body.error).toBeDefined()
-      expect(body.result).toBeUndefined()
+      const body = (await (await server.fetch(callTool("explode"))).json()) as ToolCallBody
+      expect(body.result?.isError).toBe(true)
+      expect(JSON.stringify(body.result)).toContain("boom")
     })
 
-    it("surfaces an explicit isError result as a JSON-RPC error", async () => {
+    it("surfaces an explicit isError result as an isError result", async () => {
       const server = createServer({ ...baseConfig })
       server.addTool({
         description: "Returns an error result",
@@ -242,9 +244,9 @@ describe("createEdgeBackend", () => {
         parameters: z.object({}),
       })
 
-      const body = (await (await server.fetch(callTool("invalid"))).json()) as Record<string, unknown>
-      expect(body.error).toBeDefined()
-      expect(JSON.stringify(body.error)).toContain("bad input")
+      const body = (await (await server.fetch(callTool("invalid"))).json()) as ToolCallBody
+      expect(body.result?.isError).toBe(true)
+      expect(JSON.stringify(body.result)).toContain("bad input")
     })
 
     it("still returns successful results as results", async () => {

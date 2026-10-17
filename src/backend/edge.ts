@@ -165,11 +165,11 @@ export const createEdgeBackend = <T extends SessionAuth = SessionAuth>(
           // `isError` entirely — a failed tool would reach the client looking like
           // a success. somamcp's telemetry wrapper converts every thrown error into
           // `isError: true`, so without this, tool errors could never surface on
-          // edge at all. Throwing routes it into EdgeFastMCP's catch, which emits a
-          // proper JSON-RPC error.
+          // edge at all. Throwing routes it into EdgeFastMCP's catch, which (since
+          // fastmcp 4.22.10) responds with `result: { content, isError: true }`.
           // Throwing IS the protocol here: EdgeFastMCP's #handleToolsCall catch is the
-          // only path that produces a JSON-RPC error response. Returning an Either
-          // would be serialized as a successful result.
+          // only path that sets `isError`. Returning an Either would be serialized as
+          // a successful result.
           // eslint-disable-next-line functype/prefer-either -- see note above
           if (typeof result !== "string" && result.isError === true) throw new Error(errorText(result))
           return result
