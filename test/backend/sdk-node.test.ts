@@ -91,6 +91,18 @@ describe("createSdkBackend on Node", () => {
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("eventStore is not supported"))
     })
 
+    it("ignores a second start() while listening", async () => {
+      const warn = vi.fn()
+      const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn }
+      const server = createServer({ backend: createSdkBackend, logger, name: "twice", version: "1.0.0" })
+      const http = { host: "127.0.0.1", port: await getRandomPort() }
+      await server.start({ httpStream: http, transportType: "httpStream" })
+      running.push(server)
+      await server.start({ httpStream: http, transportType: "httpStream" })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("already listening"))
+      expect(server.getHealth().status).toBe("running")
+    })
+
     it("rejects start() when the port is taken", async () => {
       const { url } = await listen()
       const second = makeServer()

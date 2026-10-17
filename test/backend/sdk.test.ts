@@ -190,6 +190,41 @@ describe("createSdkBackend", () => {
       expect(res.headers.get("content-type")).toContain("application/json")
     })
 
+    describe("context.log delivery", () => {
+      const logging = () => {
+        const server = makeServer()
+        server.addTool({
+          execute: (_args, context) => {
+            context.log.info("working")
+            return Promise.resolve("done")
+          },
+          name: "chatty",
+          parameters: z.object({}),
+        })
+        return server
+      }
+      const call = (modern: boolean, meta: Record<string, unknown> = {}) =>
+        logging().fetch(rawRequest("tools/call", { _meta: meta, arguments: {}, name: "chatty" }, { modern }))
+
+      it("reaches a 2026-07-28 client that asked for a log level", async () => {
+        const body = await (await call(true, { "io.modelcontextprotocol/logLevel": "info" })).text()
+        expect(body).toContain("notifications/message")
+        expect(body).toContain("working")
+      })
+
+      it("is dropped for a 2026-07-28 client that asked for no log level", async () => {
+        const body = await (await call(true)).text()
+        expect(body).not.toContain("notifications/message")
+        expect(body).toContain("done")
+      })
+
+      it("reaches a 2025 client on the stateless leg", async () => {
+        const body = await (await call(false)).text()
+        expect(body).toContain("notifications/message")
+        expect(body).toContain("done")
+      })
+    })
+
     it("passes the client's version to the tool context", async () => {
       const server = makeServer()
       server.addTool({

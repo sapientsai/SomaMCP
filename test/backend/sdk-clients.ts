@@ -64,7 +64,14 @@ export const rawRequest = (
   const modern = options.modern ?? false
   const name: Record<string, string> = typeof params.name === "string" ? { "mcp-name": params.name } : {}
   return new Request(options.url ?? MCP_URL, {
-    body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params: modern ? { ...params, _meta: ENVELOPE } : params }),
+    body: JSON.stringify({
+      id: 1,
+      jsonrpc: "2.0",
+      method,
+      params: modern
+        ? { ...params, _meta: { ...ENVELOPE, ...(params._meta as Record<string, unknown> | undefined) } }
+        : params,
+    }),
     headers: {
       accept: "application/json, text/event-stream",
       "content-type": "application/json",

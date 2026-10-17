@@ -215,6 +215,10 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     },
 
     start: async (transport?: TransportConfig) => {
+      if (listener.get().isSome()) {
+        warn("start() called while already listening; ignoring. Call stop() first to restart.")
+        return
+      }
       const started = await Try.fromPromise(
         transport?.transportType === "httpStream" ? startHttp(transport.httpStream) : startStdio(),
       )
