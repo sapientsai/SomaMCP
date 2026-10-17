@@ -63,8 +63,8 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@modelcontextprotocol/server": "~2.3.1",
     "fastmcp": "^4.22.10",
-    "functype": "^1.16.1",
-    "functype-log": "^1.16.1",
+    "functype": "^1.17.0",
+    "functype-log": "^1.17.0",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
