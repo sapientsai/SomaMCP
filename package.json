@@ -59,7 +59,9 @@
   },
   "homepage": "https://github.com/sapientsai/SomaMCP#readme",
   "dependencies": {
+    "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@modelcontextprotocol/server": "~2.3.1",
     "fastmcp": "^4.22.10",
     "functype": "^1.16.1",
     "functype-log": "^1.16.1",
@@ -68,6 +70,7 @@
   },
   "prettier": "ts-builds/prettier",
   "devDependencies": {
+    "@modelcontextprotocol/client": "~2.3.1",
     "@types/node": "^24.19.2",
     "get-port-please": "^3.2.0",
     "ts-builds": "^3.4.3",

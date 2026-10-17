@@ -124,6 +124,27 @@ export type Resource<T extends SessionAuth = SessionAuth> = {
   uri: string
 }
 
+export type ResourceTemplateArgument<T extends SessionAuth = SessionAuth> = Readonly<{
+  complete?: (value: string, auth?: T) => Promise<Completion>
+  description?: string
+  name: string
+  required?: boolean
+}>
+
+/**
+ * A family of resources addressed by an RFC 6570 URI template, e.g. `docs://{path}`.
+ * `load` receives the variables matched from the requested URI.
+ */
+export type ResourceTemplate<T extends SessionAuth = SessionAuth> = {
+  arguments: ResourceTemplateArgument<T>[]
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>
+  description?: string
+  load: (args: Record<string, string>, auth?: T) => Promise<ResourceResult | ResourceResult[]>
+  mimeType?: string
+  name: string
+  uriTemplate: string
+}
+
 // ── Prompt ─────────────────────────────────────────────────────────────
 
 export type PromptArgument<T extends SessionAuth = SessionAuth> = Readonly<{

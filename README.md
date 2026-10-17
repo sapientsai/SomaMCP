@@ -400,6 +400,33 @@ The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has n
 
 Bun deliberately reports `"node"`: it is a Node-family server runtime with full Node APIs, so that is the accurate answer even though `somamcp/edge` runs there.
 
+## MCP SDK 2.x Backend (opt-in)
+
+`createSdkBackend` builds on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`). One endpoint serves both protocol revisions:
+
+- **`2026-07-28`**, which current Claude clients request first. The default FastMCP 4.x backend answers that request with HTTP 400, and a client that doesn't retry with the older handshake ends up with no tools.
+- **2025-era clients**, which open with `initialize`.
+
+Pass it as `backend`. Nothing else changes:
+
+```typescript
+import { createServer } from "somamcp"
+import { createSdkBackend } from "somamcp/backend"
+
+const server = createServer({ name: "my-server", version: "1.0.0", backend: createSdkBackend })
+
+await server.start({ transportType: "httpStream", httpStream: { port: 3000 } })
+// or: await server.start({ transportType: "stdio" })
+```
+
+How it differs from the FastMCP backend:
+
+- **Stateless only.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` and `eventStore` are ignored, with a warning through `logger`.
+- **`authenticate` receives a web `Request`**, not Node's `http.IncomingMessage`. Read headers with `getRequestHeader` and the same function works on both backends. Rejecting with a `Response` serves that response as-is; any other rejection is a `401`.
+- **`streamKeepalive`** maps to the SDK's SSE comment frames (`enabled` and `intervalMs`; the default is 20 s, as on FastMCP). FastMCP sends log notifications instead. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `enableJsonResponse` turns them off.
+- **Removal is real:** `removeTool`, `removeResource` and `removePrompt` apply from the next request.
+- **`backendOptions`** takes `mcpPath` (the endpoint for `fetch()` use; `httpStream.endpoint` overrides it) and `stdioTransport` (a transport to use in place of the process's stdin/stdout). FastMCP's `ping`, `health`, `roots` and `oauth` options don't apply.
+
 ## Backend Abstraction
 
 The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. `createServer` accepts a `backend` factory — this is how `somamcp/edge` swaps in the edge adapter:
@@ -501,8 +528,8 @@ createServer({
 
 **Backend** (via `somamcp/backend`)
 
-- `createFastMCPBackend`
-- Types: `BackendAdapter`, `BackendFactory`, `BackendSession`
+- `createFastMCPBackend`, `createSdkBackend`
+- Types: `BackendAdapter`, `BackendFactory`, `BackendSession`, `SdkBackendOptions`
 
 ## Scripts
 

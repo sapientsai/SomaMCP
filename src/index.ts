@@ -41,6 +41,8 @@ export type {
   ResourceContent,
   ResourceLink,
   ResourceResult,
+  ResourceTemplate,
+  ResourceTemplateArgument,
   SchemaParams,
   ServerStatus,
   SessionAuth,
