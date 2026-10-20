@@ -10,6 +10,8 @@ const shared: UserConfig = {
     /^fastmcp\//,
     "@modelcontextprotocol/sdk",
     "hono",
+    /^hono\//,
+    "@hono/node-server",
     "functype",
     "zod",
     /^functype\//,

@@ -64,6 +64,8 @@ export type {
   ResourceContent,
   ResourceLink,
   ResourceResult,
+  ResourceTemplate,
+  ResourceTemplateArgument,
   RouteConfig,
   RouteMethod,
   SchemaParams,

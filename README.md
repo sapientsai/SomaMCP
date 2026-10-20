@@ -400,6 +400,39 @@ The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has n
 
 Bun deliberately reports `"node"`: it is a Node-family server runtime with full Node APIs, so that is the accurate answer even though `somamcp/edge` runs there.
 
+## MCP SDK 2.x Backend (opt-in)
+
+`createSdkBackend` builds on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`). One endpoint serves both protocol revisions:
+
+- **`2026-07-28`**, which current Claude clients request first. The default FastMCP 4.x backend answers that request with HTTP 400, and a client that doesn't retry with the older handshake ends up with no tools.
+- **2025-era clients**, which open with `initialize`.
+
+Pass it as `backend`. Nothing else changes:
+
+```typescript
+import { createServer } from "somamcp"
+import { createSdkBackend } from "somamcp/backend"
+
+const server = createServer({ name: "my-server", version: "1.0.0", backend: createSdkBackend })
+
+await server.start({ transportType: "httpStream", httpStream: { port: 3000 } })
+// or: await server.start({ transportType: "stdio" })
+```
+
+How it differs from the FastMCP backend:
+
+- **Stateless only.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` and `eventStore` are ignored, with a warning through `logger`.
+- **`authenticate` receives a web `Request`**, not Node's `http.IncomingMessage`. Read headers with `getRequestHeader` and the same function works on both backends. Rejecting with a `Response` serves that response as-is. Any other rejection, a synchronous throw, or a nullish result (as on FastMCP) is a `401`. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise, as on FastMCP.
+- **Errors follow SDK 2.x and the current spec.** Calling an unknown tool, or one hidden by `canAccess`, is a JSON-RPC `InvalidParams` error, as on FastMCP. Invalid arguments are an `isError` tool result, so the model can read the message and retry. FastMCP reports them as an `InvalidParams` protocol error.
+- **Schemas must describe themselves as JSON Schema** (`~standard.jsonSchema`): zod 4, ArkType, or Valibot via `@valibot/to-json-schema`. Other schemas still validate, but clients see an empty argument list; `addTool` warns through `logger`.
+- **`context.client.version`** is filled in for `2026-07-28` clients, which send their client info on every request. It is `undefined` for 2025 clients, which send it only during `initialize`.
+- **`httpStream.host` defaults to `localhost`**, as on FastMCP. Pass `host: "0.0.0.0"` to listen on every interface.
+- **`streamKeepalive`** maps to the SDK's SSE comment frames (`enabled` and `intervalMs`; the default is 20 s, as on FastMCP). FastMCP sends log notifications instead. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `enableJsonResponse` turns them off; it applies to `2026-07-28` exchanges only, so a 2025 client's responses are unchanged by it.
+- **`context.log` follows the client's log level.** A `2026-07-28` client receives tool logs only when its request asks for a log level (`io.modelcontextprotocol/logLevel`); otherwise the SDK drops them. 2025 clients receive them as before. Progress (`reportProgress`) is unaffected.
+- **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. FastMCP reports `stopped` until `start()`. Both report `stopped` after `stop()`.
+- **Removal is real:** `removeTool`, `removeResource` and `removePrompt` apply from the next request.
+- **`backendOptions`** takes `mcpPath` (the endpoint for `fetch()` use; `httpStream.endpoint` overrides it) and `stdioTransport` (a transport to use in place of the process's stdin/stdout). FastMCP's `ping`, `health`, `roots` and `oauth` options don't apply.
+
 ## Backend Abstraction
 
 The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. `createServer` accepts a `backend` factory — this is how `somamcp/edge` swaps in the edge adapter:
@@ -501,8 +534,8 @@ createServer({
 
 **Backend** (via `somamcp/backend`)
 
-- `createFastMCPBackend`
-- Types: `BackendAdapter`, `BackendFactory`, `BackendSession`
+- `createFastMCPBackend`, `createSdkBackend`
+- Types: `BackendAdapter`, `BackendFactory`, `BackendSession`, `SdkBackendOptions`
 
 ## Scripts
 
