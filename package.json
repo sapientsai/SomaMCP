@@ -62,9 +62,9 @@
     "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@modelcontextprotocol/server": "~2.3.1",
-    "fastmcp": "^4.22.10",
-    "functype": "^1.17.0",
-    "functype-log": "^1.17.0",
+    "fastmcp": "^4.23.5",
+    "functype": "^1.18.0",
+    "functype-log": "^1.18.0",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
@@ -73,8 +73,8 @@
     "@modelcontextprotocol/client": "~2.3.1",
     "@types/node": "^24.19.2",
     "get-port-please": "^3.2.0",
-    "ts-builds": "^3.4.3",
-    "tsdown": "^0.22.14"
+    "ts-builds": "^4.0.0",
+    "tsdown": "^0.23.1"
   },
-  "packageManager": "pnpm@11.27.0+sha512.ad12821463bb143295f1fa3ecde77a6b9b97a7990386da800ff57bffc3964dc64b7b1c7559d5dbe5c337aea659ed9c8937d4370bd198ca2009bc6fa0249808e7"
+  "packageManager": "pnpm@11.28.6+sha512.55d90390c3b39042f1505a2697789f0256c6d95bb28bdd7cb731af1887c9f2629ef581acb9f4e4ec772024c8203c2aed22a03299b97103fdcf32668e905d0024"
 }
