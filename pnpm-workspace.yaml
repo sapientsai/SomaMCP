@@ -21,5 +21,6 @@ minimumReleaseAgeExclude:
   - "ts-builds"
 
 allowBuilds:
+  workerd: true
   esbuild: true
   tldjs: true

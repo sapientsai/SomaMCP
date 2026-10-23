@@ -362,7 +362,7 @@ await server.start({
 | `somamcp/backend` | anywhere                 | —                          | `createSdkBackend` and the backend types, for writing or wrapping a backend                |
 | `somamcp/edge`    | anywhere                 | `createSdkBackend`         | Nothing: an alias of `somamcp` kept through 2.x so 1.x imports resolve. Removed in 3.0.    |
 
-`somamcp/node` re-exports everything in `somamcp` and shares its modules rather than copying them, so values such as `UserError` are the same whichever entry you import them from. `pnpm build` fails if Node-only code reaches anything `somamcp` loads, or if the core is emitted twice.
+`somamcp/node` re-exports everything in `somamcp` and shares its modules rather than copying them, so values such as `UserError` are the same whichever entry you import them from. `pnpm validate` fails if Node-only code reaches anything `somamcp` loads, or if the core is emitted twice. It also runs the main entry inside `workerd`, Cloudflare's Workers runtime, without `nodejs_compat`, with both protocol eras, auth, content helpers, errors and resources (`test/workers/`).
 
 On the main entry, a bare `start()` listens on nothing: it marks the server started and connects gateways. `start()` with a transport rejects with a pointer to `somamcp/node`. On `somamcp/node`, a bare `start()` serves stdio.
 
