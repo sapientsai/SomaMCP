@@ -14,6 +14,14 @@ export type GatewayConfig = {
   reconnectIntervalMs?: number
   toolPrefix?: string
   url: string
+  /**
+   * How to pick the protocol revision. `"auto"` (the default) probes with
+   * `server/discover` and speaks `2026-07-28` when offered, falling back to the
+   * 2025 `initialize` handshake. A server that answers the probe with a 5xx fails
+   * to connect in that mode; `"legacy"` skips the probe and always uses the 2025
+   * handshake.
+   */
+  versionNegotiation?: "auto" | "legacy"
 }
 
 export type GatewayStatus = "connected" | "connecting" | "disconnected" | "error"

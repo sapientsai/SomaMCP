@@ -78,7 +78,7 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
           // the 2025 initialize handshake for the rest.
           const c = new Client(
             { name: `soma-gateway-${config.id}`, version: "1.0.0" },
-            { versionNegotiation: { mode: "auto" } },
+            { versionNegotiation: { mode: config.versionNegotiation ?? "auto" } },
           )
           client.set(Option(c))
 

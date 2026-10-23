@@ -104,9 +104,42 @@ describe("Gateway against real servers", () => {
     },
   }
 
+  /** An SDK 1.x server with sessions, FastMCP's default: one transport per Mcp-Session-Id. */
+  const sessionfulLegacyServer = () => {
+    const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>()
+    return {
+      fetch: async (request: Request): Promise<Response> => {
+        const existing = sessions.get(request.headers.get("mcp-session-id") ?? "")
+        if (existing) return existing.handleRequest(request)
+        const server = new McpServer({ name: "sessionful", version: "1.0.0" })
+        server.registerTool("echo", { description: "Echo", inputSchema: { text: z.string() } }, async ({ text }) => ({
+          content: [{ text: `sessionful:${text}`, type: "text" as const }],
+        }))
+        const transport = new WebStandardStreamableHTTPServerTransport({
+          enableJsonResponse: true,
+          onsessioninitialized: (id) => {
+            sessions.set(id, transport)
+          },
+          sessionIdGenerator: () => crypto.randomUUID(),
+        })
+        await server.connect(transport)
+        return transport.handleRequest(request)
+      },
+    }
+  }
+
+  /** Answers the server/discover probe with a 500, as FastMCP on mcp-proxy 6.7.0–6.7.11 did. */
+  const failsTheProbe = (server: { fetch: (request: Request) => Promise<Response> }) => ({
+    fetch: async (request: Request): Promise<Response> => {
+      const body = (await request.clone().json()) as { method?: string }
+      return body.method === "server/discover" ? new Response("boom", { status: 500 }) : server.fetch(request)
+    },
+  })
+
   it.each([
     ["2026-07-28", modernServer(), "2026-07-28", "modern:hi"],
     ["2025-only", legacyServer, "2025", "legacy:hi"],
+    ["sessionful 2025-only", sessionfulLegacyServer(), "2025", "sessionful:hi"],
   ] as const)("connects to a %s server, lists and calls its tools", async (_label, server, era, expected) => {
     const gateway = createGateway(
       { fetch: fetchInto(server), id: "remote", reconnect: false, url: MCP_URL.href },
@@ -124,6 +157,32 @@ describe("Gateway against real servers", () => {
 
     await gateway.disconnect()
     expect(gateway.info.protocolVersion).toBeUndefined()
+  })
+
+  it("cannot reach a server that answers the probe with a 5xx in auto mode", async () => {
+    const gateway = createGateway(
+      { fetch: fetchInto(failsTheProbe(sessionfulLegacyServer())), id: "remote", reconnect: false, url: MCP_URL.href },
+      NoopTelemetry,
+    )
+    await gateway.connect()
+    expect(gateway.status).toBe("error")
+  })
+
+  it("reaches it with versionNegotiation: legacy, which skips the probe", async () => {
+    const gateway = createGateway(
+      {
+        fetch: fetchInto(failsTheProbe(sessionfulLegacyServer())),
+        id: "remote",
+        reconnect: false,
+        url: MCP_URL.href,
+        versionNegotiation: "legacy",
+      },
+      NoopTelemetry,
+    )
+    await gateway.connect()
+    expect(gateway.status).toBe("connected")
+    expect(await gateway.callTool("echo", { text: "hi" })).toMatchObject({ content: [{ text: "sessionful:hi" }] })
+    await gateway.disconnect()
   })
 
   it("serves remote tools through proxied tools", async () => {
