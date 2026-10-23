@@ -54,7 +54,7 @@ Defines `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerCapabi
 
 ### Gateway System (`src/gateway/`)
 
-Enables server-to-server MCP communication via `StreamableHTTPClientTransport`.
+Enables server-to-server MCP communication via the SDK 2.x client (`@modelcontextprotocol/client`) and its `StreamableHTTPClientTransport`, negotiating `2026-07-28` or falling back to the 2025 handshake.
 
 - **`Gateway.ts`** — `createGateway()` manages connection lifecycle, auto-reconnect, and remote tool discovery
 - **`GatewayManager.ts`** — manages multiple gateways with `connectAll()`/`disconnectAll()` via `Promise.allSettled`

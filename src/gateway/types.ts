@@ -1,7 +1,12 @@
-import type { Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js"
+import type { FetchLike, Tool as MCPTool } from "@modelcontextprotocol/client"
 import type { Option } from "functype"
 
 export type GatewayConfig = {
+  /**
+   * Replaces the global `fetch` for every request to the remote server, e.g. a
+   * Workers service binding's `fetch`, or one that adds credentials.
+   */
+  fetch?: FetchLike
   id: string
   name?: string
   proxyTools?: boolean
@@ -16,6 +21,8 @@ export type GatewayStatus = "connected" | "connecting" | "disconnected" | "error
 export type GatewayInfo = {
   id: string
   name: string
+  /** Protocol revision negotiated with the remote server; absent until connected. */
+  protocolVersion?: string
   remoteTools: ReadonlyArray<{ description?: string; name: string }>
   status: GatewayStatus
   url: string

@@ -1,6 +1,4 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js"
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import type { Tool as MCPTool } from "@modelcontextprotocol/sdk/types.js"
+import { Client, StreamableHTTPClientTransport, type Tool as MCPTool } from "@modelcontextprotocol/client"
 import { Option, Ref, Try } from "functype"
 
 import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
@@ -34,6 +32,10 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
       return {
         id: config.id,
         name: gatewayName,
+        protocolVersion: client
+          .get()
+          .flatMap((c) => Option(c.getNegotiatedProtocolVersion()))
+          .orUndefined(),
         remoteTools: remoteTools.get().map((t) => ({
           description: t.description,
           name: t.name,
@@ -69,13 +71,15 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
 
       const attempt = await Try.fromPromise(
         (async () => {
-          const t = new StreamableHTTPClientTransport(new URL(config.url))
+          const t = new StreamableHTTPClientTransport(new URL(config.url), { fetch: config.fetch })
           transport.set(Option(t))
 
-          const c = new Client({
-            name: `soma-gateway-${config.id}`,
-            version: "1.0.0",
-          })
+          // "auto" speaks 2026-07-28 to servers that offer it and falls back to
+          // the 2025 initialize handshake for the rest.
+          const c = new Client(
+            { name: `soma-gateway-${config.id}`, version: "1.0.0" },
+            { versionNegotiation: { mode: "auto" } },
+          )
           client.set(Option(c))
 
           await c.connect(t)
