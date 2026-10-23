@@ -68,8 +68,8 @@
     "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/client": "~2.3.1",
     "@modelcontextprotocol/server": "~2.3.1",
-    "functype": "^1.18.0",
-    "functype-log": "^1.18.0",
+    "functype": "^1.19.0",
+    "functype-log": "^1.19.0",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
@@ -77,12 +77,12 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^24.19.2",
-    "es-module-lexer": "^2.3.2",
-    "esbuild": "^0.28.1",
+    "es-module-lexer": "^3.0.4",
+    "esbuild": "^0.28.2",
     "get-port-please": "^3.2.0",
     "miniflare": "^4.20260730.0",
-    "ts-builds": "^4.0.0",
-    "tsdown": "^0.23.1"
+    "ts-builds": "^4.0.1",
+    "tsdown": "^0.23.2"
   },
-  "packageManager": "pnpm@11.28.6+sha512.55d90390c3b39042f1505a2697789f0256c6d95bb28bdd7cb731af1887c9f2629ef581acb9f4e4ec772024c8203c2aed22a03299b97103fdcf32668e905d0024"
+  "packageManager": "pnpm@11.28.8+sha512.f6988a32046b9a3f78d7d7ee0747926bbe905ff9dff73bf19abb87bd7d1906a2ac90d93f73be32b5f9e14c2899569bcb0c9c5ec8a19e083f5d71bbab6dd9e0b8"
 }

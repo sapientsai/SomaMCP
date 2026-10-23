@@ -90,7 +90,7 @@ await init
  */
 const specifiersOf = (source) =>
   parse(source)[0]
-    .map((entry) => entry.n)
+    .map((entry) => entry.specifier)
     .filter((specifier) => specifier !== undefined)
 
 const read = async (path) => {
