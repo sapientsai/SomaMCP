@@ -257,6 +257,11 @@ const server = createServer({
 })
 ```
 
+Gateways use the MCP SDK 2.x client. They speak the `2026-07-28` revision to servers that offer it, and fall back to the 2025 `initialize` handshake for the rest. A gateway's `info.protocolVersion` reports what was negotiated.
+
+- **`versionNegotiation`:** `"auto"` (the default) probes first with `server/discover`. Some older servers answer that probe with a 5xx error, which fails the connection; set `"legacy"` for those to skip the probe.
+- **`fetch`:** Replaces the global `fetch` for that gateway's requests. The client calls it as a plain function, so wrap a Workers service binding rather than passing its method: `fetch: (url, init) => env.UPSTREAM.fetch(url, init)`.
+
 ## Agent Feedback
 
 Let agents file issues against your repo when they hit bugs or confusing behavior. The tool auto-redacts common credential patterns and PII, and includes a tool description that explicitly warns the LLM not to include proprietary data.

@@ -17,9 +17,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.13)
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.32.1
-        version: 1.32.1(supports-color@7.2.0)(zod@4.6.7)
+      '@modelcontextprotocol/client':
+        specifier: ~2.3.1
+        version: 2.3.1
       '@modelcontextprotocol/server':
         specifier: ~2.3.1
         version: 2.3.1
@@ -39,9 +39,9 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
     devDependencies:
-      '@modelcontextprotocol/client':
-        specifier: ~2.3.1
-        version: 2.3.1
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.1
+        version: 1.32.1(supports-color@7.2.0)(zod@4.6.7)
       '@types/node':
         specifier: ^24.19.2
         version: 24.19.2

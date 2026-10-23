@@ -8,7 +8,6 @@ const shared: UserConfig = {
   external: [
     "fastmcp",
     /^fastmcp\//,
-    "@modelcontextprotocol/sdk",
     "hono",
     /^hono\//,
     "@hono/node-server",
