@@ -1,6 +1,6 @@
 {
   "name": "somamcp",
-  "version": "1.5.1",
+  "version": "2.0.0",
   "description": "Framework for building MCP servers with telemetry, introspection, and backend abstraction",
   "type": "module",
   "main": "./dist/index.js",
