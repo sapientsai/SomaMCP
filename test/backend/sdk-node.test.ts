@@ -6,8 +6,7 @@ import { getRandomPort } from "get-port-please"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
-import { createSdkBackend } from "../../src/backend/index.js"
-import { createServer } from "../../src/index.js"
+import { createServer } from "../../src/node/index.js"
 import type { SomaServerInstance } from "../../src/types.js"
 import type { HttpStreamConfig } from "../../src/types/server.js"
 import { connectLegacy, connectModern } from "./sdk-clients.js"
@@ -21,7 +20,7 @@ afterEach(async () => {
 })
 
 const makeServer = (backendOptions?: Record<string, unknown>) => {
-  const server = createServer({ backend: createSdkBackend, backendOptions, name: "node", version: "1.0.0" })
+  const server = createServer({ backendOptions, name: "node", version: "1.0.0" })
   server.addTool({
     execute: (args) => Promise.resolve(`echo: ${args.text}`),
     name: "echo",
@@ -38,7 +37,7 @@ const listen = async (http: Partial<HttpStreamConfig> = {}) => {
   return { server, url: new URL(`http://127.0.0.1:${port}${http.endpoint ?? "/mcp"}`) }
 }
 
-describe("createSdkBackend on Node", () => {
+describe("createNodeBackend", () => {
   describe("httpStream", () => {
     it("serves a 2026-07-28 client and a 2025 client on one port", async () => {
       const { url } = await listen()
@@ -78,23 +77,22 @@ describe("createSdkBackend on Node", () => {
       expect(server.getHealth().status).toBe("stopped")
     })
 
-    it("warns that stateful sessions and eventStore are not supported", async () => {
+    it("warns that stateful sessions are not supported", async () => {
       const warn = vi.fn()
       const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn }
-      const server = createServer({ backend: createSdkBackend, logger, name: "warn", version: "1.0.0" })
+      const server = createServer({ logger, name: "warn", version: "1.0.0" })
       await server.start({
-        httpStream: { eventStore: {}, host: "127.0.0.1", port: await getRandomPort(), stateless: false },
+        httpStream: { host: "127.0.0.1", port: await getRandomPort(), stateless: false },
         transportType: "httpStream",
       })
       running.push(server)
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("stateful sessions are not supported"))
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("eventStore is not supported"))
     })
 
     it("ignores a second start() while listening", async () => {
       const warn = vi.fn()
       const logger = { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn }
-      const server = createServer({ backend: createSdkBackend, logger, name: "twice", version: "1.0.0" })
+      const server = createServer({ logger, name: "twice", version: "1.0.0" })
       const http = { host: "127.0.0.1", port: await getRandomPort() }
       await server.start({ httpStream: http, transportType: "httpStream" })
       running.push(server)
@@ -118,7 +116,6 @@ describe("createSdkBackend on Node", () => {
     it("stop() does not wait for an in-flight streamed call", async () => {
       const port = await getRandomPort()
       const server = createServer({
-        backend: createSdkBackend,
         name: "slow",
         streamKeepalive: { enabled: true, intervalMs: 50 },
         version: "1.0.0",
@@ -137,7 +134,7 @@ describe("createSdkBackend on Node", () => {
       expect(performance.now() - started).toBeLessThan(1_000)
     })
 
-    it("binds to localhost when no host is given, as FastMCP does", async () => {
+    it("binds to localhost when no host is given, as somamcp 1.x did", async () => {
       const port = await getRandomPort()
       const server = makeServer()
       await server.start({ httpStream: { port }, transportType: "httpStream" })
@@ -152,6 +149,25 @@ describe("createSdkBackend on Node", () => {
         second.start({ httpStream: { host: "127.0.0.1", port: Number(url.port) }, transportType: "httpStream" }),
       ).rejects.toThrow()
       expect(second.getHealth().status).toBe("error")
+    })
+    it("hands authenticate the web Request on protected routes too", async () => {
+      const seen: unknown[] = []
+      const port = await getRandomPort()
+      const server = createServer({
+        authenticate: (request) => {
+          seen.push(request)
+          return Promise.resolve({ user: "u" })
+        },
+        name: "auth",
+        version: "1.0.0",
+      })
+      server.addRoute({ handler: (c) => c.text("ok"), method: "GET", path: "/private", protected: true })
+      await server.start({ httpStream: { host: "127.0.0.1", port }, transportType: "httpStream" })
+      running.push(server)
+
+      expect((await fetch(`http://127.0.0.1:${port}/private`)).status).toBe(200)
+      expect(seen).toHaveLength(1)
+      expect(seen[0]).toBeInstanceOf(Request)
     })
   })
 
@@ -177,7 +193,6 @@ describe("createSdkBackend on Node", () => {
       const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
       const server = createServer({
         authenticate: () => Promise.reject(new Error("no credentials on stdio")),
-        backend: createSdkBackend,
         backendOptions: { stdioTransport: serverEnd },
         logger: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), log: vi.fn(), warn: vi.fn() },
         name: "stdio-auth",

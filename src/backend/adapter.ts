@@ -1,6 +1,15 @@
 import type { Hono } from "hono"
 
-import type { Prompt, PromptArgument, Resource, SchemaParams, ServerStatus, SessionAuth, Tool } from "../types/core.js"
+import type {
+  Prompt,
+  PromptArgument,
+  Resource,
+  ResourceTemplate,
+  SchemaParams,
+  ServerStatus,
+  SessionAuth,
+  Tool,
+} from "../types/core.js"
 import type { ServerConfig, TransportConfig } from "../types/server.js"
 
 // ── Backend Session ───────────────────────────────────────────────────
@@ -25,13 +34,12 @@ export type BackendAdapter<T extends SessionAuth = SessionAuth> = {
 
   addPrompt: <Args extends PromptArgument<T>[]>(prompt: Prompt<T, Args>) => void
   addResource: (resource: Resource<T>) => void
-  addResourceTemplate: (...args: ReadonlyArray<unknown>) => void
+  addResourceTemplate: (template: ResourceTemplate<T>) => void
   addTool: <P extends SchemaParams>(tool: Tool<T, P>) => void
 
   /**
    * Handle a web-standard Request. Optional: when absent, callers fall back to
-   * `getApp().fetch`. Edge backends implement this as their primary entry point;
-   * Node backends provide it for parity so `SomaServerInstance.fetch` always works.
+   * `getApp().fetch`. The SDK backend implements it as its primary entry point.
    */
   fetch?: (request: Request) => Promise<Response>
 
@@ -43,9 +51,8 @@ export type BackendAdapter<T extends SessionAuth = SessionAuth> = {
    * Whether `removeTool` / `removeResource` / `removePrompt` actually take
    * effect. Defaults to true when absent.
    *
-   * The edge backend sets this false: EdgeFastMCP exposes no removal API, so its
-   * `remove*` calls only warn. Capability counts must not shrink for a tool that
-   * is still being served.
+   * A backend that cannot remove sets this false, so capability counts do not
+   * shrink for a tool that is still being served.
    */
   readonly supportsRemoval?: boolean
 

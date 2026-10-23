@@ -1,7 +1,7 @@
-// somamcp-owned MCP primitive types — no imports from "fastmcp"
+// somamcp-owned MCP primitive types — no imports from the MCP SDK
 //
 // These types are intentionally plain `T | undefined` rather than `Option<T>` because:
-//   1. They must be structurally compatible with the MCP SDK / FastMCP, StandardSchemaV1,
+//   1. They must be structurally compatible with the MCP SDK, StandardSchemaV1,
 //      and wire-format JSON. Wrapping in `Option` would break structural assignability and
 //      force consumers to import functype to construct basic MCP primitives.
 //   2. They cross serialization boundaries where `undefined` means "absent field".

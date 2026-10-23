@@ -6,18 +6,28 @@ import type { BackendFactory, BackendSession } from "./backend/adapter.js"
 import type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
 import type { GatewayConfig, GatewayManagerInstance } from "./gateway/types.js"
 import type { TelemetryCollector, ToolCaptureConfig } from "./telemetry/TelemetryCollector.js"
-import type { Prompt, PromptArgument, Resource, SchemaParams, ServerStatus, SessionAuth, Tool } from "./types/core.js"
+import type {
+  Prompt,
+  PromptArgument,
+  Resource,
+  ResourceTemplate,
+  SchemaParams,
+  ServerStatus,
+  SessionAuth,
+  Tool,
+} from "./types/core.js"
 import type { RouteConfig } from "./types/routes.js"
 import type { ServerConfig, TransportConfig } from "./types/server.js"
 
 export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfig<T> & {
   artifacts?: ArtifactConfig[]
   /**
-   * Backend implementation. Defaults to `createFastMCPBackend` (Node).
-   * Pass `createEdgeBackend` from `somamcp/edge` to target Cloudflare Workers,
-   * Deno Deploy, or Bun.
+   * Backend implementation. Defaults to the MCP SDK 2.x backend: `createSdkBackend`
+   * from `somamcp`, or `createNodeBackend` (the same, plus a port and stdio) from
+   * `somamcp/node`.
    */
   backend?: BackendFactory<T>
+  /** Options for the backend; the SDK backends take `SdkBackendOptions`. */
   backendOptions?: Record<string, unknown>
   build?: BuildInfo
   enableDashboard?: boolean
@@ -77,13 +87,13 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   addPrompts: <Args extends PromptArgument<T>[]>(prompts: Prompt<T, Args>[]) => void
   addResource: (resource: Resource<T>) => void
   addResources: (resources: Resource<T>[]) => void
-  addResourceTemplate: (...args: ReadonlyArray<unknown>) => void
+  addResourceTemplate: (template: ResourceTemplate<T>) => void
   addRoute: (route: RouteConfig) => void
   addTool: <P extends SchemaParams>(tool: Tool<T, P>) => void
   addTools: <P extends SchemaParams>(tools: Tool<T, P>[]) => void
   /**
    * Web-standard request handler covering both MCP calls and registered
-   * artifacts/routes. This is the entry point for edge runtimes:
+   * artifacts/routes. This is the entry point on Workers and other fetch runtimes:
    * `export default { fetch: (req) => server.fetch(req) }`.
    */
   fetch: (request: Request) => Promise<Response>

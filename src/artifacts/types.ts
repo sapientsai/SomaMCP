@@ -25,4 +25,4 @@ export type DirectoryArtifact = ArtifactCommon & {
 
 export type ArtifactConfig = DirectoryArtifact | DynamicArtifact | StaticArtifact
 
-export type ArtifactAuthenticate = (request: unknown) => Promise<unknown>
+export type ArtifactAuthenticate = (request: Request) => Promise<unknown>

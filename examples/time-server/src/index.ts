@@ -1,4 +1,4 @@
-import { createServer } from "somamcp"
+import { createServer } from "somamcp/node"
 import { z } from "zod"
 
 const formatInZone = (date: Date, timezone: string): string => {

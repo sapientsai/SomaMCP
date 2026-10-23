@@ -1,13 +1,28 @@
+// somamcp — the main entry. It uses WinterTC APIs only (fetch, Request/Response,
+// Web Streams, Web Crypto), so it runs on Cloudflare Workers without
+// nodejs_compat, and on Deno, Bun and Node. Nothing reachable from here may import
+// `node:*` or use a Node global; `pnpm build` checks the bundle. Node-only
+// features live in `somamcp/node`, which re-exports everything here.
+
 // Core
-import { createFastMCPBackend } from "./backend/fastmcp.js"
+import { createSdkBackend } from "./backend/sdk/index.js"
 import { createServerCore } from "./Server.js"
 import type { SomaServerInstance, SomaServerOptions } from "./types.js"
 import type { SessionAuth } from "./types/core.js"
 
-/** Create a server backed by FastMCP (Node). For edge runtimes, use `somamcp/edge`. */
+/**
+ * Create a server on the MCP SDK 2.x backend. Serve it with `server.fetch`:
+ *
+ * ```ts
+ * const server = createServer({ name: "my-server", version: "1.0.0" })
+ * export default { fetch: (req: Request) => server.fetch(req) }
+ * ```
+ *
+ * To listen on a port or on stdio, import `createServer` from `somamcp/node` instead.
+ */
 export const createServer = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T>,
-): SomaServerInstance<T> => createServerCore({ ...options, backend: options.backend ?? createFastMCPBackend<T> })
+): SomaServerInstance<T> => createServerCore({ ...options, backend: options.backend ?? createSdkBackend<T> })
 
 export { createServerCore } from "./Server.js"
 export type {
@@ -65,11 +80,12 @@ export type { Authenticate, AuthMiddlewareConfig, OnUnauthorized } from "./auth/
 export { createAuthMiddleware, getRequestHeader } from "./auth/index.js"
 
 // Content helpers
+export type { ContentInput } from "./content/index.js"
 export { audioContent, imageContent } from "./content/index.js"
 
 // Backend
-export type { BackendAdapter, BackendFactory, BackendSession } from "./backend/index.js"
-export { createFastMCPBackend } from "./backend/index.js"
+export type { BackendAdapter, BackendFactory, BackendSession, SdkBackendOptions } from "./backend/index.js"
+export { createSdkBackend } from "./backend/index.js"
 
 // Telemetry
 export type {
@@ -80,13 +96,12 @@ export type {
   TelemetryEventType,
   ToolCaptureConfig,
 } from "./telemetry/index.js"
-export type { EnrichedErrorResponse, JsonFileTelemetryOptions } from "./telemetry/index.js"
+export type { EnrichedErrorResponse } from "./telemetry/index.js"
 export {
   classifyError,
   createCompositeTelemetry,
   createConsoleTelemetry,
   createEnrichedError,
-  createJsonFileTelemetry,
   createLogLayerTelemetry,
   NoopTelemetry,
 } from "./telemetry/index.js"

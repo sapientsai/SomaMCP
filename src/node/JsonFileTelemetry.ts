@@ -3,7 +3,7 @@ import { dirname } from "node:path"
 
 import { Option, Ref } from "functype"
 
-import type { TelemetryCollector, TelemetryEvent } from "./TelemetryCollector.js"
+import type { TelemetryCollector, TelemetryEvent } from "../telemetry/TelemetryCollector.js"
 
 export type JsonFileTelemetryOptions = {
   filePath: string

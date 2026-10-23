@@ -131,6 +131,7 @@ describe("Gateway against real servers", () => {
   /** Answers the server/discover probe with a 500, as FastMCP on mcp-proxy 6.7.0–6.7.11 did. */
   const failsTheProbe = (server: { fetch: (request: Request) => Promise<Response> }) => ({
     fetch: async (request: Request): Promise<Response> => {
+      if (request.method !== "POST") return server.fetch(request)
       const body = (await request.clone().json()) as { method?: string }
       return body.method === "server/discover" ? new Response("boom", { status: 500 }) : server.fetch(request)
     },

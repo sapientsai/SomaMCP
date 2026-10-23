@@ -1,21 +1,34 @@
-import { defineConfig, type UserConfig } from "tsdown"
+import { defineConfig } from "tsdown"
 
 const isProduction = process.env.NODE_ENV === "production"
 
-const shared: UserConfig = {
-  clean: false,
+// One pass for every entry, so `somamcp/node` and the main entry share chunks
+// instead of each bundling a copy of the core. Copies would break identity: a
+// UserError thrown from code that imported `somamcp` would fail an `instanceof`
+// check made by `somamcp/node`. scripts/check-worker-bundle.mjs fails the build
+// if Node-only code reaches anything the main entry loads, or if the core is
+// emitted twice.
+export default defineConfig({
+  clean: true,
   dts: true,
-  external: [
-    "fastmcp",
-    /^fastmcp\//,
-    "hono",
-    /^hono\//,
-    "@hono/node-server",
-    "functype",
-    "zod",
-    /^functype\//,
-    /^@modelcontextprotocol\//,
-  ],
+  entry: {
+    "backend/index": "src/backend/index.ts",
+    edge: "src/edge.ts",
+    index: "src/index.ts",
+    "node/index": "src/node/index.ts",
+  },
+  deps: {
+    neverBundle: [
+      /^node:/,
+      "hono",
+      /^hono\//,
+      "@hono/node-server",
+      "functype",
+      "zod",
+      /^functype\//,
+      /^@modelcontextprotocol\//,
+    ],
+  },
   format: ["esm"],
   minify: isProduction,
   outDir: "dist",
@@ -23,35 +36,10 @@ const shared: UserConfig = {
     dts: ".d.ts",
     js: ".js",
   }),
+  // "neutral" keeps Node built-in interop out of the output; Node built-ins are
+  // imported by name, from somamcp/node's modules only.
+  platform: "neutral",
   sourcemap: !isProduction,
   target: "es2022",
   treeshake: true,
-}
-
-// The node and edge entries are built as SEPARATE passes on purpose.
-//
-// In a single pass, rolldown hoists modules shared between entries into a common
-// chunk. That chunk pulled `node:fs/promises` (JsonFileTelemetry, content helpers)
-// and the Node FastMCP backend into `somamcp/edge`, which breaks a Workers build —
-// the subpath export alone does not prevent it, because the leak happens at the
-// chunk layer, below the export map. Separate passes cannot share a chunk graph.
-//
-// The cost is that code common to both entries is emitted twice. Consumers load
-// one entry or the other, never both, so this costs nothing at runtime.
-export default defineConfig([
-  {
-    ...shared,
-    clean: true,
-    entry: {
-      "backend/index": "src/backend/index.ts",
-      index: "src/index.ts",
-    },
-    platform: "node",
-  },
-  {
-    ...shared,
-    entry: { edge: "src/edge.ts" },
-    // "neutral" keeps Node built-in interop out of the edge output entirely.
-    platform: "neutral",
-  },
-])
+})

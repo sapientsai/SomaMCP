@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-somamcp is a framework for building MCP (Model Context Protocol) servers with telemetry, introspection, and a backend abstraction layer. It wraps an underlying MCP framework (currently FastMCP) behind a `BackendAdapter` interface so the framework can be swapped without breaking consumers. The primary entry point is `createServer()`.
+somamcp is a framework for building MCP (Model Context Protocol) servers with telemetry, introspection, and a backend abstraction layer. It builds on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`) behind a `BackendAdapter` interface. The primary entry point is `createServer()`.
+
+**The main entry is WinterTC-only.** Nothing reachable from `src/index.ts` may import `node:*`, a Node-only package (`@hono/node-server`, `@modelcontextprotocol/server/stdio`), or use a Node global (`Buffer`, `process`). Node-only code lives in `src/node/` and is reached only from `src/node/index.ts` (`somamcp/node`). `scripts/check-worker-bundle.mjs` (run by `pnpm build`) enforces this on the built output, and also that the core is emitted once, so `somamcp/node` shares the main entry's modules.
 
 ## Commands
 
@@ -23,14 +25,17 @@ All scripts delegate to `ts-builds` (centralized TypeScript toolchain). Build co
 
 ### Backend Abstraction (`src/backend/`)
 
-**Critical design constraint**: FastMCP is only imported in `src/backend/fastmcp.ts`. All other source files import from `src/types/` (somamcp-owned types). This isolation means swapping FastMCP requires changing one file.
+**Design constraint**: the MCP SDK server is only imported in `src/backend/sdk/` (and its Node transports in `src/node/listen.ts`). All other source files import from `src/types/` (somamcp-owned types).
 
-- **`adapter.ts`** — defines `BackendAdapter<T>` interface: the contract somamcp uses to talk to any MCP framework (addTool, addResource, addPrompt, start, stop, getApp, on events)
-- **`fastmcp.ts`** — `createFastMCPBackend()` implements `BackendAdapter` by delegating to a `FastMCP` instance. Types are structurally compatible; boundary uses `unknown` casts (no `any`)
+- **`adapter.ts`** — defines `BackendAdapter<T>` interface: the contract somamcp uses to talk to any MCP implementation (addTool, addResource, addPrompt, start, stop, getApp, on events)
+- **`sdk/index.ts`** — `buildSdkBackend(transports, config, options)`: the SDK 2.x backend. A Hono app whose MCP path goes to `createMcpHandler`, which serves `2026-07-28` and 2025 clients statelessly. `createSdkBackend` is it with no transports (fetch only); `createNodeBackend` (`src/node/backend.ts`) plugs in a port and stdio
+- **`sdk/handlers.ts`** — builds a low-level SDK `Server` per request whose handlers read somamcp's registries (tools, resources, templates, prompts, completions)
+- **`sdk/mapping.ts`** — somamcp types ↔ SDK wire types (JSON Schema, results, tool context)
+- **`sdk/transports.ts`** — the `SdkTransports` type that `somamcp/node` implements
 
 ### somamcp Types (`src/types/`)
 
-somamcp owns its own MCP primitive types that are structurally identical to FastMCP's but independently defined:
+somamcp owns its own MCP primitive types, structurally compatible with the MCP SDK's wire types but independently defined:
 
 - **`core.ts`** — `Tool`, `Resource`, `Prompt`, `Context`, `Content` (union of Text/Image/Audio/Resource/ResourceLink), `ContentResult`, `SessionAuth`, `SchemaParams`, `ServerStatus`, `UserError`
 - **`server.ts`** — `ServerConfig`, `TransportConfig`, `Logger`
@@ -62,7 +67,7 @@ Enables server-to-server MCP communication via the SDK 2.x client (`@modelcontex
 
 ### Telemetry (`src/telemetry/`)
 
-Pluggable via `TelemetryCollector` interface (`recordEvent` + optional `flush`). Five collectors: `NoopTelemetry` (default), `ConsoleTelemetry`, `JsonFileTelemetry`, `LogLayerTelemetry`, `CompositeTelemetry`.
+Pluggable via `TelemetryCollector` interface (`recordEvent` + optional `flush`). Five collectors: `NoopTelemetry` (default), `ConsoleTelemetry`, `LogLayerTelemetry`, `CompositeTelemetry`, and `JsonFileTelemetry` (`src/node/`, `somamcp/node` only).
 
 - **`telemetryWrapper.ts`** — `wrapTool`, `wrapResource`, `wrapPrompt` decorators that record execution time, errors, and input/output with configurable capture levels and field redaction
 - **`EnrichedError.ts`** — `classifyError()` categorizes errors into 6 categories with contextual suggestions
@@ -75,17 +80,21 @@ HTTP endpoints on the Hono app. Types: `StaticArtifact`, `DynamicArtifact`, `Dir
 
 ### Content Helpers (`src/content/`)
 
-`imageContent()` and `audioContent()` — read from buffer/path/URL, base64-encode, and infer MIME type from extension. These are somamcp-owned (no FastMCP dependency).
+`imageContent()` and `audioContent()` — read from bytes (`{ buffer }`, any `Uint8Array`) or a URL, base64-encode without `Buffer`, and infer MIME type from extension. `src/node/content.ts` wraps them to also read `{ path }` from disk.
 
 ## Key Patterns
 
 - **Factory functions over classes** — all modules export `create*` factories returning typed object literals
 - **Closure-based state** — mutable state held via functype's `Ref<T>` (closure-based mutable cell)
 - **`SessionAuth` threading** — generic type parameter `T` propagates through Server, tools, gateways, backend
-- **`backendOptions` pass-through** — FastMCP-specific config (OAuth, health, ping, roots) goes through `backendOptions: Record<string, unknown>` without somamcp needing to know about it
+- **`backendOptions` pass-through** — backend-specific config goes through `backendOptions: Record<string, unknown>`; the SDK backend reads `SdkBackendOptions` (`mcpPath`, `stdioTransport`)
 - **Error handling** — `Try.fromPromise()` + `.fold()` pattern in telemetry wrappers and tool proxy; errors converted to `ContentResult` with `isError: true`
 
 ## Package Exports
 
-- `"somamcp"` — main public API (createServer, types, telemetry, gateway, artifacts, introspection)
-- `"somamcp/backend"` — backend adapter types and `createFastMCPBackend` for advanced use
+- `"somamcp"` — main public API, WinterTC-only (createServer → SDK backend, types, telemetry, gateway, artifacts, introspection)
+- `"somamcp/node"` — re-exports `somamcp`, plus `createServer` → `createNodeBackend` (port + stdio), `createJsonFileTelemetry`, and content helpers that read `{ path }`
+- `"somamcp/backend"` — backend adapter types and `createSdkBackend` for advanced use
+- `"somamcp/edge"` — alias of `somamcp`, kept through 2.x; removed in 3.0
+
+All entries build in one tsdown pass so they share chunks; see `tsdown.config.ts`.

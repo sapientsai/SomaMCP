@@ -1,12 +1,8 @@
 import { Option, Try } from "functype"
 import type { Context, MiddlewareHandler } from "hono"
 
-/**
- * Callback invoked to authenticate an incoming request. Receives either a Hono
- * `Request` (custom routes / protected artifacts) or an `http.IncomingMessage`
- * (MCP transport). Use `getRequestHeader` to hide the shape difference.
- */
-export type Authenticate = (request: unknown) => Promise<unknown>
+/** Callback invoked to authenticate an incoming request, as the web `Request`. */
+export type Authenticate = (request: Request) => Promise<unknown>
 
 /** Response builder invoked when auth is missing or fails. Defaults to `401 { error: "Unauthorized" }`. */
 export type OnUnauthorized = (c: Context) => Response | Promise<Response>
@@ -25,10 +21,12 @@ export const createAuthMiddleware = ({ authenticate, onUnauthorized }: AuthMiddl
     if (!authenticate) {
       return reject(c)
     }
-    const req = Option(c.env as { incoming?: unknown } | null)
-      .flatMap((e) => Option(e.incoming))
-      .orElse(c.req.raw)
-    const result = await Try.fromPromise(authenticate(req))
+    // Sync throws and nullish results fail too, matching the MCP endpoint.
+    const result = await Try.fromPromise(
+      Promise.resolve()
+        .then(() => authenticate(c.req.raw))
+        .then((auth) => Option(auth).orThrow(new Error("Authentication required"))),
+    )
     if (result.isFailure()) {
       return reject(c)
     }

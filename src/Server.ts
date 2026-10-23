@@ -25,17 +25,17 @@ import type {
   SomaServerOptions,
   ToolOptions,
 } from "./types.js"
-import type { SchemaParams, SessionAuth, Tool } from "./types/core.js"
+import type { ResourceTemplate, SchemaParams, SessionAuth, Tool } from "./types/core.js"
 import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
 /**
  * Backend-agnostic server core.
  *
- * `backend` is required here on purpose. Defaulting it would mean a static import
- * of the Node FastMCP backend, which lands in every bundle that reaches this
- * module — including `somamcp/edge`. The entry barrels supply the default instead:
- * `somamcp` binds createFastMCPBackend, `somamcp/edge` binds createEdgeBackend.
+ * `backend` is required here on purpose: each entry binds its own default.
+ * `somamcp` binds createSdkBackend, which serves through `fetch` only, and
+ * `somamcp/node` binds createNodeBackend, which can also listen. A default here
+ * would put the choice, and anything Node-only, in front of every entry.
  */
 export const createServerCore = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T> & { backend: BackendFactory<T> },
@@ -252,8 +252,8 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
       resources.forEach(addResource)
     },
 
-    addResourceTemplate: (...args: ReadonlyArray<unknown>): void => {
-      backend.addResourceTemplate(...args)
+    addResourceTemplate: (template: ResourceTemplate<T>): void => {
+      backend.addResourceTemplate(template)
     },
 
     addRoute,
