@@ -71,6 +71,19 @@ describe("check-worker-bundle", () => {
     expect((await check({ "core.js": CLEAN["core.js"] + guarded })).code).toBe(0)
   })
 
+  it.each([
+    ["import.meta", "export const here = import.meta.url\n"],
+    ["a template-literal dynamic import", "export const load = (l) => import(`./locales/${l}.js`)\n"],
+    ["a dynamic import of a variable", "export const load = (m) => import(m)\n"],
+  ])("passes %s, which names no module", async (_label, source) => {
+    const { code, output } = await check({
+      "core.js": CLEAN["core.js"] + source,
+      "node/index.js": CLEAN["node/index.js"] + source,
+    })
+    expect(output).not.toContain("TypeError")
+    expect(code).toBe(0)
+  })
+
   it("fails when somamcp/node bundles its own copy of the core", async () => {
     const copy =
       'export var UserError2 = class extends Error { constructor(m) { super(m); this.name = "UserError" } }\n'
