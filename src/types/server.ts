@@ -13,7 +13,18 @@ export type Logger = {
 // ── Server Config ─────────────────────────────────────────────────────
 
 export type ServerConfig<T extends SessionAuth = SessionAuth> = {
-  authenticate?: (request: unknown) => Promise<T>
+  /**
+   * Authenticate a request; resolve to the session that tools see as `context.session`.
+   * Rejecting, throwing, or resolving to `undefined`/`null` fails it with a 401. On the
+   * MCP endpoint, reject with a `Response` to send that instead; protected artifacts and
+   * routes answer with their `onUnauthorized`, or 401.
+   *
+   * Receives the web `Request` for MCP calls and for protected artifacts and routes, on
+   * every runtime. On stdio there is no request: it is called once with `undefined`, and
+   * a failure serves without a session. Read headers with `getRequestHeader`.
+   */
+  // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
+  authenticate?: (request: Request | undefined) => Promise<T>
   instructions?: string
   logger?: Logger
   name: string
@@ -22,31 +33,21 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    * balancer does not close the connection as idle while a long-running tool produces no
    * output — a large document read, say.
    *
-   * This is the only keepalive that survives `httpStream.stateless`. A transport-level ping
-   * needs the standing server-to-client stream, and stateless has none; these travel on the
-   * request's own stream instead. If you set `stateless` and have anything with an idle
-   * timeout in front of you, you want this too.
+   * They are SSE comment frames on the request's own stream, so they work although the
+   * server keeps no sessions. With this on, every response streams as SSE, because a JSON
+   * response cannot carry them.
    *
-   * Set at construction rather than on `httpStream`, because the backend builds its server
+   * Set at construction rather than on `httpStream`, because the backend builds its handler
    * before `start()` ever sees the transport config.
-   *
-   * Honoured by the fastmcp backend. The edge backend ignores it — Workers and Deno Deploy
-   * terminate the connection themselves, so there is nothing for somamcp to keep alive.
    */
   streamKeepalive?: {
     /** Whether to write keepalives. Opt-in. */
     enabled?: boolean
     /**
      * Gap between keepalives. Keep it comfortably under the shortest idle timeout on the
-     * path — an AWS ALB defaults to 60s. Defaults to 20s in the fastmcp backend.
+     * path — an AWS ALB defaults to 60s. Defaults to 20s.
      */
     intervalMs?: number
-    /**
-     * Level reported on the keepalive notification. Defaults to `debug` in the fastmcp
-     * backend, which is usually what you want — these fire every interval, for the whole
-     * length of every long call.
-     */
-    logLevel?: "alert" | "critical" | "debug" | "emergency" | "error" | "info" | "notice" | "warning"
   }
   version: `${number}.${number}.${number}`
 }
@@ -54,15 +55,16 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
 // ── Transport Config ──────────────────────────────────────────────────
 
 /**
- * httpStream transport options. All fields are passed through to the underlying
- * MCP backend unchanged; `port` is the only one required.
+ * Options for listening on a port, which needs `somamcp/node`. `port` is the only
+ * required field.
  *
- * - `cors` — `true` for permissive defaults, or a config object forwarded to the
- *   backend's CORS implementation. Only relevant for browser-facing servers.
- * - `stateless` — treat each request independently (no session state). Useful
- *   for horizontally-scaled or Lambda-style deployments.
- * - `eventStore` — pluggable store enabling resumable event streams; the
- *   backend's `EventStore` interface, opaque to somamcp.
+ * - `cors` — `true` for permissive defaults, or options for Hono's `cors()`. Only
+ *   relevant for browser-facing servers.
+ * - `enableJsonResponse` — answer `2026-07-28` requests with JSON instead of SSE.
+ *   It turns `streamKeepalive` off, since JSON cannot carry keepalive frames.
+ * - `endpoint` — the MCP path. Defaults to `/mcp`.
+ * - `host` — the address to bind. Defaults to `localhost`; set `0.0.0.0` in a container.
+ * - `stateless` — serving is always stateless; `false` logs a warning and is ignored.
  * - `sslCert` / `sslKey` / `sslCa` — inline PEM strings enabling TLS termination
  *   at the server. Omit for plain HTTP behind a proxy.
  */
@@ -70,7 +72,6 @@ export type HttpStreamConfig = {
   cors?: boolean | Record<string, unknown>
   enableJsonResponse?: boolean
   endpoint?: `/${string}`
-  eventStore?: unknown
   host?: string
   port: number
   sslCa?: string

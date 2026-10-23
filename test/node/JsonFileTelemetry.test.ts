@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 
 import { afterEach, describe, expect, it } from "vitest"
 
-import { createJsonFileTelemetry } from "../../src/telemetry/JsonFileTelemetry.js"
+import { createJsonFileTelemetry } from "../../src/node/JsonFileTelemetry.js"
 import type { TelemetryEvent } from "../../src/telemetry/TelemetryCollector.js"
 
 const createTempPath = () => join(tmpdir(), `soma-test-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`)

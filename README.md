@@ -2,18 +2,22 @@
 
 Framework for building **MCP (Model Context Protocol)** servers with built-in telemetry, introspection, agent feedback, and a backend abstraction layer.
 
-somamcp wraps an underlying MCP framework (currently [FastMCP](https://github.com/punkpeye/fastmcp)) behind a `BackendAdapter` interface — giving you a stable API surface, automatic telemetry, gateway-based server composition, identity/health endpoints with sensible security defaults, and HTTP artifacts out of the box.
+somamcp builds on the official [MCP TypeScript SDK 2.x](https://ts.sdk.modelcontextprotocol.io/v2) behind a `BackendAdapter` interface — giving you a stable API surface, automatic telemetry, gateway-based server composition, identity/health endpoints with sensible security defaults, and HTTP artifacts out of the box. One endpoint serves both the `2026-07-28` protocol revision and 2025-era clients.
+
+The main entry, `somamcp`, uses web-standard APIs only, so it runs on Cloudflare Workers without `nodejs_compat`, and on Deno, Bun and Node. `somamcp/node` adds what only Node can do: listening on a port, stdio, file telemetry, and reading content from a path. Coming from 1.x? See [Migrating from 1.x](#migrating-from-1x).
 
 ## Features
 
-- **Backend abstraction** — framework-agnostic `BackendAdapter` interface; swap the underlying MCP framework without changing consumer code
+- **Both protocol eras** — the `2026-07-28` revision that current Claude clients request first, and the 2025 `initialize` handshake, from one endpoint
+- **Runs anywhere** — the main entry is WinterTC-only (Workers, Deno, Bun, Node); `somamcp/node` adds a port listener and stdio
+- **Backend abstraction** — framework-agnostic `BackendAdapter` interface; swap the underlying MCP implementation without changing consumer code
 - **Structured telemetry** — pluggable `TelemetryCollector` with console, file (NDJSON), composite, and [functype-log](https://github.com/jordanburke/functype-log) adapters
 - **Error classification & enrichment** — errors are auto-classified (validation / timeout / gateway / auth / not_found / internal) with actionable suggestions for LLMs
 - **Per-tool capture config** — configure input/output capture levels, field redaction, and output size limits per tool
 - **Gateway system** — connect to remote MCP servers and proxy their tools as local tools
 - **Identity & build info** — `info` MCP tool returns name, version, build commit, runtime, and capability counts; auto-populated from `SOMAMCP_BUILD_*` env vars
 - **Two-tier health** — public `/health` (minimal, for Docker/k8s probes) + protected `/health/detail` (full operational state)
-- **Protected artifacts** — `protected: true` on any artifact reuses FastMCP's `authenticate` callback; dashboard and `/info` protected by default
+- **Protected artifacts** — `protected: true` on any artifact reuses the server's `authenticate` callback; dashboard and `/info` protected by default
 - **Method-aware protected routes** — `addRoute({ method, path, protected, handler })` for custom `POST`/`PUT`/etc. endpoints behind the same `authenticate` gate
 - **Agent feedback tool** — `createFeedbackTool` posts agent-reported issues to GitHub or any webhook, with automatic credential/PII redaction
 - **HTTP dashboard** — auto-generated overview at `/dashboard` (protected)
@@ -29,8 +33,10 @@ npm install somamcp
 
 ## Quick Start
 
+On Node, import from `somamcp/node` and start a transport:
+
 ```typescript
-import { createServer } from "somamcp"
+import { createServer } from "somamcp/node"
 import { z } from "zod"
 
 const server = createServer({
@@ -46,6 +52,18 @@ server.addTool({
 })
 
 await server.start({ transportType: "stdio" })
+// or: await server.start({ transportType: "httpStream", httpStream: { port: 3000 } })
+```
+
+On Cloudflare Workers (or any runtime with `fetch`), import from `somamcp` and serve requests:
+
+```typescript
+import { createServer } from "somamcp"
+
+const server = createServer({ name: "my-worker", version: "1.0.0" })
+// ...addTool as above
+
+export default { fetch: (request: Request) => server.fetch(request) }
 ```
 
 ## Identity & Health
@@ -106,16 +124,16 @@ createServer({
 
 ## Protected Artifacts
 
-Any artifact can opt into auth with `protected: true`. The route runs FastMCP's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
+Any artifact can opt into auth with `protected: true`. The route runs the server's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. Rejecting, throwing, or resolving to `undefined`/`null` returns 401. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
 
 ```typescript
-import { createServer, getRequestHeader } from "somamcp"
+import { createServer, getRequestHeader } from "somamcp/node"
 
 createServer({
   name: "my-server",
   version: "1.0.0",
-  // `authenticate` receives either a Hono Request (routes/artifacts) or an
-  // http.IncomingMessage (MCP transport). `getRequestHeader` hides the shape difference.
+  // `authenticate` receives the web Request, for MCP calls and for protected
+  // routes alike. On stdio there is no request, and it receives `undefined`.
   authenticate: async (req) => {
     const header = getRequestHeader(req, "authorization")
     const token = header?.replace(/^Bearer /, "")
@@ -157,10 +175,10 @@ See [`examples/protected-upload-server`](examples/protected-upload-server) for a
 
 ## Content-Array Tool Returns
 
-A tool's `execute` may return a plain string **or** a full content-array with multimodal parts — telemetry passes the return value through unchanged. Use the exported `imageContent` / `audioContent` helpers to build parts without reaching into the backend.
+A tool's `execute` may return a plain string **or** a full content-array with multimodal parts — telemetry passes the return value through unchanged. Use the exported `imageContent` / `audioContent` helpers to build parts without reaching into the backend. Both take `{ buffer }` (any `Uint8Array`, including a Node `Buffer`) or `{ url }` everywhere; the `somamcp/node` versions also take `{ path }`. A URL's or path's extension picks the MIME type.
 
 ```typescript
-import { createServer, imageContent } from "somamcp"
+import { createServer, imageContent } from "somamcp/node"
 
 server.addTool({
   name: "hello_pixel",
@@ -177,7 +195,8 @@ server.addTool({
 Telemetry is opt-in via the `telemetry` option. Every tool/resource/prompt call is automatically wrapped with timing, error classification, and optional input/output capture.
 
 ```typescript
-import { createServer, createCompositeTelemetry, createConsoleTelemetry, createJsonFileTelemetry } from "somamcp"
+// createJsonFileTelemetry writes to disk, so it comes from somamcp/node.
+import { createServer, createCompositeTelemetry, createConsoleTelemetry, createJsonFileTelemetry } from "somamcp/node"
 
 const telemetry = createCompositeTelemetry([
   createConsoleTelemetry(),
@@ -327,19 +346,30 @@ const server = createServer({
   ],
 })
 
+// With createServer from "somamcp/node":
 await server.start({
   transportType: "httpStream",
   httpStream: { port: 8080 },
 })
 ```
 
-## Edge Runtimes (Cloudflare Workers, Deno Deploy, Bun)
+## Entry Points
 
-Import from `somamcp/edge` instead of `somamcp`. The API is identical — `backend` just defaults to `createEdgeBackend` rather than the Node FastMCP backend.
+| Import            | Runs on                  | `createServer` defaults to | Adds                                                                                       |
+| ----------------- | ------------------------ | -------------------------- | ------------------------------------------------------------------------------------------ |
+| `somamcp`         | Workers, Deno, Bun, Node | `createSdkBackend`         | —                                                                                          |
+| `somamcp/node`    | Node (and Bun)           | `createNodeBackend`        | `start()` on a port or stdio, `createJsonFileTelemetry`, `{ path }` in the content helpers |
+| `somamcp/backend` | anywhere                 | —                          | `createSdkBackend` and the backend types, for writing or wrapping a backend                |
+| `somamcp/edge`    | anywhere                 | `createSdkBackend`         | Nothing: an alias of `somamcp` kept through 2.x so 1.x imports resolve. Removed in 3.0.    |
+
+`somamcp/node` re-exports everything in `somamcp` and shares its modules rather than copying them, so values such as `UserError` are the same whichever entry you import them from. `pnpm build` fails if Node-only code reaches anything `somamcp` loads, or if the core is emitted twice.
+
+On the main entry, a bare `start()` listens on nothing: it marks the server started and connects gateways. `start()` with a transport rejects with a pointer to `somamcp/node`. On `somamcp/node`, a bare `start()` serves stdio.
+
+### On Workers
 
 ```typescript
-import { createServer } from "somamcp/edge"
-import { z } from "zod"
+import { createServer } from "somamcp"
 
 const server = createServer({
   name: "my-worker",
@@ -348,131 +378,69 @@ const server = createServer({
   build: { commit: "abc123", environment: "production" },
 })
 
-server.addTool({
-  name: "greet",
-  description: "Greet someone by name",
-  parameters: z.object({ name: z.string() }),
-  execute: async ({ name }) => `Hello, ${name}!`,
-})
-
-export default {
-  fetch: (request: Request) => server.fetch(request),
-}
+export default { fetch: (request: Request) => server.fetch(request) }
 ```
 
 `server.fetch` serves both the MCP endpoint and every artifact/route you register, so `/health`, `/info`, and `/dashboard` work as they do on Node.
 
-### Why a separate entry point
-
-The root `somamcp` barrel exports `createJsonFileTelemetry`, `imageContent`, and `audioContent`, which import `node:fs`. Importing it from a Worker pulls Node built-ins into the bundle. `somamcp/edge` is built as a separate pass with no shared chunks, and `pnpm check:edge` fails the build if any `node:` import reaches the edge output.
-
-### Feature parity
-
-| Feature                                            | Node (`somamcp`) | Edge (`somamcp/edge`)             |
-| -------------------------------------------------- | ---------------- | --------------------------------- |
-| Tools, resources, prompts                          | ✅               | ✅                                |
-| Artifacts, `addRoute`, auth middleware             | ✅               | ✅                                |
-| `authenticate` on the MCP endpoint                 | ✅               | ✅ — enforced by somamcp          |
-| `/health`, `/health/detail`, `/info`, `/dashboard` | ✅               | ✅                                |
-| `info` introspection tool                          | ✅               | ✅                                |
-| Telemetry (console, composite, custom)             | ✅               | ✅                                |
-| Tool errors (`isError`)                            | ✅               | ✅ — sent as JSON-RPC errors      |
-| File telemetry, `imageContent` / `audioContent`    | ✅               | ❌ — need `node:fs`               |
-| stdio transport                                    | ✅               | ❌ — HTTP only                    |
-| Sessions, `connect` / `disconnect` events          | ✅               | ❌ — stateless                    |
-| Gateways (proxying remote MCP servers)             | ✅               | ⚠️ requires `start()` — see below |
-| Multi-result resources (`load()` returning array)  | ✅               | ⚠️ first result only, warns       |
-| `reportProgress` / `streamContent` in tools        | ✅               | ⚠️ inert no-ops                   |
-| `removeTool` / `removeResource` / `removePrompt`   | ✅               | ⚠️ warns, does nothing            |
-| `supportsRemoval`                                  | `true`           | `false`                           |
-| `addResourceTemplate`                              | ✅               | ⚠️ warns, does nothing            |
-
-The ⚠️ rows are limits of `EdgeFastMCP`, which exposes no removal API, has no server→client channel, and treats resources as single-valued. They log through `config.logger` rather than failing, so passing a `logger` is recommended on edge.
-
-**Capability counts.** `getInfo().capabilities` counts every tool actually served — including the built-in `info` tool and any proxied gateway tools. Because the edge backend reports `supportsRemoval: false`, a `removeTool` there leaves the count untouched: the tool is still being served, so it is still counted.
-
-**Auth.** `EdgeFastMCPOptions` has no `authenticate` field, so somamcp gates the MCP endpoint itself with the same middleware that protects artifacts and routes. Behaviour matches Node: configure `authenticate`, and unauthenticated MCP calls get a 401.
-
-**Tool errors.** `EdgeFastMCP` builds its response as `result: { content }` and discards `isError`, which would make a failed tool look successful. The edge adapter rethrows on `isError` so the client receives a JSON-RPC error instead.
+**Types.** The MCP SDK's own `.d.mts` files mention `Buffer`, so a Workers project without `@types/node` needs `skipLibCheck: true` (Wrangler's default). somamcp's own types do not.
 
 **Gateways** need `await server.start()` to connect and register proxied tools. Workers forbids network I/O at module scope, so call it lazily inside your first request rather than at the top level. Without it, gateway tools are never registered.
 
-**Registering routes late.** Hono builds its router on the first request and then rejects new routes ("matcher is already built"). Register every artifact and `addRoute` before serving traffic — on edge that means at module scope, not inside the fetch handler.
+**Registering routes late.** Hono builds its router on the first request and then rejects new routes ("matcher is already built"). Register every artifact and `addRoute` before serving traffic — on Workers that means at module scope, not inside the fetch handler.
 
-**Route precedence.** somamcp owns the outer Hono app and falls through to `EdgeFastMCP` for anything unmatched. This ordering is deliberate: `EdgeFastMCP` registers its own `/health` at construction, and Hono is first-match-wins, so mounting it first would shadow somamcp's health artifact.
+**Runtime reporting.** `getInfo().runtime` is `"edge"` on Cloudflare Workers, Deno, and Vercel Edge, and `"node"` otherwise. Edge runtimes are detected positively — `navigator.userAgent === "Cloudflare-Workers"`, or a `Deno` / `EdgeRuntime` global — rather than by the absence of `process`, because Workers with `nodejs_compat` supplies a working `process.versions.node`. On edge, `arch` / `nodeVersion` / `platform` report `"unknown"` or the user agent, rather than describing the compatibility shim. Bun deliberately reports `"node"`: it is a Node-family server runtime with full Node APIs.
 
-**Runtime reporting.** `getInfo().runtime` is `"edge"` on Cloudflare Workers, Deno, and Vercel Edge, and `"node"` otherwise. Edge runtimes are detected positively — `navigator.userAgent === "Cloudflare-Workers"`, or a `Deno` / `EdgeRuntime` global — rather than by the absence of `process`, because Workers with `nodejs_compat` supplies a working `process.versions.node`. On edge, `arch` / `nodeVersion` / `platform` report `"unknown"` or the user agent, rather than describing the compatibility shim.
+## The SDK Backend
 
-Bun deliberately reports `"node"`: it is a Node-family server runtime with full Node APIs, so that is the accurate answer even though `somamcp/edge` runs there.
+`createSdkBackend` (and `createNodeBackend`, the same backend with Node transports) builds on `@modelcontextprotocol/server` 2.x. One endpoint serves both protocol revisions:
 
-## MCP SDK 2.x Backend (opt-in)
-
-`createSdkBackend` builds on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`). One endpoint serves both protocol revisions:
-
-- **`2026-07-28`**, which current Claude clients request first. The default FastMCP 4.x backend answers that request with HTTP 400, and a client that doesn't retry with the older handshake ends up with no tools.
+- **`2026-07-28`**, which current Claude clients request first.
 - **2025-era clients**, which open with `initialize`.
 
-Pass it as `backend`. Nothing else changes:
+How it behaves:
 
-```typescript
-import { createServer } from "somamcp"
-import { createSdkBackend } from "somamcp/backend"
-
-const server = createServer({ name: "my-server", version: "1.0.0", backend: createSdkBackend })
-
-await server.start({ transportType: "httpStream", httpStream: { port: 3000 } })
-// or: await server.start({ transportType: "stdio" })
-```
-
-How it differs from the FastMCP backend:
-
-- **Stateless only.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` and `eventStore` are ignored, with a warning through `logger`.
-- **`authenticate` receives a web `Request`**, not Node's `http.IncomingMessage`. Read headers with `getRequestHeader` and the same function works on both backends. Rejecting with a `Response` serves that response as-is. Any other rejection, a synchronous throw, or a nullish result (as on FastMCP) is a `401`. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise, as on FastMCP.
-- **Errors follow SDK 2.x and the current spec.** Calling an unknown tool, or one hidden by `canAccess`, is a JSON-RPC `InvalidParams` error, as on FastMCP. Invalid arguments are an `isError` tool result, so the model can read the message and retry. FastMCP reports them as an `InvalidParams` protocol error.
+- **Stateless.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` is ignored, with a warning through `logger`.
+- **`authenticate` receives the web `Request`**, for MCP calls and for protected artifacts and routes. Read headers with `getRequestHeader`. On the MCP endpoint, rejecting with a `Response` serves that response as-is; protected artifacts and routes answer with their `onUnauthorized`, or 401. Any other rejection, a synchronous throw, or a nullish result is a `401`. On stdio there is no request: `authenticate` is called once with `undefined`, and a failure serves without a session. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise.
+- **Errors follow SDK 2.x and the current spec.** Calling an unknown tool, or one hidden by `canAccess`, is a JSON-RPC `InvalidParams` error. Invalid arguments and thrown errors (including `UserError`) are `isError` tool results, so the model can read the message and retry.
 - **Schemas must describe themselves as JSON Schema** (`~standard.jsonSchema`): zod 4, ArkType, or Valibot via `@valibot/to-json-schema`. Other schemas still validate, but clients see an empty argument list; `addTool` warns through `logger`.
 - **`context.client.version`** is filled in for `2026-07-28` clients, which send their client info on every request. It is `undefined` for 2025 clients, which send it only during `initialize`.
-- **`httpStream.host` defaults to `localhost`**, as on FastMCP. Pass `host: "0.0.0.0"` to listen on every interface.
-- **`streamKeepalive`** maps to the SDK's SSE comment frames (`enabled` and `intervalMs`; the default is 20 s, as on FastMCP). FastMCP sends log notifications instead. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `enableJsonResponse` turns them off; it applies to `2026-07-28` exchanges only, so a 2025 client's responses are unchanged by it.
 - **`context.log` follows the client's log level.** A `2026-07-28` client receives tool logs only when its request asks for a log level (`io.modelcontextprotocol/logLevel`); otherwise the SDK drops them. 2025 clients receive them as before. Progress (`reportProgress`) is unaffected.
-- **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. FastMCP reports `stopped` until `start()`. Both report `stopped` after `stop()`.
+- **`streamKeepalive`** (`enabled`, `intervalMs`; default 20 s) writes SSE comment frames onto an in-flight call's own stream. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `httpStream.enableJsonResponse` turns them off; it applies to `2026-07-28` exchanges only.
+- **`httpStream.host` defaults to `localhost`.** Pass `host: "0.0.0.0"` to listen on every interface, for example in a container.
+- **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. `stop()` closes the listener and in-flight streams and reports `stopped` (so `/health` answers 503), but `fetch()` still answers MCP requests.
 - **Removal is real:** `removeTool`, `removeResource` and `removePrompt` apply from the next request.
-- **`backendOptions`** takes `mcpPath` (the endpoint for `fetch()` use; `httpStream.endpoint` overrides it) and `stdioTransport` (a transport to use in place of the process's stdin/stdout). FastMCP's `ping`, `health`, `roots` and `oauth` options don't apply.
+- **The MCP path comes first.** The backend claims the MCP endpoint before artifacts and routes, so an `addRoute` on that path is never reached.
+- **`backendOptions`** (`SdkBackendOptions`) takes `mcpPath`, the endpoint for `fetch()` use (`httpStream.endpoint` overrides it), and, on `somamcp/node`, `stdioTransport`, a transport to use in place of the process's stdin/stdout.
 
 ## Backend Abstraction
 
-The underlying MCP framework is accessed exclusively through the `BackendAdapter` interface. `createServer` accepts a `backend` factory — this is how `somamcp/edge` swaps in the edge adapter:
+The MCP implementation is reached only through the `BackendAdapter` interface. `createServer` accepts a `backend` factory; each entry supplies its default. To wrap or replace the backend, implement `BackendFactory`:
 
 ```typescript
-import { createServer } from "somamcp"
-import { createEdgeBackend } from "somamcp/edge"
-
-// equivalent to importing createServer from "somamcp/edge"
-const server = createServer({ name: "my-server", version: "1.0.0", backend: createEdgeBackend })
-```
-
-To use a different backend entirely, implement `BackendFactory`:
-
-```typescript
-import { createFastMCPBackend } from "somamcp/backend"
-import type { BackendFactory } from "somamcp/backend"
+import { createSdkBackend, type BackendFactory } from "somamcp/backend"
 
 const myBackend: BackendFactory = (config, backendOptions) => {
-  // ...
+  const backend = createSdkBackend(config, backendOptions)
+  // ...wrap or extend it
+  return backend
 }
 ```
 
-Framework-specific options (e.g. FastMCP's OAuth, ping) flow through `backendOptions`:
+## Migrating from 1.x
 
-```typescript
-createServer({
-  name: "my-server",
-  version: "1.0.0",
-  backendOptions: {
-    ping: { enabled: true, intervalMs: 30000 },
-    // ...any FastMCP ServerOptions fields
-  },
-})
-```
+somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which has both backends.
+
+- **Node servers import from `somamcp/node`.** `start()` with `httpStream` or `stdio` now needs it; on `somamcp` it rejects. Change `import { createServer } from "somamcp"` to `"somamcp/node"`. Everything else `somamcp` exports is re-exported there.
+- **A bare `start()` on `somamcp` no longer serves stdio.** It listens on nothing and resolves, so a stdio server that keeps importing from `somamcp` exits quietly. On `somamcp/node`, a bare `start()` still serves stdio.
+- **`createJsonFileTelemetry` and path-based `imageContent` / `audioContent` moved to `somamcp/node`.** `{ buffer }` and `{ url }` inputs still work from `somamcp`.
+- **`somamcp/edge` is an alias of `somamcp`.** `createEdgeBackend` and `EdgeBackendOptions` are gone; the main entry runs on Workers itself. `createFastMCPBackend` is gone too.
+- **`authenticate` receives the web `Request` everywhere**, including protected routes on Node, where 1.x passed `http.IncomingMessage`. Its type is now `(request: Request | undefined) => Promise<T>`. `getRequestHeader` reads both shapes, so code that uses it keeps working.
+- **A nullish `authenticate` result now fails protected artifacts and routes** with a 401, as it already did on the SDK backend's MCP endpoint. 1.x let it through on routes.
+- **`addResourceTemplate` is typed:** it takes one `ResourceTemplate<T>`.
+- **Removed options:** `httpStream.eventStore`, `streamKeepalive.logLevel`, and FastMCP's `backendOptions` (`ping`, `health`, `roots`, `oauth`).
+- **Behavior from the SDK backend**, if you were on FastMCP: stateless serving, `isError` results for invalid arguments, `running` health from construction, and the rest of [The SDK Backend](#the-sdk-backend).
+- **Gateways** use the SDK 2.x client; see [Gateways](#gateways).
 
 ## API Surface
 
@@ -481,7 +449,7 @@ createServer({
 - `createServer(options)` → `SomaServerInstance`
 - Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerInfo`, `ServerCapabilities`, `CapabilitiesSummary`, `ToolOptions`
 
-**Primitives** (somamcp-owned, no FastMCP leakage)
+**Primitives** (somamcp-owned, no SDK types leak through)
 
 - `Tool`, `Resource`, `Prompt`, `Context`, `Content`, `ContentResult`, `SessionAuth`, `UserError`
 
@@ -492,7 +460,8 @@ createServer({
 
 **Telemetry**
 
-- `createConsoleTelemetry`, `createJsonFileTelemetry`, `createCompositeTelemetry`, `createLogLayerTelemetry`, `NoopTelemetry`
+- `createConsoleTelemetry`, `createCompositeTelemetry`, `createLogLayerTelemetry`, `NoopTelemetry`
+- `createJsonFileTelemetry` (`somamcp/node` only)
 - `classifyError`, `createEnrichedError`
 - Types: `TelemetryCollector`, `TelemetryEvent`, `CaptureLevel`, `ToolCaptureConfig`, `ErrorCategory`
 
@@ -513,14 +482,8 @@ createServer({
 
 **Transport**
 
-- Types: `TransportConfig`, `HttpStreamConfig` (accepts `cors`, `stateless`, `eventStore`, `sslCert` / `sslKey` / `sslCa`, plus `port` / `host` / `endpoint` / `enableJsonResponse`)
-- `streamKeepalive` on `ServerConfig` — `{ enabled, intervalMs }`, written onto an in-flight tool call's own
-  response stream so a proxy does not close it as idle during a long, silent call. **Pair it with
-  `httpStream.stateless`**: a transport-level ping needs the standing server-to-client stream that stateless
-  does not have, so this is the only keepalive left. It sits on `ServerConfig` rather than `HttpStreamConfig`
-  because the backend builds its server before `start()` sees the transport. Ignored by the edge backend.
-  Leave `httpStream.enableJsonResponse` **off**: in JSON-response mode the MCP SDK skips the SSE write for
-  request-related notifications, so the keepalive is accepted, costs an interval timer, and does nothing.
+- Types: `TransportConfig`, `HttpStreamConfig` (`port`, `host`, `endpoint`, `cors`, `enableJsonResponse`, `stateless`, `sslCert` / `sslKey` / `sslCa`); listening needs `somamcp/node`
+- `streamKeepalive` on `ServerConfig` — `{ enabled, intervalMs }`; see [The SDK Backend](#the-sdk-backend)
 
 **Introspection**
 
@@ -535,11 +498,12 @@ createServer({
 
 **Content helpers**
 
-- `imageContent`, `audioContent`
+- `imageContent`, `audioContent` (`{ buffer }` or `{ url }`; `somamcp/node` adds `{ path }`)
+- Types: `ContentInput`, `NodeContentInput` (`somamcp/node`)
 
-**Backend** (via `somamcp/backend`)
+**Backend** (`somamcp` and `somamcp/backend`)
 
-- `createFastMCPBackend`, `createSdkBackend`
+- `createSdkBackend`; `createNodeBackend` (`somamcp/node` only)
 - Types: `BackendAdapter`, `BackendFactory`, `BackendSession`, `SdkBackendOptions`
 
 ## Scripts

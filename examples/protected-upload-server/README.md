@@ -4,7 +4,7 @@ Example showing how to wire the `1.1.0` protected-routes surface end-to-end on s
 
 - **`authenticate`** at `createServer` — gates both the MCP transport and any protected route.
 - **`addRoute({ protected: true })`** — a method-aware `POST /upload` behind the same auth gate.
-- **`getRequestHeader`** — hides the `Hono Request` vs `http.IncomingMessage` shape difference so `authenticate` can be written once.
+- **`getRequestHeader`** — reads a header from the web `Request` that `authenticate` receives, on the MCP endpoint and protected routes alike.
 - **Content-array tool return** — a tool that returns `{ content: [text, image] }` proves multimodal returns flow through the telemetry wrapper unchanged.
 - **`onUnauthorized`** — a custom 401 response with a `WWW-Authenticate` header.
 

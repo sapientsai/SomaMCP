@@ -94,11 +94,12 @@ describe("Server health endpoint integration", () => {
       version: "1.0.0",
     })
 
+    // The SDK backend answers fetch() from construction, so it reports running before start().
     const pub = await server.getApp().request("/health")
-    expect(pub.status).toBe(503)
+    expect(pub.status).toBe(200)
     const pubBody = (await pub.json()) as { name: string; status: string }
     expect(pubBody.name).toBe("health-int")
-    expect(pubBody.status).toBe("stopped")
+    expect(pubBody.status).toBe("running")
     expect(pubBody).not.toHaveProperty("activeSessions")
 
     const detail = await server.getApp().request("/health/detail")
@@ -116,7 +117,7 @@ describe("Server health endpoint integration", () => {
     })
 
     const res = await server.getApp().request("/health/detail")
-    expect(res.status).toBe(503)
+    expect(res.status).toBe(200)
     const body = (await res.json()) as ServerHealth
     expect(body.activeSessions).toBe(0)
     expect(body.gateways).toEqual({ connected: 0, total: 0 })

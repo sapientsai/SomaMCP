@@ -1,10 +1,7 @@
 import { directSilentLogger } from "functype-log"
 import { describe, expect, it } from "vitest"
 
-import { createFastMCPBackend, createSdkBackend } from "../src/backend/index.js"
-import { createServer as createServerWith } from "../src/index.js"
-import type { SomaServerOptions } from "../src/types.js"
-import type { SessionAuth } from "../src/types/core.js"
+import { createServer } from "../src/index.js"
 import type { TelemetryCollector, TelemetryEvent } from "../src/telemetry/TelemetryCollector.js"
 
 const createCollector = (): TelemetryCollector & {
@@ -14,223 +11,211 @@ const createCollector = (): TelemetryCollector & {
   return { events, recordEvent: (e) => events.push(e) }
 }
 
-const BACKENDS = [
-  ["fastmcp", createFastMCPBackend],
-  ["sdk", createSdkBackend],
-] as const
+describe("Server", () => {
+  it("creates a server with default options", () => {
+    const server = createServer({ name: "test-server", version: "1.0.0" })
+    expect(server.name).toBe("test-server")
+    expect(server.serverState).toBe("running")
+  })
 
-describe.each(BACKENDS)("%s backend", (backendName, backend) => {
-  const createServer = <T extends SessionAuth = SessionAuth>(options: SomaServerOptions<T>) =>
-    createServerWith<T>({ ...options, backend: options.backend ?? backend })
-  // The SDK backend can answer fetch() before start(), so it reports running from construction.
-  const statusBeforeStart = backendName === "sdk" ? "running" : "stopped"
-
-  describe("Server", () => {
-    it("creates a server with default options", () => {
-      const server = createServer({ name: "test-server", version: "1.0.0" })
-      expect(server.name).toBe("test-server")
-      expect(server.serverState).toBe(statusBeforeStart)
+  it("registers tools with telemetry wrapping", async () => {
+    const telemetry = createCollector()
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      name: "tool-server",
+      telemetry,
+      version: "1.0.0",
     })
 
-    it("registers tools with telemetry wrapping", async () => {
-      const telemetry = createCollector()
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        name: "tool-server",
-        telemetry,
-        version: "1.0.0",
-      })
-
-      server.addTool({
-        execute: async () => "hello",
-        name: "greet",
-      })
-
-      const capabilities = server.getCapabilities()
-      expect(capabilities.tools).toHaveLength(1)
-      expect(capabilities.tools[0]?.name).toBe("greet")
+    server.addTool({
+      execute: async () => "hello",
+      name: "greet",
     })
 
-    it("registers resources with telemetry wrapping", () => {
-      const telemetry = createCollector()
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        name: "res-server",
-        telemetry,
-        version: "1.0.0",
-      })
+    const capabilities = server.getCapabilities()
+    expect(capabilities.tools).toHaveLength(1)
+    expect(capabilities.tools[0]?.name).toBe("greet")
+  })
 
-      server.addResource({
-        load: async () => ({ text: "data" }),
-        name: "my-res",
-        uri: "res://test",
-      })
-
-      const capabilities = server.getCapabilities()
-      expect(capabilities.resources).toHaveLength(1)
-      expect(capabilities.resources[0]?.name).toBe("my-res")
+  it("registers resources with telemetry wrapping", () => {
+    const telemetry = createCollector()
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      name: "res-server",
+      telemetry,
+      version: "1.0.0",
     })
 
-    it("registers prompts with telemetry wrapping", () => {
-      const telemetry = createCollector()
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        name: "prompt-server",
-        telemetry,
-        version: "1.0.0",
-      })
-
-      server.addPrompt({
-        load: async () => "answer",
-        name: "my-prompt",
-      })
-
-      const capabilities = server.getCapabilities()
-      expect(capabilities.prompts).toHaveLength(1)
-      expect(capabilities.prompts[0]?.name).toBe("my-prompt")
+    server.addResource({
+      load: async () => ({ text: "data" }),
+      name: "my-res",
+      uri: "res://test",
     })
 
-    it("reports health with stopped status before start", () => {
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        name: "health-server",
-        version: "1.0.0",
-      })
+    const capabilities = server.getCapabilities()
+    expect(capabilities.resources).toHaveLength(1)
+    expect(capabilities.resources[0]?.name).toBe("my-res")
+  })
 
-      const health = server.getHealth()
-      expect(health.status).toBe(statusBeforeStart)
-      expect(health.name).toBe("health-server")
-      expect(health.uptime).toBe(0)
-      expect(health.activeSessions).toBe(0)
-      expect(health.gateways.total).toBe(0)
+  it("registers prompts with telemetry wrapping", () => {
+    const telemetry = createCollector()
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      name: "prompt-server",
+      telemetry,
+      version: "1.0.0",
     })
 
-    it("exposes the Hono app via getApp()", () => {
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        name: "app-server",
-        version: "1.0.0",
-      })
-
-      const app = server.getApp()
-      expect(app).toBeDefined()
+    server.addPrompt({
+      load: async () => "answer",
+      name: "my-prompt",
     })
 
-    it("exposes server info via getInfo()", () => {
-      const server = createServer({
-        build: { commit: "abc123", date: "2026-01-01", environment: "test" },
-        enableDashboard: false,
-        enableHealthEndpoint: false,
-        enableInfoEndpoint: false,
-        enableIntrospection: false,
-        name: "info-server",
-        version: "1.2.3",
-      })
+    const capabilities = server.getCapabilities()
+    expect(capabilities.prompts).toHaveLength(1)
+    expect(capabilities.prompts[0]?.name).toBe("my-prompt")
+  })
 
-      server.addTool({ execute: async () => "ok", name: "t1" })
-      server.addTool({ execute: async () => "ok", name: "t2" })
-
-      const info = server.getInfo()
-      expect(info.name).toBe("info-server")
-      expect(info.version).toBe("1.2.3")
-      expect(info.build.commit).toBe("abc123")
-      expect(info.build.environment).toBe("test")
-      expect(info.capabilities.tools).toBe(2)
-      expect(info.runtime.platform).toBeTruthy()
-      expect(info.runtime.nodeVersion).toBeTruthy()
+  it("reports health with stopped status before start", () => {
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      name: "health-server",
+      version: "1.0.0",
     })
 
-    it("getGatewayManager returns the manager", () => {
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        gateways: [{ id: "remote", url: "http://localhost:9999/mcp" }],
-        name: "gw-server",
-        version: "1.0.0",
-      })
+    const health = server.getHealth()
+    expect(health.status).toBe("running")
+    expect(health.name).toBe("health-server")
+    expect(health.uptime).toBe(0)
+    expect(health.activeSessions).toBe(0)
+    expect(health.gateways.total).toBe(0)
+  })
 
-      const manager = server.getGatewayManager()
-      expect(manager.totalCount).toBe(1)
+  it("exposes the Hono app via getApp()", () => {
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      name: "app-server",
+      version: "1.0.0",
     })
 
-    it("accepts a logger option and routes telemetry through it", () => {
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        logLayer: directSilentLogger,
-        name: "logger-server",
-        version: "1.0.0",
-      })
+    const app = server.getApp()
+    expect(app).toBeDefined()
+  })
 
-      server.addTool({
-        execute: async () => "hello",
-        name: "greet",
-      })
-
-      expect(server.name).toBe("logger-server")
+  it("exposes server info via getInfo()", () => {
+    const server = createServer({
+      build: { commit: "abc123", date: "2026-01-01", environment: "test" },
+      enableDashboard: false,
+      enableHealthEndpoint: false,
+      enableInfoEndpoint: false,
+      enableIntrospection: false,
+      name: "info-server",
+      version: "1.2.3",
     })
 
-    it("telemetry option takes priority over logger option", () => {
-      const telemetry = createCollector()
+    server.addTool({ execute: async () => "ok", name: "t1" })
+    server.addTool({ execute: async () => "ok", name: "t2" })
 
-      const server = createServer({
-        enableDashboard: false,
-        enableIntrospection: false,
-        logLayer: directSilentLogger,
-        name: "priority-server",
-        telemetry,
-        version: "1.0.0",
-      })
+    const info = server.getInfo()
+    expect(info.name).toBe("info-server")
+    expect(info.version).toBe("1.2.3")
+    expect(info.build.commit).toBe("abc123")
+    expect(info.build.environment).toBe("test")
+    expect(info.capabilities.tools).toBe(2)
+    expect(info.runtime.platform).toBeTruthy()
+    expect(info.runtime.nodeVersion).toBeTruthy()
+  })
 
-      server.addTool({
-        execute: async () => "hello",
-        name: "greet",
-      })
-
-      expect(server.name).toBe("priority-server")
+  it("getGatewayManager returns the manager", () => {
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      gateways: [{ id: "remote", url: "http://localhost:9999/mcp" }],
+      name: "gw-server",
+      version: "1.0.0",
     })
 
-    it("counts the built-in info tool in its own capability count", () => {
-      const server = createServer({ name: "count-server", version: "1.0.0" })
-      server.addTool({ execute: async () => "hi", name: "greet" })
+    const manager = server.getGatewayManager()
+    expect(manager.totalCount).toBe(1)
+  })
 
-      // Reported from a deployed server: capabilities.tools said 4 while 5 tools
-      // were exposed, because `info` registered straight on the backend.
-      expect(server.getInfo().capabilities.tools).toBe(2)
-      expect(
-        server
-          .getCapabilities()
-          .tools.map((t) => t.name)
-          .sort(),
-      ).toEqual(["greet", "info"])
+  it("accepts a logger option and routes telemetry through it", () => {
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      logLayer: directSilentLogger,
+      name: "logger-server",
+      version: "1.0.0",
     })
 
-    it("omits the info tool from the count when introspection is disabled", () => {
-      const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
-      server.addTool({ execute: async () => "hi", name: "greet" })
-      expect(server.getInfo().capabilities.tools).toBe(1)
+    server.addTool({
+      execute: async () => "hello",
+      name: "greet",
     })
 
-    it("drops a removed tool from the count on a backend that supports removal", () => {
-      const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
-      server.addTool({ execute: async () => "hi", name: "greet" })
-      expect(server.getInfo().capabilities.tools).toBe(1)
+    expect(server.name).toBe("logger-server")
+  })
 
-      server.removeTool("greet")
-      expect(server.getInfo().capabilities.tools).toBe(0)
-      expect(server.getCapabilities().tools).toEqual([])
+  it("telemetry option takes priority over logger option", () => {
+    const telemetry = createCollector()
+
+    const server = createServer({
+      enableDashboard: false,
+      enableIntrospection: false,
+      logLayer: directSilentLogger,
+      name: "priority-server",
+      telemetry,
+      version: "1.0.0",
     })
 
-    it("does not double-count a tool registered twice", () => {
-      const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
-      server.addTool({ execute: async () => "hi", name: "greet" })
-      server.addTool({ execute: async () => "hi again", name: "greet" })
-      expect(server.getInfo().capabilities.tools).toBe(1)
+    server.addTool({
+      execute: async () => "hello",
+      name: "greet",
     })
+
+    expect(server.name).toBe("priority-server")
+  })
+
+  it("counts the built-in info tool in its own capability count", () => {
+    const server = createServer({ name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+
+    // Reported from a deployed server: capabilities.tools said 4 while 5 tools
+    // were exposed, because `info` registered straight on the backend.
+    expect(server.getInfo().capabilities.tools).toBe(2)
+    expect(
+      server
+        .getCapabilities()
+        .tools.map((t) => t.name)
+        .sort(),
+    ).toEqual(["greet", "info"])
+  })
+
+  it("omits the info tool from the count when introspection is disabled", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
+  })
+
+  it("drops a removed tool from the count on a backend that supports removal", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
+
+    server.removeTool("greet")
+    expect(server.getInfo().capabilities.tools).toBe(0)
+    expect(server.getCapabilities().tools).toEqual([])
+  })
+
+  it("does not double-count a tool registered twice", () => {
+    const server = createServer({ enableIntrospection: false, name: "count-server", version: "1.0.0" })
+    server.addTool({ execute: async () => "hi", name: "greet" })
+    server.addTool({ execute: async () => "hi again", name: "greet" })
+    expect(server.getInfo().capabilities.tools).toBe(1)
   })
 })

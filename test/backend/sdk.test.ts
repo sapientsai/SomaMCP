@@ -4,7 +4,6 @@ import { z } from "zod"
 
 import { createSdkBackend } from "../../src/backend/index.js"
 import { createToolContext } from "../../src/backend/sdk/mapping.js"
-import { createServer as createEdgeServer } from "../../src/edge.js"
 import { createServer } from "../../src/index.js"
 import { UserError } from "../../src/types/core.js"
 import {
@@ -40,13 +39,6 @@ const textOf = (result: unknown): string => JSON.stringify(result)
 
 describe("createSdkBackend", () => {
   describe("protocol eras", () => {
-    it("control: today's FastMCP edge backend rejects 2026-07-28 with a 400", async () => {
-      const edge = createEdgeServer({ enableDashboard: false, name: "edge", version: "1.0.0" })
-      const res = await edge.fetch(rawRequest("server/discover", {}, { modern: true }))
-      expect(res.status).toBe(400)
-      expect(await res.text()).toContain("Unsupported protocol version: 2026-07-28")
-    })
-
     it.each(ERAS)("a %s client lists and calls tools", async (_era, connect) => {
       const client = await connect(makeServer())
       expect((await client.listTools()).tools.map((t) => t.name)).toContain("echo")

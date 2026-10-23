@@ -20,12 +20,14 @@ const extractHeaders = (request: unknown): Option<unknown> =>
   Option(request as { headers?: unknown } | null | undefined).flatMap((r) => Option(r.headers))
 
 /**
- * Extract a header from either shape somamcp's `authenticate` callback may receive:
+ * Read a header from a request, safely, whatever `authenticate` was given:
  *
- * - **Hono `Request`** (`c.req.raw`) — used on protected artifact and custom routes.
- *   Headers implement the WHATWG `Headers` interface (`.get(name)`).
- * - **`http.IncomingMessage`** — used on the MCP transport path (FastMCP).
- *   Headers are a plain lowercased object; values may be `string | string[]`.
+ * - **a web `Request`** — what somamcp passes everywhere. Headers implement the
+ *   WHATWG `Headers` interface (`.get(name)`).
+ * - **`undefined`** — stdio, which has no request. Returns `undefined`.
+ * - **`http.IncomingMessage`** — not passed by somamcp 2.x, but still read, for
+ *   code that shares a callback with a plain Node server. Headers are a plain
+ *   lowercased object; values may be `string | string[]`.
  *
  * Case-insensitive on the header name. Returns `undefined` when the header is
  * absent or the request shape is not recognized — matches the `Headers.get`

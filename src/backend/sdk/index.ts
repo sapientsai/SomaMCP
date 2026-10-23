@@ -7,37 +7,37 @@ import type { Resource, ResourceTemplate, ServerStatus, SessionAuth } from "../.
 import type { HttpStreamConfig, ServerConfig, TransportConfig } from "../../types/server.js"
 import type { BackendAdapter, BackendSession } from "../adapter.js"
 import { type AnyPrompt, type AnyTool, buildServer, type Registry } from "./handlers.js"
-import type { Listener } from "./listen.js"
 import { hasJsonSchema } from "./mapping.js"
+import type { Listener, SdkTransports } from "./transports.js"
 
 export type SdkBackendOptions = {
   /** MCP endpoint path when serving through `fetch`. `start({ httpStream: { endpoint } })` overrides it. Defaults to "/mcp". */
   mcpPath?: string
   /**
-   * Transport for `start({ transportType: "stdio" })` in place of the process's
+   * Node only (`somamcp/node`): transport for `start({ transportType: "stdio" })` in place of the process's
    * stdin/stdout, e.g. a `StdioServerTransport` over a Unix socket.
    */
   stdioTransport?: Transport
 }
 
 const DEFAULT_MCP_PATH = "/mcp"
-/** FastMCP's default keepalive interval, kept so `streamKeepalive` means the same thing on both backends. */
+/** somamcp 1.x's default keepalive interval, kept so `streamKeepalive` means what it did. */
 const DEFAULT_KEEPALIVE_MS = 20_000
 const SESSION_KEY = "somamcp/session"
 
+const nodeOnly = (transportType: TransportConfig["transportType"]): Promise<never> =>
+  Promise.reject(
+    new Error(
+      `start({ transportType: "${transportType}" }) needs Node: use the createServer exported by somamcp/node, or serve requests with server.fetch().`,
+    ),
+  )
+
 /**
- * Backend built on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`).
- *
- * One endpoint serves both protocol eras: the `2026-07-28` revision that current
- * Claude clients request first, and 2025-era clients (`initialize`). Serving is
- * stateless: every request gets a fresh SDK server built from somamcp's registry,
- * so there are no sessions, `connect`/`disconnect` never fire, and a 2025 client's
- * GET or DELETE is answered `405`.
- *
- * `start()` serves a port (`httpStream`) or stdio on Node; `fetch()` serves any
- * runtime with web-standard `Request`/`Response`.
+ * The SDK backend, with `transports` deciding what `start()` can listen on: none
+ * for the main entry (WinterTC APIs only), a port and stdio for `somamcp/node`.
  */
-export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
+export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
+  transports: Option<SdkTransports>,
   config: ServerConfig<T>,
   backendOptions?: Record<string, unknown>,
 ): BackendAdapter<T> => {
@@ -110,24 +110,25 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
   const corsMiddleware = Ref<Option<MiddlewareHandler>>(Option.none())
   const listener = Ref<Option<Listener>>(Option.none())
   // "running" from construction: a backend that can answer `fetch` is serving. start()
-  // adds a listener; stop() is what takes it out of service.
+  // adds a listener. stop() closes it and in-flight exchanges and reports "stopped",
+  // but fetch() keeps answering; serving through fetch has nothing to shut.
   const state = Ref<ServerStatus>("running")
 
-  /** A rejected `authenticate` may carry a Response (FastMCP's convention); serve it as-is. */
+  /** A rejected `authenticate` may carry a Response (somamcp 1.x's convention, from FastMCP); serve it as-is. */
   const unauthorized = (c: HonoContext, reason: unknown): Response =>
     reason instanceof Response ? reason : c.json({ error: "Unauthorized" }, 401)
 
   /**
-   * `authenticate`, with FastMCP's failure semantics: a synchronous throw counts
-   * as a rejection, and a nullish result counts as a failed authentication (the
-   * idiomatic way to signal one, and what FastMCP's OAuth provider returns).
+   * `authenticate`, with somamcp 1.x's failure semantics: a synchronous throw
+   * counts as a rejection, and a nullish result counts as a failed authentication
+   * (the idiomatic way to signal one).
    */
   const authenticateRequest = (
     authenticate: NonNullable<ServerConfig<T>["authenticate"]>,
-    request: unknown,
+    request: Option<Request>,
   ): Promise<T> =>
     Promise.resolve()
-      .then(() => authenticate(request))
+      .then(() => authenticate(request.orUndefined()))
       .then((auth) =>
         Option(auth).fold(
           () => Promise.reject(new Error("Authentication required")),
@@ -139,7 +140,7 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     const request = c.req.raw
     if (!config.authenticate) return handler.get().fetch(request)
     // Not Try.fromPromise: it would wrap a rejected Response, which must reach the client as-is.
-    return authenticateRequest(config.authenticate, request).then(
+    return authenticateRequest(config.authenticate, Option(request)).then(
       (session) =>
         handler.get().fetch(request, {
           authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
@@ -176,16 +177,14 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
       handler.set(createHandler("json"))
     }
     if (http.stateless === false) warn("stateful sessions are not supported by the SDK backend; serving statelessly.")
-    if (http.eventStore !== undefined) warn("eventStore is not supported by the SDK backend; ignoring.")
   }
 
-  const startStdio = async (): Promise<Listener> => {
-    const { listenStdio } = await import("./listen.js")
-    // stdio has no request to authenticate. As on FastMCP, call authenticate once
-    // with no request and serve without a session if it fails; tools gated by
-    // canAccess are then hidden.
+  const startStdio = async (serve: SdkTransports): Promise<Listener> => {
+    // stdio has no request to authenticate. As in somamcp 1.x, call authenticate
+    // once with no request and serve without a session if it fails; tools gated
+    // by canAccess are then hidden.
     const session = config.authenticate
-      ? (await Try.fromPromise(authenticateRequest(config.authenticate, undefined))).fold(
+      ? (await Try.fromPromise(authenticateRequest(config.authenticate, Option.none()))).fold(
           (error) => {
             logger.forEach((l) => l.error("[somamcp/sdk] authentication failed for stdio transport:", error.message))
             return Option.none<T>()
@@ -196,14 +195,28 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     const transport = Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.stdioTransport))
       .orUndefined()
-    return listenStdio(() => buildServer(registry, identity, session), transport)
+    return serve.stdio(() => buildServer(registry, identity, session), transport)
   }
 
-  const startHttp = async (http: HttpStreamConfig): Promise<Listener> => {
-    const { listenHttp } = await import("./listen.js")
+  const startHttp = (serve: SdkTransports, http: HttpStreamConfig): Promise<Listener> => {
     applyHttpConfig(http)
-    return listenHttp(app, http)
+    return serve.http(app, http)
   }
+
+  /**
+   * What `start(transport)` listens on. Without Node transports, a bare `start()`
+   * listens on nothing (it still marks the server started and connects gateways);
+   * asking for a port or stdio rejects. With them, a bare `start()` means stdio,
+   * as it did in somamcp 1.x.
+   */
+  const openListener = (transport?: TransportConfig): Promise<Option<Listener>> =>
+    transports.fold(
+      () => (transport ? nodeOnly(transport.transportType) : Promise.resolve(Option.none<Listener>())),
+      (serve) =>
+        (transport?.transportType === "httpStream" ? startHttp(serve, transport.httpStream) : startStdio(serve)).then(
+          (opened) => Option(opened),
+        ),
+    )
 
   return {
     get serverState(): ServerStatus {
@@ -220,8 +233,7 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     addResource: (resource) => {
       put(resources, resource.name, resource)
     },
-    addResourceTemplate: (...args) => {
-      const template = args[0] as ResourceTemplate<T>
+    addResourceTemplate: (template) => {
       put(templates, template.name, template)
     },
     addTool: (tool) => {
@@ -254,12 +266,10 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
         warn("start() called while already listening; ignoring. Call stop() first to restart.")
         return
       }
-      const started = await Try.fromPromise(
-        transport?.transportType === "httpStream" ? startHttp(transport.httpStream) : startStdio(),
-      )
+      const started = await Try.fromPromise(openListener(transport))
       if (started.isFailure()) state.set("error")
       // Rethrows the original error on failure, so a bad port still rejects start().
-      listener.set(Option(started.orThrow()))
+      listener.set(started.orThrow())
       state.set("running")
     },
 
@@ -278,3 +288,21 @@ export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
     },
   }
 }
+
+/**
+ * Backend built on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`).
+ *
+ * One endpoint serves both protocol eras: the `2026-07-28` revision that current
+ * Claude clients request first, and 2025-era clients (`initialize`). Serving is
+ * stateless: every request gets a fresh SDK server built from somamcp's registry,
+ * so there are no sessions, `connect`/`disconnect` never fire, and a 2025 client's
+ * GET or DELETE is answered `405`.
+ *
+ * This is the WinterTC build: it serves through `fetch()` on any runtime with
+ * web-standard `Request`/`Response`, and `start()` with a transport rejects. For a
+ * port or stdio, use `createNodeBackend` from `somamcp/node`.
+ */
+export const createSdkBackend = <T extends SessionAuth = SessionAuth>(
+  config: ServerConfig<T>,
+  backendOptions?: Record<string, unknown>,
+): BackendAdapter<T> => buildSdkBackend(Option.none(), config, backendOptions)

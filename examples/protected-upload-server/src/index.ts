@@ -1,4 +1,4 @@
-import { createServer, getRequestHeader, imageContent } from "somamcp"
+import { createServer, getRequestHeader, imageContent } from "somamcp/node"
 import { z } from "zod"
 
 /**
@@ -26,9 +26,8 @@ const server = createServer({
   version: "0.0.0",
   instructions: "Demo server: a protected POST /upload route + a tool that returns text + image.",
 
-  // authenticate runs on both the MCP transport and any addRoute({ protected: true })
-  // route. It receives either a Hono Request (protected routes) or an
-  // http.IncomingMessage (MCP transport) — getRequestHeader hides the shape difference.
+  // authenticate runs on both the MCP endpoint and any addRoute({ protected: true })
+  // route, and receives the web Request in both cases. getRequestHeader reads it.
   authenticate: async (request) => {
     const header = getRequestHeader(request, "authorization")
     const token = header?.startsWith("Bearer ") ? header.slice(7) : header
