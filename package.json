@@ -78,7 +78,9 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^24.19.2",
     "es-module-lexer": "^2.3.2",
+    "esbuild": "^0.28.1",
     "get-port-please": "^3.2.0",
+    "miniflare": "^4.20260730.0",
     "ts-builds": "^4.0.0",
     "tsdown": "^0.23.1"
   },
