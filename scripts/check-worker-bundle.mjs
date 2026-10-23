@@ -86,12 +86,14 @@ await init
  * Import specifiers of an emitted ESM file: static imports, re-exports and
  * dynamic imports with a literal specifier. A real lexer, because the production
  * build is minified onto one line, and a regex would also match string literals
- * that merely contain `from "x"`.
+ * that merely contain `from "x"`. `import.meta` (specifier null), a dynamic import
+ * of a variable (undefined) and a template-literal import (a `glob` such as
+ * `./locales/*.js`) name no single module, so they are skipped.
  */
 const specifiersOf = (source) =>
   parse(source)[0]
-    .map((entry) => entry.n)
-    .filter((specifier) => specifier !== undefined)
+    .filter((entry) => typeof entry.specifier === "string" && !entry.glob)
+    .map((entry) => entry.specifier)
 
 const read = async (path) => {
   try {
