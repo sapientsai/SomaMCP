@@ -189,6 +189,16 @@ describe("createNodeBackend", () => {
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
     })
 
+    it("serves stdio on a bare start(), as somamcp 1.x did", async () => {
+      const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+      const server = makeServer({ stdioTransport: serverEnd })
+      await server.start()
+      running.push(server)
+      const client = new LegacyClient({ name: "bare-start", version: "1.0.0" })
+      await client.connect(clientEnd as unknown as Parameters<LegacyClient["connect"]>[0])
+      expect(JSON.stringify(await client.callTool({ arguments: { text: "b" }, name: "echo" }))).toContain("echo: b")
+    })
+
     it("hides canAccess-gated tools when stdio authentication fails", async () => {
       const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
       const server = createServer({

@@ -110,7 +110,8 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   const corsMiddleware = Ref<Option<MiddlewareHandler>>(Option.none())
   const listener = Ref<Option<Listener>>(Option.none())
   // "running" from construction: a backend that can answer `fetch` is serving. start()
-  // adds a listener; stop() is what takes it out of service.
+  // adds a listener. stop() closes it and in-flight exchanges and reports "stopped",
+  // but fetch() keeps answering; serving through fetch has nothing to shut.
   const state = Ref<ServerStatus>("running")
 
   /** A rejected `authenticate` may carry a Response (somamcp 1.x's convention, from FastMCP); serve it as-is. */

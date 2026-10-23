@@ -5,8 +5,10 @@
 // 1. Node-only code reaching the main entry. `somamcp`, `somamcp/edge` and
 //    `somamcp/backend` must run on Workers without nodejs_compat, so nothing they
 //    load (their files and every chunk those import, transitively) may import a
-//    Node built-in or a Node-only package. In 1.x this regressed twice through a
-//    shared chunk while the export map looked correct.
+//    Node built-in or a Node-only package, call require(), or use the Node
+//    globals Buffer and process. In 1.x this regressed twice through a shared
+//    chunk while the export map looked correct. Dependencies are external, so
+//    this reads somamcp's own code; test/workers/ runs it all in workerd.
 // 2. The core emitted twice. `somamcp/node` must share the main entry's chunks;
 //    a second copy would make `instanceof UserError` fail across entries.
 
@@ -15,7 +17,8 @@ import { dirname, join, normalize } from "node:path"
 
 import { init, parse } from "es-module-lexer"
 
-const DIST = "dist"
+// The directory to check; defaults to the build output. Tests pass a fixture.
+const DIST = process.argv[2] ?? "dist"
 const WORKER_ENTRIES = ["index.js", "edge.js", "backend/index.js"]
 
 // Node-only packages, as whole specifiers or prefixes.
@@ -114,12 +117,31 @@ const closure = async (entry) => {
   return seen
 }
 
+/**
+ * Uses of Node globals and require() in a file. Block comments and whole-line
+ * comments are dropped first, so prose about `process` does not count. A
+ * property access (`globalThis.process`, `x.Buffer`) does not count either: that
+ * is how guarded code reads them. String literals are not stripped, so a string
+ * containing `process.` would be flagged; none does today.
+ */
+const nodeGlobalsIn = (source) =>
+  [
+    ...source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "")
+      .matchAll(/(?<![.\w$])(Buffer\s*[.(]|process\s*\.|require\s*\()/g),
+  ].map((m) => m[1].replace(/\s+/g, ""))
+
 const problems = []
 const files = new Map()
 for (const entry of WORKER_ENTRIES) {
   for (const [path, specifiers] of await closure(entry)) {
+    if (files.has(path)) continue
     files.set(path, specifiers)
     specifiers.filter(isNodeOnly).forEach((s) => problems.push(`${path} (loaded by ${entry}) imports Node-only "${s}"`))
+    nodeGlobalsIn(await read(path)).forEach((use) =>
+      problems.push(`${path} (loaded by ${entry}) uses the Node global or CommonJS call "${use}"`),
+    )
   }
 }
 

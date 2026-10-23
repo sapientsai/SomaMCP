@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 somamcp is a framework for building MCP (Model Context Protocol) servers with telemetry, introspection, and a backend abstraction layer. It builds on the official MCP TypeScript SDK 2.x (`@modelcontextprotocol/server`) behind a `BackendAdapter` interface. The primary entry point is `createServer()`.
 
-**The main entry is WinterTC-only.** Nothing reachable from `src/index.ts` may import `node:*`, a Node-only package (`@hono/node-server`, `@modelcontextprotocol/server/stdio`), or use a Node global (`Buffer`, `process`). Node-only code lives in `src/node/` and is reached only from `src/node/index.ts` (`somamcp/node`). `scripts/check-worker-bundle.mjs` (run by `pnpm build`) enforces this on the built output, and also that the core is emitted once, so `somamcp/node` shares the main entry's modules.
+**The main entry is WinterTC-only.** Nothing reachable from `src/index.ts` may import `node:*`, a Node-only package (`@hono/node-server`, `@modelcontextprotocol/server/stdio`), or use a Node global (`Buffer`, `process`). Node-only code lives in `src/node/` and is reached only from `src/node/index.ts` (`somamcp/node`). `scripts/check-worker-bundle.mjs` (the last step of `pnpm validate`) enforces this on the built output, and also that the core is emitted once, so `somamcp/node` shares the main entry's modules. It reads somamcp's own emitted code; dependencies are external. `test/scripts/check-worker-bundle.test.ts` proves each check fails on a leak.
 
 ## Commands
 
@@ -48,10 +48,10 @@ The generic auth parameter is `SessionAuth` (= `Record<string, unknown> | undefi
 
 - **Telemetry wrapping** — every tool/resource/prompt gets wrapped with timing/error telemetry
 - **Gateway management** — on `start()`, connects to configured remote MCP servers and proxies their tools
-- **Introspection tools** — auto-registers `soma_health`, `soma_capabilities`, `soma_connections` (unless `enableIntrospection: false`)
+- **Introspection tool** — auto-registers `info` (`introspectionPrefix: "soma_"` → `soma_info`) unless `enableIntrospection: false`. `createHealthTool`, `createCapabilitiesTool` and `createConnectionsTool` are exported for manual use
 - **Artifact serving** — registers HTTP routes on the Hono app (including an auto-generated dashboard)
 
-`SomaServerOptions` extends `ServerConfig` with: `gateways`, `telemetry`, `artifacts`, `enableDashboard`, `enableIntrospection`, `backendOptions` (opaque pass-through to the backend for framework-specific config like OAuth, health endpoints, ping).
+`SomaServerOptions` extends `ServerConfig` with: `gateways`, `telemetry`, `artifacts`, `enableDashboard`, `enableIntrospection`, `backendOptions` (opaque pass-through to the backend; the SDK backend reads `SdkBackendOptions`).
 
 ### Server-level Types (`src/types.ts`)
 

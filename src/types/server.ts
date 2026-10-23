@@ -15,8 +15,9 @@ export type Logger = {
 export type ServerConfig<T extends SessionAuth = SessionAuth> = {
   /**
    * Authenticate a request; resolve to the session that tools see as `context.session`.
-   * Rejecting, throwing, or resolving to `undefined`/`null` fails it with a 401; reject
-   * with a `Response` to send that instead.
+   * Rejecting, throwing, or resolving to `undefined`/`null` fails it with a 401. On the
+   * MCP endpoint, reject with a `Response` to send that instead; protected artifacts and
+   * routes answer with their `onUnauthorized`, or 401.
    *
    * Receives the web `Request` for MCP calls and for protected artifacts and routes, on
    * every runtime. On stdio there is no request: it is called once with `undefined`, and

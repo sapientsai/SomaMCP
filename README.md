@@ -127,7 +127,7 @@ createServer({
 Any artifact can opt into auth with `protected: true`. The route runs the server's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. Rejecting, throwing, or resolving to `undefined`/`null` returns 401. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
 
 ```typescript
-import { createServer, getRequestHeader } from "somamcp"
+import { createServer, getRequestHeader } from "somamcp/node"
 
 createServer({
   name: "my-server",
@@ -383,6 +383,8 @@ export default { fetch: (request: Request) => server.fetch(request) }
 
 `server.fetch` serves both the MCP endpoint and every artifact/route you register, so `/health`, `/info`, and `/dashboard` work as they do on Node.
 
+**Types.** The MCP SDK's own `.d.mts` files mention `Buffer`, so a Workers project without `@types/node` needs `skipLibCheck: true` (Wrangler's default). somamcp's own types do not.
+
 **Gateways** need `await server.start()` to connect and register proxied tools. Workers forbids network I/O at module scope, so call it lazily inside your first request rather than at the top level. Without it, gateway tools are never registered.
 
 **Registering routes late.** Hono builds its router on the first request and then rejects new routes ("matcher is already built"). Register every artifact and `addRoute` before serving traffic — on Workers that means at module scope, not inside the fetch handler.
@@ -399,14 +401,14 @@ export default { fetch: (request: Request) => server.fetch(request) }
 How it behaves:
 
 - **Stateless.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` is ignored, with a warning through `logger`.
-- **`authenticate` receives the web `Request`**, for MCP calls and for protected artifacts and routes. Read headers with `getRequestHeader`. Rejecting with a `Response` serves that response as-is. Any other rejection, a synchronous throw, or a nullish result is a `401`. On stdio there is no request: `authenticate` is called once with `undefined`, and a failure serves without a session. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise.
+- **`authenticate` receives the web `Request`**, for MCP calls and for protected artifacts and routes. Read headers with `getRequestHeader`. On the MCP endpoint, rejecting with a `Response` serves that response as-is; protected artifacts and routes answer with their `onUnauthorized`, or 401. Any other rejection, a synchronous throw, or a nullish result is a `401`. On stdio there is no request: `authenticate` is called once with `undefined`, and a failure serves without a session. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise.
 - **Errors follow SDK 2.x and the current spec.** Calling an unknown tool, or one hidden by `canAccess`, is a JSON-RPC `InvalidParams` error. Invalid arguments and thrown errors (including `UserError`) are `isError` tool results, so the model can read the message and retry.
 - **Schemas must describe themselves as JSON Schema** (`~standard.jsonSchema`): zod 4, ArkType, or Valibot via `@valibot/to-json-schema`. Other schemas still validate, but clients see an empty argument list; `addTool` warns through `logger`.
 - **`context.client.version`** is filled in for `2026-07-28` clients, which send their client info on every request. It is `undefined` for 2025 clients, which send it only during `initialize`.
 - **`context.log` follows the client's log level.** A `2026-07-28` client receives tool logs only when its request asks for a log level (`io.modelcontextprotocol/logLevel`); otherwise the SDK drops them. 2025 clients receive them as before. Progress (`reportProgress`) is unaffected.
 - **`streamKeepalive`** (`enabled`, `intervalMs`; default 20 s) writes SSE comment frames onto an in-flight call's own stream. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `httpStream.enableJsonResponse` turns them off; it applies to `2026-07-28` exchanges only.
 - **`httpStream.host` defaults to `localhost`.** Pass `host: "0.0.0.0"` to listen on every interface, for example in a container.
-- **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. It reports `stopped` after `stop()`.
+- **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. `stop()` closes the listener and in-flight streams and reports `stopped` (so `/health` answers 503), but `fetch()` still answers MCP requests.
 - **Removal is real:** `removeTool`, `removeResource` and `removePrompt` apply from the next request.
 - **The MCP path comes first.** The backend claims the MCP endpoint before artifacts and routes, so an `addRoute` on that path is never reached.
 - **`backendOptions`** (`SdkBackendOptions`) takes `mcpPath`, the endpoint for `fetch()` use (`httpStream.endpoint` overrides it), and, on `somamcp/node`, `stdioTransport`, a transport to use in place of the process's stdin/stdout.
@@ -430,6 +432,7 @@ const myBackend: BackendFactory = (config, backendOptions) => {
 somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which has both backends.
 
 - **Node servers import from `somamcp/node`.** `start()` with `httpStream` or `stdio` now needs it; on `somamcp` it rejects. Change `import { createServer } from "somamcp"` to `"somamcp/node"`. Everything else `somamcp` exports is re-exported there.
+- **A bare `start()` on `somamcp` no longer serves stdio.** It listens on nothing and resolves, so a stdio server that keeps importing from `somamcp` exits quietly. On `somamcp/node`, a bare `start()` still serves stdio.
 - **`createJsonFileTelemetry` and path-based `imageContent` / `audioContent` moved to `somamcp/node`.** `{ buffer }` and `{ url }` inputs still work from `somamcp`.
 - **`somamcp/edge` is an alias of `somamcp`.** `createEdgeBackend` and `EdgeBackendOptions` are gone; the main entry runs on Workers itself. `createFastMCPBackend` is gone too.
 - **`authenticate` receives the web `Request` everywhere**, including protected routes on Node, where 1.x passed `http.IncomingMessage`. Its type is now `(request: Request | undefined) => Promise<T>`. `getRequestHeader` reads both shapes, so code that uses it keeps working.
