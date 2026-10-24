@@ -27,6 +27,14 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
   authenticate?: (request: Request | undefined) => Promise<T>
   instructions?: string
   logger?: Logger
+  /**
+   * Largest MCP request body, in bytes, the server reads. A larger one is answered `413`
+   * before it is parsed. Raise it for tools that take large inline arguments, such as a
+   * base64-encoded file. Must be positive. Defaults to the SDK's 4 MiB.
+   *
+   * Set at construction for the same reason as `streamKeepalive`.
+   */
+  maxRequestBodySize?: number
   name: string
   /**
    * Periodic writes onto an in-flight tool call's own response stream, so a proxy or load
