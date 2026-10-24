@@ -95,6 +95,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
         ),
       {
         keepAliveMs: keepAliveMs.orUndefined(),
+        maxRequestBodySize: config.maxRequestBodySize,
         onerror: (error) => logger.forEach((l) => l.error("[somamcp/sdk]", error)),
         responseMode,
       },

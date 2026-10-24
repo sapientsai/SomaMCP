@@ -407,6 +407,7 @@ How it behaves:
 - **`context.client.version`** is filled in for `2026-07-28` clients, which send their client info on every request. It is `undefined` for 2025 clients, which send it only during `initialize`.
 - **`context.log` follows the client's log level.** A `2026-07-28` client receives tool logs only when its request asks for a log level (`io.modelcontextprotocol/logLevel`); otherwise the SDK drops them. 2025 clients receive them as before. Progress (`reportProgress`) is unaffected.
 - **`streamKeepalive`** (`enabled`, `intervalMs`; default 20 s) writes SSE comment frames onto an in-flight call's own stream. With it on, every tool call is answered as an SSE stream, so a long call that produces no output still gets keepalives. `httpStream.enableJsonResponse` turns them off; it applies to `2026-07-28` exchanges only.
+- **`maxRequestBodySize`** (bytes; default 4 MiB, the SDK's) caps an MCP request body. A larger one is answered `413` before it is parsed. Raise it for tools that take large inline arguments, such as a base64-encoded file. It applies to `fetch()` and to a port alike.
 - **`httpStream.host` defaults to `localhost`.** Pass `host: "0.0.0.0"` to listen on every interface, for example in a container.
 - **Health reports `running` from construction**, because the backend can answer `fetch()` before `start()`. `stop()` closes the listener and in-flight streams and reports `stopped` (so `/health` answers 503), but `fetch()` still answers MCP requests.
 - **Removal is real:** `removeTool`, `removeResource` and `removePrompt` apply from the next request.
@@ -484,6 +485,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 - Types: `TransportConfig`, `HttpStreamConfig` (`port`, `host`, `endpoint`, `cors`, `enableJsonResponse`, `stateless`, `sslCert` / `sslKey` / `sslCa`); listening needs `somamcp/node`
 - `streamKeepalive` on `ServerConfig` — `{ enabled, intervalMs }`; see [The SDK Backend](#the-sdk-backend)
+- `maxRequestBodySize` on `ServerConfig` — bytes, default 4 MiB; see [The SDK Backend](#the-sdk-backend)
 
 **Introspection**
 

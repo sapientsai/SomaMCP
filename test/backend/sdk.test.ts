@@ -184,6 +184,34 @@ describe("createSdkBackend", () => {
       expect(res.headers.get("content-type")).toContain("application/json")
     })
 
+    describe("maxRequestBodySize", () => {
+      const MIB = 1024 * 1024
+      const echo = (text: string, modern: boolean) =>
+        rawRequest("tools/call", { arguments: { text }, name: "echo" }, { modern })
+
+      it.each([
+        ["2026-07-28", true],
+        ["2025", false],
+      ])("answers 413 to a body over the SDK's 4 MiB default (%s)", async (_era, modern) => {
+        const res = await makeServer().fetch(echo("x".repeat(5 * MIB), modern))
+        expect(res.status).toBe(413)
+      })
+
+      it.each([
+        ["2026-07-28", true],
+        ["2025", false],
+      ])("serves a body under a raised limit (%s)", async (_era, modern) => {
+        const res = await makeServer({ maxRequestBodySize: 10 * MIB }).fetch(echo("x".repeat(5 * MIB), modern))
+        expect(res.status).toBe(200)
+        expect(await res.text()).toContain("echo: xxx")
+      })
+
+      it("answers 413 to a body over a lowered limit", async () => {
+        const res = await makeServer({ maxRequestBodySize: 1024 }).fetch(echo("x".repeat(2048), true))
+        expect(res.status).toBe(413)
+      })
+    })
+
     describe("context.log delivery", () => {
       const logging = () => {
         const server = makeServer()

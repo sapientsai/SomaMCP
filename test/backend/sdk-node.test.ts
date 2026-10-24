@@ -69,6 +69,23 @@ describe("createNodeBackend", () => {
       expect(res.headers.get("access-control-allow-origin")).toBe("*")
     })
 
+    it("serves a body over the 4 MiB default when maxRequestBodySize raises it", async () => {
+      const port = await getRandomPort()
+      const server = createServer({ maxRequestBodySize: 10 * 1024 * 1024, name: "node", version: "1.0.0" })
+      server.addTool({
+        execute: (args) => Promise.resolve(`length: ${args.text.length}`),
+        name: "measure",
+        parameters: z.object({ text: z.string() }),
+      })
+      await server.start({ httpStream: { host: "127.0.0.1", port }, transportType: "httpStream" })
+      running.push(server)
+      const client = await connectModern(network, new URL(`http://127.0.0.1:${port}/mcp`))
+      const text = "x".repeat(5 * 1024 * 1024)
+      expect(JSON.stringify(await client.callTool({ arguments: { text }, name: "measure" }))).toContain(
+        `length: ${text.length}`,
+      )
+    })
+
     it("reports running, then stopped after stop()", async () => {
       const { server } = await listen()
       expect(server.getHealth().status).toBe("running")
