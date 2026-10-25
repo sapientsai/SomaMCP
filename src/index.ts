@@ -66,6 +66,9 @@ export type {
   ToolAnnotations,
 } from "./types/index.js"
 export type {
+  AuthChallenge,
+  AuthProvider,
+  AuthRoute,
   HttpStreamConfig,
   Logger,
   RouteConfig,

@@ -1,10 +1,13 @@
 import { createMcpHandler, type McpHttpHandler, type Transport } from "@modelcontextprotocol/server"
-import { Map, Option, Ref, Try, Tuple } from "functype"
+import { type Either, Left, Map, Option, Ref, Right, Try, Tuple } from "functype"
 import { type Context as HonoContext, Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 
+import { resolveAuthenticate } from "../../auth/resolve.js"
+import type { AuthChallenge } from "../../types/auth.js"
 import type { Resource, ResourceTemplate, ServerStatus, SessionAuth } from "../../types/core.js"
 import type { HttpStreamConfig, ServerConfig, TransportConfig } from "../../types/server.js"
+import { readBoundedText } from "../../utils/body.js"
 import type { BackendAdapter, BackendSession } from "../adapter.js"
 import { type AnyPrompt, type AnyTool, buildServer, type Registry } from "./handlers.js"
 import { hasJsonSchema } from "./mapping.js"
@@ -21,9 +24,13 @@ export type SdkBackendOptions = {
 }
 
 const DEFAULT_MCP_PATH = "/mcp"
+/** The SDK's own default for `maxRequestBodySize`. */
+const DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024
 /** somamcp 1.x's default keepalive interval, kept so `streamKeepalive` means what it did. */
 const DEFAULT_KEEPALIVE_MS = 20_000
 const SESSION_KEY = "somamcp/session"
+
+const parseJson = (text: string): Option<unknown> => Try(() => JSON.parse(text) as unknown).toOption()
 
 const nodeOnly = (transportType: TransportConfig["transportType"]): Promise<never> =>
   Promise.reject(
@@ -62,8 +69,9 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   const drop = <V>(store: Ref<Map<string, V>>, name: string): void => {
     store.set(store.get().remove(name))
   }
+  const authenticate = resolveAuthenticate(config)
   const identity = {
-    authRequired: config.authenticate !== undefined,
+    authRequired: authenticate.isSome(),
     instructions: config.instructions,
     name: config.name,
     version: config.version,
@@ -115,38 +123,81 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   // but fetch() keeps answering; serving through fetch has nothing to shut.
   const state = Ref<ServerStatus>("running")
 
-  /** A rejected `authenticate` may carry a Response (somamcp 1.x's convention, from FastMCP); serve it as-is. */
-  const unauthorized = (c: HonoContext, reason: unknown): Response =>
-    reason instanceof Response ? reason : c.json({ error: "Unauthorized" }, 401)
-
   /**
    * `authenticate`, with somamcp 1.x's failure semantics: a synchronous throw
    * counts as a rejection, and a nullish result counts as a failed authentication
-   * (the idiomatic way to signal one).
+   * (the idiomatic way to signal one). Left(None) means no session; Left(Some)
+   * carries what it threw or rejected with.
    */
   const authenticateRequest = (
-    authenticate: NonNullable<ServerConfig<T>["authenticate"]>,
+    check: NonNullable<ServerConfig<T>["authenticate"]>,
     request: Option<Request>,
-  ): Promise<T> =>
+  ): Promise<Either<Option<unknown>, T>> =>
     Promise.resolve()
-      .then(() => authenticate(request.orUndefined()))
-      .then((auth) =>
-        Option(auth).fold(
-          () => Promise.reject(new Error("Authentication required")),
-          (session) => Promise.resolve(session),
-        ),
+      .then(() => check(request.orUndefined()))
+      .then(
+        (auth) =>
+          Option(auth).fold(
+            () => Left<Option<unknown>, T>(Option.none()),
+            (session) => Right<Option<unknown>, T>(session),
+          ),
+        (reason: unknown) => Left<Option<unknown>, T>(Option(reason)),
+      )
+
+  /** The JSON-RPC `id` of a rejected request, for its 401 body, or null. */
+  const readRequestId = async (request: Request): Promise<AuthChallenge["requestId"]> => {
+    if (request.method !== "POST") return null
+    const text = await readBoundedText(request, config.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE)
+    return text
+      .flatMap(parseJson)
+      .flatMap((message) => Option((message as { id?: unknown } | null)?.id))
+      .filter((id) => typeof id === "string" || typeof id === "number")
+      .fold<AuthChallenge["requestId"]>(
+        () => null,
+        (id) => id as string | number,
+      )
+  }
+
+  /**
+   * Answer an MCP request that failed authentication: a rejected `Response` as-is
+   * (somamcp 1.x's convention, from FastMCP), else the auth provider's challenge,
+   * else a plain 401.
+   */
+  const rejectMcp = (c: HonoContext, request: Request, failure: Option<unknown>): Promise<Response> =>
+    failure
+      .filter((reason) => reason instanceof Response)
+      .fold<Promise<Response>>(
+        () =>
+          Option(config.auth)
+            .flatMap((auth) => Option(auth.challenge))
+            .fold(
+              () => Promise.resolve(c.json({ error: "Unauthorized" }, 401)),
+              async (challenge) =>
+                challenge({
+                  endpoint: mcpPath.get(),
+                  request,
+                  ...failure.fold(
+                    () => ({}),
+                    (error) => ({ error }),
+                  ),
+                  requestId: await readRequestId(request),
+                }),
+            ),
+        (response) => Promise.resolve(response as Response),
       )
 
   const serveMcp = async (c: HonoContext): Promise<Response> => {
     const request = c.req.raw
-    if (!config.authenticate) return handler.get().fetch(request)
-    // Not Try.fromPromise: it would wrap a rejected Response, which must reach the client as-is.
-    return authenticateRequest(config.authenticate, Option(request)).then(
-      (session) =>
-        handler.get().fetch(request, {
-          authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
-        }),
-      (reason: unknown) => unauthorized(c, reason),
+    return authenticate.fold(
+      () => handler.get().fetch(request),
+      async (auth) =>
+        (await authenticateRequest(auth, Option(request))).fold(
+          (failure) => rejectMcp(c, request, failure),
+          (session) =>
+            handler.get().fetch(request, {
+              authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
+            }),
+        ),
     )
   }
 
@@ -166,6 +217,16 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     )
   })
 
+  // The auth provider's routes (OAuth metadata and endpoints). They read the MCP
+  // path per request, so they follow `start()` moving it.
+  Option(config.auth)
+    .flatMap((auth) => Option(auth.routes))
+    .forEach((routes) =>
+      routes(() => mcpPath.get()).forEach((route) => {
+        app.on(Array.isArray(route.method) ? [...route.method] : [route.method], route.path, (c) => route.handler(c))
+      }),
+    )
+
   const applyHttpConfig = (http: HttpStreamConfig): void => {
     Option(http.endpoint).forEach((endpoint) => mcpPath.set(endpoint))
     Option(http.cors)
@@ -184,15 +245,21 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     // stdio has no request to authenticate. As in somamcp 1.x, call authenticate
     // once with no request and serve without a session if it fails; tools gated
     // by canAccess are then hidden.
-    const session = config.authenticate
-      ? (await Try.fromPromise(authenticateRequest(config.authenticate, Option.none()))).fold(
-          (error) => {
-            logger.forEach((l) => l.error("[somamcp/sdk] authentication failed for stdio transport:", error.message))
+    const session = await authenticate.fold(
+      () => Promise.resolve(Option.none<T>()),
+      async (auth) =>
+        (await authenticateRequest(auth, Option.none())).fold(
+          (failure) => {
+            const reason = failure.fold(
+              () => "Authentication required",
+              (error) => (error instanceof Error ? error.message : String(error)),
+            )
+            logger.forEach((l) => l.error("[somamcp/sdk] authentication failed for stdio transport:", reason))
             return Option.none<T>()
           },
-          (auth) => Option(auth),
-        )
-      : Option.none<T>()
+          (session) => Option(session),
+        ),
+    )
     const transport = Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.stdioTransport))
       .orUndefined()

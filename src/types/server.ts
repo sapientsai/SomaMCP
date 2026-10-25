@@ -1,3 +1,4 @@
+import type { AuthProvider } from "./auth.js"
 import type { SessionAuth } from "./core.js"
 
 // ── Logger ────────────────────────────────────────────────────────────
@@ -25,6 +26,11 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    */
   // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
   authenticate?: (request: Request | undefined) => Promise<T>
+  /**
+   * Authentication that brings its own routes and 401 challenge, such as an OAuth server.
+   * See `AuthProvider`.
+   */
+  auth?: AuthProvider<T>
   instructions?: string
   logger?: Logger
   /**
