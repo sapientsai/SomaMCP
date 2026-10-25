@@ -78,6 +78,20 @@ Telemetry event types: `server.start`, `server.stop`, `tool.execute`, `tool.erro
 
 HTTP endpoints on the Hono app. Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`. `DashboardArtifact` auto-generates an HTML dashboard at `/dashboard`.
 
+### OAuth Proxy (`src/node/oauth/`, `somamcp/node` only)
+
+A port of fastmcp 4.22.10's OAuth proxy (MIT), in token-swap mode only. `createAzureProvider` returns an `AuthProvider` (`src/types/auth.ts`) for `createServer({ auth })`: `authenticate` maps the proxy's JWT to the upstream tokens, `routes` serves the well-known metadata and `/oauth/*`, and `challenge` builds the 401 that mcp-proxy 6.7.19 sent in front of FastMCP.
+
+**Compatibility is the contract.** These must stay byte-compatible with what FastMCP wrote, or every user of a migrated server has to sign in again:
+
+- the storage key prefixes (`client:`, `code:`, `transaction:`, `mapping:`, `upstream:`)
+- the record shapes (`state.ts`)
+- the DiskStore file names and `{ expiresAt, value }` files
+- the `"<iv>:<tag>:<ciphertext>"` AES-256-GCM format with the `fastmcp-oauth-proxy-salt` scrypt key
+- the HS256 JWT format
+
+`test/node/oauth-compat.test.ts` reads a store, tokens and HTTP captures that fastmcp generated (`test/fixtures/fastmcp-4.22.10-oauth`). Keep it passing.
+
 ### Content Helpers (`src/content/`)
 
 `imageContent()` and `audioContent()` — read from bytes (`{ buffer }`, any `Uint8Array`) or a URL, base64-encode without `Buffer`, and infer MIME type from extension. `src/node/content.ts` wraps them to also read `{ path }` from disk.

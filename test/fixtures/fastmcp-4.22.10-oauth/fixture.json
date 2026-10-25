@@ -1,0 +1,193 @@
+{
+  "generator": "fastmcp 4.22.10 AzureProvider + DiskStore, configured as packages/microsoft365/src/auth/oauth-provider.ts",
+  "generatedAtMs": 1792947363929,
+  "config": {
+    "baseUrl": "https://ms365.fixture.invalid",
+    "clientId": "fixture-upstream-client-id",
+    "clientSecret": "fixture-upstream-client-secret-not-a-secret",
+    "tenantId": "common",
+    "scopes": [
+      "offline_access",
+      "User.Read",
+      "User.Read.All",
+      "Mail.Read",
+      "Mail.ReadWrite",
+      "Mail.Send",
+      "Calendars.ReadWrite",
+      "Calendars.Read.Shared",
+      "Contacts.Read",
+      "Files.ReadWrite",
+      "Team.ReadBasic.All",
+      "Channel.ReadBasic.All",
+      "ChannelMessage.Send",
+      "Tasks.ReadWrite",
+      "Notes.ReadWrite",
+      "Group.Read.All",
+      "Chat.ReadWrite",
+      "ChatMessage.Read",
+      "ChatMessage.Send",
+      "ChannelMessage.Read.All",
+      "Sites.Read.All",
+      "Sites.ReadWrite.All"
+    ],
+    "jwtSigningKey": "fixture-jwt-signing-key-not-a-secret-0001",
+    "encryptionKey": "fixture-token-encryption-key-not-a-secret-0001",
+    "allowedRedirectUriPatterns": [
+      "https://claude.ai/*",
+      "https://claude.com/*",
+      "http://localhost/*",
+      "http://localhost:*/*",
+      "http://127.0.0.1/*",
+      "http://127.0.0.1:*/*"
+    ]
+  },
+  "redirectUri": "https://claude.ai/api/mcp/auth_callback",
+  "registration": {
+    "client_id": "4fba4b5d9525bbc5a3ff92493e0bef64",
+    "client_id_issued_at": 1792947363,
+    "client_name": "Fixture Client",
+    "client_secret": "pilYzMdiO9vnCq3cssfXz2NldRlL51JOoCsib4PMtMM",
+    "client_secret_expires_at": 0,
+    "grant_types": ["authorization_code", "refresh_token"],
+    "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+    "response_types": ["code"],
+    "token_endpoint_auth_method": "client_secret_basic"
+  },
+  "flow1": {
+    "description": "Completed and exchanged. Our JWTs below must resolve to upstreamFromAccess.",
+    "clientState": "fixture-client-state-1",
+    "codeVerifier": "Rse1QQ2KDwS4WODrgnUnVNraR7OYmBc9tRRTZJzOjRg",
+    "upstreamAuthorizeUrl": "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=fixture-upstream-client-id&redirect_uri=https%3A%2F%2Fms365.fixture.invalid%2Foauth%2Fcallback&response_type=code&state=S55H_05ZVBAuOWgKH0l4ZtAqmIlohQuDwD-iu0PELVU&scope=offline_access+User.Read+User.Read.All+Mail.Read+Mail.ReadWrite+Mail.Send+Calendars.ReadWrite+Calendars.Read.Shared+Contacts.Read+Files.ReadWrite+Team.ReadBasic.All+Channel.ReadBasic.All+ChannelMessage.Send+Tasks.ReadWrite+Notes.ReadWrite+Group.Read.All+Chat.ReadWrite+ChatMessage.Read+ChatMessage.Send+ChannelMessage.Read.All+Sites.Read.All+Sites.ReadWrite.All&code_challenge=EOEYkI5pJcl1g-tngqGjMeeMrhOanDdzP_I3R2nizRI&code_challenge_method=S256",
+    "clientCallbackUrl": "https://claude.ai/api/mcp/auth_callback?code=1sen1uTH_Z73s1_Iy6MP0198a5WXbzG17x4U9x9i9q0&state=fixture-client-state-1&iss=https%3A%2F%2Fms365.fixture.invalid",
+    "tokenResponse": {
+      "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL21zMzY1LmZpeHR1cmUuaW52YWxpZCIsImNsaWVudF9pZCI6IjRmYmE0YjVkOTUyNWJiYzVhM2ZmOTI0OTNlMGJlZjY0IiwiZXhwIjoxNzkyOTUwOTYyLCJpYXQiOjE3OTI5NDczNjMsImlzcyI6Imh0dHBzOi8vbXMzNjUuZml4dHVyZS5pbnZhbGlkIiwianRpIjoiLUZzY1ZVNTdYU1M1ZVRnT0dNZWlBdyIsInNjb3BlIjpbIk1haWwuUmVhZFdyaXRlIiwiVXNlci5SZWFkIl0sIm9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwZjF4NyIsInRpZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDB0M25hbiIsInByZWZlcnJlZF91c2VybmFtZSI6ImZpeHR1cmUudXNlckBmaXh0dXJlLmludmFsaWQiLCJuYW1lIjoiRml4dHVyZSBVc2VyIiwic2NwIjoiTWFpbC5SZWFkV3JpdGUgVXNlci5SZWFkIiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMSJ9.4L5eA2hPogwQe8OlmbJNBCKgCg-cMjXFPtDn787d0jA",
+      "expires_in": 3599,
+      "scope": "Mail.ReadWrite User.Read",
+      "token_type": "Bearer",
+      "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJodHRwczovL21zMzY1LmZpeHR1cmUuaW52YWxpZCIsImNsaWVudF9pZCI6IjRmYmE0YjVkOTUyNWJiYzVhM2ZmOTI0OTNlMGJlZjY0IiwiZXhwIjoxNzk1NTM5MzYzLCJpYXQiOjE3OTI5NDczNjMsImlzcyI6Imh0dHBzOi8vbXMzNjUuZml4dHVyZS5pbnZhbGlkIiwianRpIjoiXzhzdXA0aTV4MG9saC14YnBweXhkQSIsInNjb3BlIjpbIk1haWwuUmVhZFdyaXRlIiwiVXNlci5SZWFkIl0sIm9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwZjF4NyIsInRpZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDB0M25hbiIsInByZWZlcnJlZF91c2VybmFtZSI6ImZpeHR1cmUudXNlckBmaXh0dXJlLmludmFsaWQiLCJuYW1lIjoiRml4dHVyZSBVc2VyIiwic2NwIjoiTWFpbC5SZWFkV3JpdGUgVXNlci5SZWFkIiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMSJ9.gBpiEfM6FJKy2xmBjEf7YmRHNYko82NV25GqPz-4neQ"
+    },
+    "upstreamFromAccess": {
+      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMSJ9.fixture-not-a-real-signature",
+      "expiresIn": 3599,
+      "idToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwiYXVkIjoiZml4dHVyZS11cHN0cmVhbS1jbGllbnQtaWQifQ.fixture-not-a-real-signature",
+      "issuedAt": "2026-10-25T16:56:03.991Z",
+      "refreshToken": "fixture-upstream-refresh-token-1",
+      "scope": ["Mail.ReadWrite", "User.Read"],
+      "tokenType": "Bearer"
+    },
+    "sessionFromAuthenticate": {
+      "accessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMSJ9.fixture-not-a-real-signature",
+      "expiresAt": 1792950963,
+      "idToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwiYXVkIjoiZml4dHVyZS11cHN0cmVhbS1jbGllbnQtaWQifQ.fixture-not-a-real-signature",
+      "refreshToken": "fixture-upstream-refresh-token-1",
+      "scopes": ["Mail.ReadWrite", "User.Read"]
+    }
+  },
+  "flow2": {
+    "description": "Code issued at the callback, never exchanged: the code_* entry. Exchange it with this verifier.",
+    "codeVerifier": "POlvxuOH09uXAwsZ-u5KljynwB382jDpswKNBgzIuv8",
+    "clientCallbackUrl": "https://claude.ai/api/mcp/auth_callback?code=D1DGlVSLC_TRF3Hnv0G4t2v_ehYZ6MCRc9IL6V_SYQM&state=fixture-client-state-2&iss=https%3A%2F%2Fms365.fixture.invalid"
+  },
+  "flow3": {
+    "description": "Authorize only, consent pending: the transaction_* entry.",
+    "transactionId": "ab3hWQlLix5EFp_2n15sb0etVuDpaqPKtRqA8SevoOA",
+    "codeVerifier": "lYifBAIih7VAokZdHh1L-LY11W9BMs95T5k0dK--v38"
+  },
+  "upstreamTokenResponses": [
+    {
+      "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMSJ9.fixture-not-a-real-signature",
+      "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwiYXVkIjoiZml4dHVyZS11cHN0cmVhbS1jbGllbnQtaWQifQ.fixture-not-a-real-signature",
+      "refresh_token": "fixture-upstream-refresh-token-1",
+      "expires_in": 3599,
+      "token_type": "Bearer",
+      "scope": "Mail.ReadWrite User.Read"
+    },
+    {
+      "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwidXRpIjoiZml4dHVyZS11cHN0cmVhbS1hY2Nlc3MtMiJ9.fixture-not-a-real-signature",
+      "id_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJvaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMGYxeDciLCJ0aWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwdDNuYW4iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmaXh0dXJlLnVzZXJAZml4dHVyZS5pbnZhbGlkIiwibmFtZSI6IkZpeHR1cmUgVXNlciIsInNjcCI6Ik1haWwuUmVhZFdyaXRlIFVzZXIuUmVhZCIsImV4cCI6MTc5Mjk1MDk2MiwiYXVkIjoiZml4dHVyZS11cHN0cmVhbS1jbGllbnQtaWQifQ.fixture-not-a-real-signature",
+      "refresh_token": "fixture-upstream-refresh-token-2",
+      "expires_in": 3599,
+      "token_type": "Bearer",
+      "scope": "Mail.ReadWrite User.Read"
+    }
+  ],
+  "upstreamRequests": [
+    {
+      "url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "body": "code=fixture-upstream-code-1&code_verifier=NWonWa5NJ73E_2sZZt_VsEOcvscSlhj9AB0jn4rcPusi_RhS-WJ42ZkR4Dy7PF2NBEikSbtRq1YJiyUVHciQ_CinZ7NKzwpcLefgT65wSYj1GgG7Fom3KxagVsCcf9Ef&grant_type=authorization_code&redirect_uri=https%3A%2F%2Fms365.fixture.invalid%2Foauth%2Fcallback"
+    },
+    {
+      "url": "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+      "body": "code=fixture-upstream-code-2&code_verifier=Q9txSrh_6W1MRjO2VfH6ZA2qyrhR4KXqRQp3pTW5ehIqPogYHfn9__WYZ28SgvmPFIlQABrtBwj3wv6Cv2ylAhSULF43PCjK6MJVvpSBJxxgM3YB740lsJT68dYfZUha&grant_type=authorization_code&redirect_uri=https%3A%2F%2Fms365.fixture.invalid%2Foauth%2Fcallback"
+    }
+  ],
+  "http": {
+    "authorizationServerMetadata": {
+      "request": {
+        "path": "/.well-known/oauth-authorization-server",
+        "method": "GET",
+        "body": null
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "transfer-encoding": "chunked"
+      },
+      "body": "{\"authorization_endpoint\":\"http://127.0.0.1:39417/oauth/authorize\",\"authorization_response_iss_parameter_supported\":true,\"code_challenge_methods_supported\":[\"S256\",\"plain\"],\"grant_types_supported\":[\"authorization_code\",\"refresh_token\"],\"issuer\":\"http://127.0.0.1:39417\",\"registration_endpoint\":\"http://127.0.0.1:39417/oauth/register\",\"response_types_supported\":[\"code\"],\"scopes_supported\":[\"offline_access\",\"User.Read\",\"User.Read.All\",\"Mail.Read\",\"Mail.ReadWrite\",\"Mail.Send\",\"Calendars.ReadWrite\",\"Calendars.Read.Shared\",\"Contacts.Read\",\"Files.ReadWrite\",\"Team.ReadBasic.All\",\"Channel.ReadBasic.All\",\"ChannelMessage.Send\",\"Tasks.ReadWrite\",\"Notes.ReadWrite\",\"Group.Read.All\",\"Chat.ReadWrite\",\"ChatMessage.Read\",\"ChatMessage.Send\",\"ChannelMessage.Read.All\",\"Sites.Read.All\",\"Sites.ReadWrite.All\"],\"token_endpoint\":\"http://127.0.0.1:39417/oauth/token\",\"token_endpoint_auth_methods_supported\":[\"none\",\"client_secret_basic\",\"client_secret_post\"]}"
+    },
+    "protectedResourceBare": {
+      "request": {
+        "path": "/.well-known/oauth-protected-resource",
+        "method": "GET",
+        "body": null
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "transfer-encoding": "chunked"
+      },
+      "body": "{\"authorization_servers\":[\"http://127.0.0.1:39417\"],\"resource\":\"http://127.0.0.1:39417/mcp\",\"scopes_supported\":[\"offline_access\",\"User.Read\",\"User.Read.All\",\"Mail.Read\",\"Mail.ReadWrite\",\"Mail.Send\",\"Calendars.ReadWrite\",\"Calendars.Read.Shared\",\"Contacts.Read\",\"Files.ReadWrite\",\"Team.ReadBasic.All\",\"Channel.ReadBasic.All\",\"ChannelMessage.Send\",\"Tasks.ReadWrite\",\"Notes.ReadWrite\",\"Group.Read.All\",\"Chat.ReadWrite\",\"ChatMessage.Read\",\"ChatMessage.Send\",\"ChannelMessage.Read.All\",\"Sites.Read.All\",\"Sites.ReadWrite.All\"]}"
+    },
+    "protectedResourceMcp": {
+      "request": {
+        "path": "/.well-known/oauth-protected-resource/mcp",
+        "method": "GET",
+        "body": null
+      },
+      "status": 200,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "transfer-encoding": "chunked"
+      },
+      "body": "{\"authorization_servers\":[\"http://127.0.0.1:39417\"],\"resource\":\"http://127.0.0.1:39417/mcp\",\"scopes_supported\":[\"offline_access\",\"User.Read\",\"User.Read.All\",\"Mail.Read\",\"Mail.ReadWrite\",\"Mail.Send\",\"Calendars.ReadWrite\",\"Calendars.Read.Shared\",\"Contacts.Read\",\"Files.ReadWrite\",\"Team.ReadBasic.All\",\"Channel.ReadBasic.All\",\"ChannelMessage.Send\",\"Tasks.ReadWrite\",\"Notes.ReadWrite\",\"Group.Read.All\",\"Chat.ReadWrite\",\"ChatMessage.Read\",\"ChatMessage.Send\",\"ChannelMessage.Read.All\",\"Sites.Read.All\",\"Sites.ReadWrite.All\"]}"
+    },
+    "mcpUnauthenticated": {
+      "request": {
+        "path": "/mcp",
+        "method": "POST",
+        "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"fixture\",\"version\":\"1\"}}}"
+      },
+      "status": 401,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "www-authenticate": "Bearer resource_metadata=\"http://127.0.0.1:39417/.well-known/oauth-protected-resource/mcp\", error=\"invalid_token\", error_description=\"Unauthorized: Authentication failed\""
+      },
+      "body": "{\"error\":{\"code\":-32000,\"message\":\"Unauthorized: Authentication failed\"},\"id\":1,\"jsonrpc\":\"2.0\"}"
+    },
+    "mcpBadBearer": {
+      "request": {
+        "path": "/mcp",
+        "method": "POST",
+        "body": "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/list\",\"params\":{}}"
+      },
+      "status": 401,
+      "headers": {
+        "content-type": "application/json; charset=utf-8",
+        "transfer-encoding": "chunked",
+        "www-authenticate": "Bearer resource_metadata=\"http://127.0.0.1:39417/.well-known/oauth-protected-resource/mcp\", error=\"invalid_token\", error_description=\"Unauthorized: Authentication failed\""
+      },
+      "body": "{\"error\":{\"code\":-32000,\"message\":\"Unauthorized: Authentication failed\"},\"id\":7,\"jsonrpc\":\"2.0\"}"
+    }
+  }
+}

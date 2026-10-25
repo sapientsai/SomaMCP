@@ -187,6 +187,76 @@ A provider (`AuthProvider`) has three parts:
 - **`challenge({ endpoint, error, request, requestId })`** builds the response to an MCP request that failed authentication. This is typically a 401 with a `WWW-Authenticate` header. `requestId` is the request's JSON-RPC `id`, or `null` for a `GET`, a batch, or an unreadable body. `error` is what `authenticate` threw, and it is absent when `authenticate` resolved to no session. Only the MCP endpoint uses `challenge`: protected artifacts and routes keep their own `onUnauthorized`, or 401. Without a `challenge`, the endpoint answers a plain 401.
 - **`routes(endpoint)`** returns unprotected routes, such as OAuth metadata and `/oauth/*` endpoints. They are mounted once, when the server is created, so a route's path must not embed the MCP endpoint, which `start({ httpStream: { endpoint } })` can move later. To serve a path under the endpoint, such as `/.well-known/oauth-protected-resource/mcp`, mount a wildcard (`/.well-known/oauth-protected-resource/*`) and compare `c.req.path` with `endpoint()`, which reads the current path.
 
+### OAuth proxy (`somamcp/node`)
+
+`createAzureProvider` makes the server its own OAuth 2.1 authorization server in front of Microsoft Entra ID. It handles dynamic client registration, PKCE, a consent screen, and token swap: clients get the server's JWTs, while Microsoft's tokens stay in encrypted storage, and tools see Microsoft's access token as `context.session.accessToken`.
+
+```typescript
+import { createAzureProvider, createDiskStore, createServer } from "somamcp/node"
+
+const auth = createAzureProvider({
+  allowedRedirectUriPatterns: ["https://claude.ai/*", "http://localhost:*/*"],
+  baseUrl: "https://mcp.example.com",
+  clientId: process.env.AZURE_CLIENT_ID!,
+  clientSecret: process.env.AZURE_CLIENT_SECRET!,
+  encryptionKey: process.env.TOKEN_ENCRYPTION_KEY!,
+  jwtSigningKey: process.env.JWT_SIGNING_KEY!,
+  scopes: ["offline_access", "User.Read"],
+  tenantId: "common",
+  tokenStorage: createDiskStore({ directory: "/var/lib/mcp/tokens" }),
+})
+
+const server = createServer({ auth, name: "graph", version: "1.0.0" })
+server.addTool({
+  execute: (_args, { session }) => callGraph(session?.accessToken),
+  name: "me",
+  parameters: z.object({}),
+})
+await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType: "httpStream" })
+```
+
+**Routes:**
+
+- `/.well-known/oauth-authorization-server`
+- `/.well-known/oauth-protected-resource`, both bare and with the MCP endpoint appended
+- `POST /oauth/register`
+- `GET /oauth/authorize`
+- `GET /oauth/callback` (register `<baseUrl>/oauth/callback` as the app's redirect URI in Entra ID)
+- `POST /oauth/consent`
+- `POST /oauth/token`
+
+An unauthenticated MCP request gets a 401 that carries `WWW-Authenticate: Bearer resource_metadata="…", error="invalid_token", error_description="…"`.
+
+**Moving from FastMCP.** This is a port of fastmcp 4.22.10's `AzureProvider`, `OAuthProxy`, `DiskStore`, `EncryptedTokenStorage` and `JWTIssuer`. The config is the same, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. FastMCP's formats are kept, so existing sign-ins survive the move:
+
+- the store layout, with the same file names
+- AES-256-GCM with a scrypt-derived key
+- HS256 JWTs with the same claims
+- the same key prefixes
+
+`test/fixtures/fastmcp-4.22.10-oauth` holds a store and tokens that FastMCP wrote; the tests read them back. The defaults are FastMCP's too:
+
+- access tokens follow Microsoft's `expires_in`
+- refresh tokens last 30 days
+- codes last 5 minutes and transactions 10
+- the upstream timeout is 10 seconds
+
+Behaviour carried over unchanged:
+
+- **The token endpoint does not check `client_secret`.** PKCE binds the code to the client that started the flow.
+- **Microsoft's token claims are copied into the issued JWTs** (`customClaimsPassthrough` defaults to on), except `aud`, `client_id`, `exp`, `iat`, `iss`, `jti`, `nbf` and `scope`.
+- **`consentSigningKey` is accepted but unused**, as in FastMCP 4.22.10.
+- **Without `jwtSigningKey` or `encryptionKey`, a random key is generated per process**, so sign-ins and stored tokens do not survive a restart.
+
+Not ported:
+
+- client ID metadata documents (`enableCimd`)
+- passthrough mode (`enableTokenSwap: false`)
+- the GitHub and Google providers
+- JWKS verification
+
+`createOAuthProxyProvider` takes the proxy's own config (`upstreamAuthorizationEndpoint`, `upstreamTokenEndpoint`, …) for any other upstream server.
+
 ## Content-Array Tool Returns
 
 A tool's `execute` may return a plain string **or** a full content-array with multimodal parts — telemetry passes the return value through unchanged. Use the exported `imageContent` / `audioContent` helpers to build parts without reaching into the backend. Both take `{ buffer }` (any `Uint8Array`, including a Node `Buffer`) or `{ url }` everywhere; the `somamcp/node` versions also take `{ path }`. A URL's or path's extension picks the MIME type.
@@ -512,6 +582,12 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 - `createFeedbackTool`, `createGithubFeedback`, `createWebhookFeedback`
 - `redact`, `DEFAULT_REDACTION_PATTERNS`
 - Types: `FeedbackProvider`, `FeedbackToolOptions`, `GithubFeedbackOptions`, `WebhookFeedbackOptions`, `RedactionPattern`, `RedactionResult`, `NormalizedFeedback`, `FeedbackSubmitResult`
+
+**OAuth proxy** (`somamcp/node`)
+
+- `createAzureProvider`, `createOAuthProxyProvider`, `createOAuthProxy`
+- Storage: `createDiskStore`, `createMemoryTokenStorage`, `createEncryptedTokenStorage`; JWTs: `createJwtIssuer`
+- Types: `AzureProviderConfig`, `OAuthAuthProvider`, `OAuthSession`, `OAuthProxy`, `OAuthProxyConfig`, `OAuthProxyError`, `TokenStorage`, `DiskStoreOptions`, `UpstreamTokenSet`, `JwtIssuer`
 
 **Content helpers**
 
