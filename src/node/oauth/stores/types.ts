@@ -5,9 +5,9 @@
  * never expires. `get` and `take` resolve `undefined` (or `null`) for a key that is
  * missing or expired.
  *
- * `take` reads and deletes in one step. A store that several processes share should make
- * it atomic, because it is what keeps authorization codes and refresh tokens single-use.
- * Without it, the server falls back to `get` then `delete`, which two processes can race.
+ * `take` removes a key and returns its value. Codes and refresh tokens rely on it to be used
+ * once, so a store shared between processes should implement it as one atomic operation. A
+ * store without it gets `get` followed by `delete`, which two processes can interleave.
  */
 export type TokenStore = {
   cleanup: () => Promise<void>

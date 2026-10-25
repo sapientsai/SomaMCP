@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { readClaims } from "../../../src/node/oauth/jwt.js"
+import { secondsUntil } from "../../../src/node/oauth/records.js"
 import { createMemoryStore } from "../../../src/node/oauth/stores/memory.js"
 import type { TokenStore } from "../../../src/node/oauth/stores/types.js"
 import {
@@ -228,6 +229,15 @@ describe("redeeming an authorization code", () => {
       description: 'The grant type "password" is not supported.',
       status: 400,
     })
+  })
+})
+
+describe("secondsUntil, the ttl for a store", () => {
+  it("rounds up, and never goes below one second", () => {
+    vi.useFakeTimers({ now: 1_000_000, toFake: ["Date"] })
+    expect(secondsUntil(new Date(1_000_000 + 1_500))).toBe(2)
+    expect(secondsUntil(new Date(1_000_000 + 10))).toBe(1)
+    expect(secondsUntil(new Date(1_000_000 - 5_000))).toBe(1)
   })
 })
 

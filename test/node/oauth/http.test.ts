@@ -4,6 +4,7 @@ import { z } from "zod"
 
 import { createAzureProvider, createMemoryStore, createServer, type OAuthSession } from "../../../src/node/index.js"
 import type { OAuthAuthProvider } from "../../../src/node/oauth/provider.js"
+import { rawRequest } from "../../backend/sdk-clients.js"
 import { CALLBACK, createFakeProvider, type FakeProvider, pkcePair, quiet } from "./harness.js"
 
 const BASE = "https://ms365.test"
@@ -428,7 +429,9 @@ describe("authenticating MCP requests", () => {
     })
     expect(authenticate).toHaveBeenCalledTimes(1)
     await post({ id: 2, jsonrpc: "2.0", method: "tools/list", params: {} })
-    await post({ id: 3, jsonrpc: "2.0", method: "tools/list", params: {} })
+    expect(authenticate).toHaveBeenCalledTimes(2)
+    // A 2026-07-28 request, with the per-request envelope and routing headers.
+    await server.fetch(rawRequest("tools/list", {}, { headers: { authorization: "Bearer x" }, modern: true }))
     expect(authenticate).toHaveBeenCalledTimes(3)
   })
 })

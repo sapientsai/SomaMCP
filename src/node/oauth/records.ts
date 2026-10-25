@@ -18,15 +18,8 @@ const KEY = {
   upstream: "upstream:",
 } as const
 
-/** Dates are stored as ISO strings, the way `JSON.stringify` writes a `Date`. */
-const date = z.union([z.date(), z.string()]).transform((value, ctx) => {
-  const parsed = value instanceof Date ? value : new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    ctx.addIssue({ code: "custom", message: "not a date" })
-    return z.NEVER
-  }
-  return parsed
-})
+/** A `Date` in memory; on disk, the ISO string `JSON.stringify` made of it. */
+const date = z.coerce.date()
 
 const clientSchema = z.object({
   callbackUrl: z.string(),
@@ -95,7 +88,7 @@ const codeSchema = z.object({
   used: z.boolean().optional(),
 })
 
-/** What a code leaves behind once redeemed, so a second attempt is "already used", not "unknown". */
+/** The marker under a redeemed code's key, so `redeem` can tell a replay from a typo. */
 const spentSchema = z.object({ expiresAt: date, used: z.literal(true) })
 
 /** Ties one of the server's JWTs, by its `jti`, to the upstream tokens it stands for. */
@@ -138,14 +131,14 @@ export const createRecords = (store: TokenStore) => {
     return value
   }
 
-  // A registration never changes once written, so a copy in memory cannot go stale.
+  // Clients are immutable once registered, so after the first read they are served from memory.
   const known = Ref(Map.empty<string, RegisteredClient>())
   const remember = (client: RegisteredClient): void => {
     known.set(known.get().add(Tuple<[string, RegisteredClient]>([client.clientId, client])))
   }
 
   const clients = {
-    /** Persisted first: a client is only remembered once the store has it, so other instances find it too. */
+    /** Saved before it is cached: if the save fails, this instance must not know a client the others never will. */
     add: async (client: RegisteredClient): Promise<void> => {
       await store.save(`${KEY.client}${client.clientId}`, client)
       remember(client)
@@ -154,7 +147,7 @@ export const createRecords = (store: TokenStore) => {
       const cached = known.get().get(clientId)
       if (cached.isSome()) return cached
       const stored = decode(clientSchema, await store.get(`${KEY.client}${clientId}`))
-      // A FastMCP metadata-document client carries an expiry; once past it, it is gone.
+      // Only clients FastMCP fetched from a metadata document have an expiresAt; this server never writes one.
       if (stored.exists((client) => client.expiresAt !== undefined && lapsed(client.expiresAt))) {
         await store.delete(`${KEY.client}${clientId}`)
         return Option.none()
@@ -167,20 +160,20 @@ export const createRecords = (store: TokenStore) => {
 
   const pending = {
     delete: (id: string): Promise<void> => store.delete(`${KEY.pending}${id}`),
-    /** Read without consuming: the consent step hands the same request on upstream. */
+    /** For the consent step, which updates the request rather than ending it. */
     find: async (id: string): Promise<Option<PendingAuthorization>> =>
       decode(pendingSchema, await store.get(`${KEY.pending}${id}`)).filter((p) => !lapsed(p.expiresAt)),
     save: (request: PendingAuthorization): Promise<void> =>
       store.save(`${KEY.pending}${request.id}`, request, secondsUntil(request.expiresAt)),
-    /** Consume, so a callback is honoured once whichever instance it reaches. */
+    /** For the callback: the request ends here, and a replayed callback finds nothing. */
     take: async (id: string): Promise<Option<PendingAuthorization>> =>
       decode(pendingSchema, await take(`${KEY.pending}${id}`)).filter((p) => !lapsed(p.expiresAt)),
   }
 
   const codes = {
     /**
-     * Claim a code. At most one caller across every instance sharing the store gets it.
-     * A spent code is claimed too, so the caller must write its tombstone back.
+     * Removes the code and returns what it held. Removal goes through `take`, so concurrent
+     * redemptions resolve to one winner; the caller then writes the spent marker in its place.
      */
     redeem: async (code: string): Promise<Option<Redemption>> => {
       const stored = await take(`${KEY.code}${code}`)

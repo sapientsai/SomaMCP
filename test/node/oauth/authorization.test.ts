@@ -56,11 +56,20 @@ describe("/oauth/authorize", () => {
     expect(screen.scope).toEqual(["Mail.Read", "Files.Read"])
   })
 
-  it("goes straight to the provider when consent is not required", async () => {
+  it("goes straight to the provider when consent is not required, and the sign-in completes", async () => {
     const server = make(createFakeProvider(), { consentRequired: false })
     const { client_id } = await register(server)
-    const upstream = redirectOf(right(await authorize(server, client_id, pkcePair().challenge)))
+    const pkce = pkcePair()
+    const upstream = redirectOf(right(await authorize(server, client_id, pkce.challenge)))
     expect(`${upstream.origin}${upstream.pathname}`).toBe(AUTHORIZE)
+    const code = redirectOf(right(await server.callback(providerCallback(upstream)))).searchParams.get("code") ?? ""
+    const tokens = await server.token({
+      clientId: client_id,
+      code,
+      codeVerifier: pkce.verifier,
+      grantType: "authorization_code",
+    })
+    expect(tokens.isRight()).toBe(true)
   })
 
   describe("before the client and its redirect URI are verified, errors are shown, never redirected", () => {

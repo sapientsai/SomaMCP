@@ -128,7 +128,7 @@ export const createGrants = (
     return Right(await issuePair(issued.clientId, issued.upstreamTokens, key))
   }
 
-  /** Put a claimed refresh token back, with whatever lifetime it had left. */
+  /** After a failed refresh: save the grant again under its original expiry, so retrying never extends it. */
   const restore = async (grant: TokenGrant): Promise<void> => {
     if (grant.expiresAt.getTime() <= Date.now()) return
     await records.grants.save(grant, secondsUntil(grant.expiresAt))
@@ -141,12 +141,15 @@ export const createGrants = (
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
     const refreshed = await upstream.refresh(upstreamRefresh.orElse(""), scope)
-    if (refreshed.isLeft()) return refreshed as unknown as Either<OAuthError, TokenResponse>
-    const fresh = refreshed.orThrow()
-    // A provider that leaves scope out of a refresh keeps the scope it granted.
-    const tokens = fresh.scope.length > 0 ? fresh : { ...fresh, scope: current.scope }
-    await keepUpstream(grant.upstreamTokenKey, tokens)
-    return Right(await issuePair(grant.clientId, tokens, grant.upstreamTokenKey))
+    return refreshed.fold(
+      (error) => Promise.resolve(Left<OAuthError, TokenResponse>(error)),
+      async (fresh) => {
+        // A provider that leaves scope out of a refresh keeps the scope it granted.
+        const tokens = fresh.scope.length > 0 ? fresh : { ...fresh, scope: current.scope }
+        await keepUpstream(grant.upstreamTokenKey, tokens)
+        return Right<OAuthError, TokenResponse>(await issuePair(grant.clientId, tokens, grant.upstreamTokenKey))
+      },
+    )
   }
 
   const refresh = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {

@@ -45,8 +45,8 @@ const isCurrent = (entry: FileEntry): boolean => entry.expiresAt >= Date.now()
  *
  * Files are created owner-only (0600) in an owner-only directory (0700). A save writes a
  * temporary file and renames it into place, so a reader sees the old value or the new one,
- * never a partial file. `take` claims a file by renaming it, which is atomic on POSIX, so
- * processes sharing the directory never both redeem one code.
+ * never a partial file. `take` first moves the file to a private name; the rename either
+ * happens or fails, so of several processes reading the same key, one gets the value.
  */
 export const createDiskStore = (options: DiskStoreOptions): TokenStore => {
   const { directory } = options

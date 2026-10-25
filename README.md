@@ -229,9 +229,9 @@ For another upstream provider, `createOAuthProxyProvider` takes its endpoints un
 
 An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata="…", error="invalid_token", error_description="…"`.
 
-**Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. Only the HTTP layer turns them into the standard OAuth codes (`invalid_grant`, `invalid_client`, …), because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
+**Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. They become the standard OAuth codes (`invalid_grant`, `invalid_client`, …) only where a response leaves the server, because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
 
-**The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part. The page has no scripts and can't be framed, and Deny comes first, so pressing Enter declines. It follows the dashboard's palette, has a light mode, and works at phone width.
+**The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part. The page has no scripts and can't be framed, and Deny comes first in the tab order. It follows the dashboard's palette, has a light mode, and works at phone width.
 
 **Moving from FastMCP.** `createAzureProvider` takes FastMCP's `AzureProviderConfig` unchanged, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. The storage formats match FastMCP 4.22.10's, so existing sign-ins survive the move, and a rollback to FastMCP keeps them too:
 
@@ -255,9 +255,10 @@ Behaviour to know about:
 
 - **PKCE is required.** A request without a `code_challenge` is sent back to the client with `invalid_request`.
 - **The token endpoint does not check `client_secret`.** PKCE binds a code to the client that started the flow. This matches FastMCP, so clients registered there keep working.
-- **A sign-in must pass the consent page.** A callback for a request that was never approved is refused, so a client cannot send the user to Microsoft directly and skip consent.
+- **Access and refresh tokens are interchangeable**, as they were in FastMCP: each works where the other is expected. Fixing it means changing the stored format, so it is tracked in #51.
+- **A sign-in must pass the consent page.** A callback for a request that was never approved is refused. This is defence in depth: the real protection is the random transaction id and the redirect-URI allow-list, because nothing ties the consent POST to the browser that showed the page.
 - **Microsoft's token claims are copied into the issued JWTs**, except `aud`, `client_id`, `exp`, `iat`, `iss`, `jti`, `nbf` and `scope`. Set `claims` on the generic provider to narrow this or turn it off.
-- **Without `jwtSigningKey` or `encryptionKey`, a random key is generated per process**, so sign-ins and stored tokens do not survive a restart. The server warns at startup when either is missing.
+- **Without `jwtSigningKey` or `encryptionKey`, a random key is generated per process**, so sign-ins and stored tokens do not survive a restart. The server warns at startup when `jwtSigningKey` is missing, and when `encryptionKey` is missing for a store you passed in.
 - **A value that will not decrypt is logged**, so a changed `encryptionKey` shows up in the logs instead of silently signing everyone out.
 
 Not supported: client ID metadata documents, passthrough mode (handing clients the provider's own tokens), GitHub or Google presets, and JWKS verification.

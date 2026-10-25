@@ -1,8 +1,8 @@
 // Why an OAuth request failed, as a tagged union. Code inside the authorization server
-// returns these as the Left of an Either. Only the HTTP layer turns them into the wire
-// error codes that RFC 6749 (§4.1.2.1, §5.2) and RFC 7591 (§3.2.2) define, because those
-// codes are what clients act on: `invalid_grant` on a refresh, for example, makes a client
-// sign in again.
+// returns these as the Left of an Either. They become the wire error codes that RFC 6749
+// (§4.1.2.1, §5.2) and RFC 7591 (§3.2.2) define only where a response leaves the server: in
+// http.ts, and on the redirects back to a client in authorization.ts. Those codes are what
+// clients act on: `invalid_grant` on a refresh, for example, makes a client sign in again.
 import { Option } from "functype"
 
 export type OAuthError =
