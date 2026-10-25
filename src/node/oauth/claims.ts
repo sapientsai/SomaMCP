@@ -1,71 +1,83 @@
-// Copies claims from the upstream tokens into the proxy's JWTs.
-// Ported from fastmcp 4.22.10 (MIT, src/auth/utils/claimsExtractor.ts).
-import { List, Option } from "functype"
+// Which claims of the upstream tokens the server copies into the JWTs it issues, so a
+// client can read, say, the user's name without calling the provider.
+import { List, Option, Try } from "functype"
 
 import type { Logger } from "../../types/server.js"
-import { decodeJwtPayload } from "./crypto.js"
+import { readClaims } from "./jwt.js"
 
 /**
- * Which upstream claims the proxy copies into the JWTs it issues. `true` (the default)
- * copies every simple claim; `false` copies none.
+ * - `allow` — copy only these claims.
+ * - `block` — never copy these.
+ * - `prefix` — rename each copied claim to `<prefix><name>`.
+ * - `maxValueLength` — skip a value longer than this, in characters. Defaults to 2000.
+ * - `allowObjects` — copy arrays and objects too, within `maxValueLength` as JSON.
+ * - `fromAccessToken`, `fromIdToken` — which tokens to read. Both default to true.
  */
-export type CustomClaimsPassthroughConfig = {
-  allowComplexClaims?: boolean
-  allowedClaims?: ReadonlyArray<string>
-  blockedClaims?: ReadonlyArray<string>
-  claimPrefix?: string | false
+export type ClaimsPolicy = {
+  allow?: ReadonlyArray<string>
+  allowObjects?: boolean
+  block?: ReadonlyArray<string>
   fromAccessToken?: boolean
   fromIdToken?: boolean
-  maxClaimValueSize?: number
+  maxValueLength?: number
+  prefix?: string
 }
 
-/** Claims that would let upstream overwrite the proxy's own JWT fields, `scope` included. */
-const PROTECTED_CLAIMS = List(["aud", "client_id", "exp", "iat", "iss", "jti", "nbf", "scope"])
+/** Claims the server sets itself, or that would change how its token is validated. */
+const RESERVED = List(["aud", "client_id", "exp", "iat", "iss", "jti", "nbf", "scope"])
 
-export type ClaimsExtractor = (token: string, tokenType: "access" | "id") => Option<Record<string, unknown>>
+export type ClaimsCopier = (tokens: { accessToken: string; idToken?: string }) => Option<Record<string, unknown>>
 
-export const createClaimsExtractor = (
-  option: boolean | CustomClaimsPassthroughConfig,
-  logger: Pick<Logger, "warn">,
-): ClaimsExtractor => {
-  const config: CustomClaimsPassthroughConfig =
-    typeof option === "boolean" ? (option ? {} : { fromAccessToken: false, fromIdToken: false }) : option
-  const maxSize = config.maxClaimValueSize ?? 2000
-  const blocked = List(config.blockedClaims ?? [])
-  const allowed = Option(config.allowedClaims).map((claims) => List(claims))
-  const prefix = Option(config.claimPrefix).filter((p): p is string => typeof p === "string" && p !== "")
+/** `true` copies every simple claim, `false` none. */
+export const createClaimsCopier = (policy: boolean | ClaimsPolicy, logger: Pick<Logger, "warn">): ClaimsCopier => {
+  if (policy === false) return () => Option.none()
+  const rules: ClaimsPolicy = policy === true ? {} : policy
+  const maxLength = rules.maxValueLength ?? 2000
+  const blocked = List(rules.block ?? [])
+  const allowed = Option(rules.allow).map((names) => List(names))
+  const rename = (name: string): string => `${rules.prefix ?? ""}${name}`
 
-  const isValidValue = (value: unknown): boolean => {
-    if (value === null || value === undefined) return false
-    if (typeof value === "string") return value.length <= maxSize
+  const fits = (value: unknown): boolean => {
+    if (typeof value === "string") return value.length <= maxLength
     if (typeof value === "number" || typeof value === "boolean") return true
-    if (typeof value !== "object" || config.allowComplexClaims !== true) return false
-    return Option(JSON.stringify(value)).exists((json) => json.length <= maxSize)
+    if (rules.allowObjects !== true || typeof value !== "object" || value === null) return false
+    return jsonLength(value) <= maxLength
   }
 
-  const keep = ([name, value]: [string, unknown]): boolean => {
-    if (PROTECTED_CLAIMS.contains(name) || blocked.contains(name)) return false
-    if (allowed.exists((claims) => !claims.contains(name))) return false
-    if (isValidValue(value)) return true
-    logger.warn(`Skipping claim '${name}' due to invalid value`)
+  const wanted = ([name, value]: [string, unknown]): boolean => {
+    if (RESERVED.contains(name) || blocked.contains(name)) return false
+    if (allowed.exists((names) => !names.contains(name))) return false
+    if (fits(value)) return true
+    logger.warn(`[somamcp/oauth] not copying claim "${name}": its value is too large or not a simple value`)
     return false
   }
 
-  return (token, tokenType) => {
-    if (tokenType === "access" && config.fromAccessToken === false) return Option.none()
-    if (tokenType === "id" && config.fromIdToken === false) return Option.none()
-    return decodeJwtPayload(token).map((payload) =>
-      Object.fromEntries(
-        Object.entries(payload)
-          .filter(keep)
-          .map(([name, value]) => [
-            prefix.fold(
-              () => name,
-              (p) => `${p}${name}`,
-            ),
-            value,
-          ]),
-      ),
-    )
+  const copy = (token: Option<string>, enabled: boolean): Record<string, unknown> =>
+    enabled
+      ? token
+          .flatMap(readClaims)
+          .map((claims) => Object.fromEntries(Object.entries(claims).filter(wanted)))
+          .orElse({})
+      : {}
+
+  return ({ accessToken, idToken }) => {
+    const fromAccess = copy(Option(accessToken), rules.fromAccessToken !== false)
+    const fromId = copy(Option(idToken), rules.fromIdToken !== false)
+    // The access token's claims come first, and win when both tokens carry one.
+    const merged = {
+      ...fromAccess,
+      ...Object.fromEntries(Object.entries(fromId).filter(([name]) => !(name in fromAccess))),
+    }
+    const names = Object.keys(merged)
+    return names.length === 0
+      ? Option.none()
+      : Option(Object.fromEntries(names.map((name) => [rename(name), merged[name]])))
   }
 }
+
+/** The length of a value as JSON, or infinity when it cannot be serialized. */
+const jsonLength = (value: object): number =>
+  Try(() => JSON.stringify(value)).fold(
+    () => Number.POSITIVE_INFINITY,
+    (text) => text.length,
+  )

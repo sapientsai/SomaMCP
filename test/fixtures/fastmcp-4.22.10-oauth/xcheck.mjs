@@ -1,4 +1,4 @@
-// Cross-check: somamcp/node's OAuth proxy writes, fastmcp 4.22.10 reads, and back, over shared
+// Cross-check: somamcp/node's OAuth server writes, fastmcp 4.22.10 reads, and back, over shared
 // DiskStore directories. It is the guard for the write side: oauth-compat.test.ts proves that
 // what FastMCP wrote reads here, and this proves that what we write, FastMCP reads, which a
 // rolling deploy (or a rollback to FastMCP) depends on. Run it after changing src/node/oauth/:
@@ -77,38 +77,80 @@ const pkce = () => {
 }
 const txnOf = (html) => /name="transaction_id" value="([^"]+)"/.exec(html)[1]
 
-// Adapters so both proxies look the same.
+// Adapters so both sides look the same. somamcp is driven through its public surface: the
+// provider, and the server's HTTP endpoints.
+const outcome = async (res) => {
+  const body = await res.json()
+  const error = { code: body.error, description: body.error_description }
+  return {
+    body,
+    fold: (onError, onOk) => (res.ok ? onOk(body) : onError(error)),
+    isLeft: () => !res.ok,
+    isRight: () => res.ok,
+  }
+}
+const unwrap = (result) =>
+  result.fold(
+    (error) => {
+      throw Object.assign(new Error(error.description ?? error.code), error)
+    },
+    (value) => value,
+  )
+const quiet = { error: () => {}, warn: () => {} }
 const portProxy = (dir, extra = {}) => {
   const provider = port.createAzureProvider({
     ...config,
     fetch: upstream,
+    logger: quiet,
     tokenStorage: port.createDiskStore({ directory: dir }),
     ...extra,
   })
-  const p = provider.getProxy()
-  const un = (e) =>
-    e.fold(
-      (err) => {
-        throw Object.assign(new Error(err.description ?? err.code), err)
-      },
-      (v) => v,
-    )
+  const server = port.createServer({
+    auth: provider,
+    enableDashboard: false,
+    enableHealthEndpoint: false,
+    enableInfoEndpoint: false,
+    name: "x",
+    version: "0.0.0",
+  })
+  const call = (path, init) => server.fetch(new Request(`${config.baseUrl}${path}`, init))
+  const form = (fields) => ({
+    body: new URLSearchParams(Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined))),
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    method: "POST",
+  })
+  const tokenRaw = async (req) => outcome(await call("/oauth/token", form(req)))
   return {
     kind: "port",
     provider,
     authenticate: (token) =>
       provider.authenticate(new Request(`${config.baseUrl}/mcp`, { headers: { authorization: `Bearer ${token}` } })),
-    register: async (req) => un(await p.registerClient(req)),
-    authorize: async (params) => un(await p.authorize(params)),
-    consent: async (transactionId, action = "approve") =>
-      un(await p.handleConsent(new URLSearchParams({ transaction_id: transactionId, action }))),
-    callback: async (url) => un(await p.handleCallback(new Request(url))),
-    exchange: async (req) => un(await p.exchangeAuthorizationCode(req)),
-    exchangeRaw: (req) => p.exchangeAuthorizationCode(req),
-    refresh: async (req) => un(await p.exchangeRefreshToken(req)),
-    refreshRaw: (req) => p.exchangeRefreshToken(req),
-    load: async (token) => (await p.loadUpstreamTokens(token)).orUndefined() ?? null,
-    destroy: () => provider.destroy(),
+    register: async (req) =>
+      unwrap(
+        await outcome(
+          await call("/oauth/register", {
+            body: JSON.stringify(req),
+            headers: { "content-type": "application/json" },
+            method: "POST",
+          }),
+        ),
+      ),
+    authorize: (params) => call(`/oauth/authorize?${new URLSearchParams(params)}`),
+    consent: (transactionId, action = "approve") =>
+      call("/oauth/consent", form({ action, transaction_id: transactionId })),
+    callback: (url) => {
+      const parsed = new URL(url)
+      return call(`${parsed.pathname}${parsed.search}`)
+    },
+    exchange: async (req) => unwrap(await tokenRaw(req)),
+    exchangeRaw: tokenRaw,
+    refresh: async (req) => unwrap(await tokenRaw(req)),
+    refreshRaw: tokenRaw,
+    load: async (token) => {
+      const tokens = await provider.upstreamTokens(token)
+      return tokens ? { ...tokens, issuedAt: tokens.issuedAt.toISOString() } : null
+    },
+    destroy: () => provider.close(),
   }
 }
 const fmProxy = (dir) => {
@@ -131,7 +173,10 @@ const fmProxy = (dir) => {
     callback: (url) => p.handleCallback(new Request(url)),
     exchange: (req) => p.exchangeAuthorizationCode(req),
     refresh: (req) => p.exchangeRefreshToken(req),
-    load: (token) => p.loadUpstreamTokens(token),
+    load: async (token) => {
+      const tokens = await p.loadUpstreamTokens(token)
+      return tokens ? { ...tokens, issuedAt: new Date(tokens.issuedAt).toISOString() } : null
+    },
     destroy: () => p.destroy(),
   }
 }
@@ -303,7 +348,7 @@ try {
       ).fold(
         (e) => e.description,
         () => "ok",
-      ) === "Authorization code already used",
+      ) === "The authorization code was already used.",
       spent?.description,
     )
     // fastmcp approves the port's pending transaction
@@ -479,9 +524,9 @@ try {
       refresh_token: t3.refresh_token,
     })
     check(
-      "C4 non-JSON upstream error -> invalid_grant 'Upstream returned HTTP 503 ...'",
+      "C4 non-JSON upstream error -> server_error 'The provider answered HTTP 503.'",
       failed2.fold(
-        (e) => e.code === "invalid_grant" && /Upstream returned HTTP 503/.test(e.description ?? ""),
+        (e) => e.code === "server_error" && e.description === "The provider answered HTTP 503.",
         () => false,
       ),
       failed2.fold(
@@ -500,9 +545,9 @@ try {
       grant_type: "authorization_code",
     })
     check(
-      "C5 client mismatch -> invalid_client 'Client ID mismatch', and the code is spent",
+      "C5 client mismatch -> invalid_grant 'issued to another client', and the code is spent",
       mism.fold(
-        (e) => e.code === "invalid_client" && e.description === "Client ID mismatch",
+        (e) => e.code === "invalid_grant" && e.description === "The authorization code was issued to another client.",
         () => false,
       ) &&
         (
@@ -515,7 +560,7 @@ try {
         ).fold(
           (e) => e.description,
           () => "ok",
-        ) === "Authorization code already used",
+        ) === "The authorization code was already used.",
     )
     w.destroy()
     w2.destroy()
@@ -537,6 +582,7 @@ try {
       ...config,
       baseUrl: base,
       fetch: upstream,
+      logger: quiet,
       tokenStorage: port.createDiskStore({ directory: dirP }),
     })
     const ps = port.createServer({
@@ -614,61 +660,79 @@ try {
           ([k]) => !["date", "connection", "keep-alive", "transfer-encoding", "content-length"].includes(k),
         ),
       )
+    // Where somamcp answers differently on purpose. Everything else must match FastMCP's status,
+    // headers and error code; the error descriptions are somamcp's own wording.
+    const deliberate = {
+      // RFC 7591 §3.2.2 names this error; FastMCP answered invalid_request.
+      "POST /oauth/register bad json": { code: "invalid_client_metadata" },
+      // Without a state there is no client to relay the provider's error to, so it is the user's error.
+      "GET /oauth/callback upstream error": { code: "invalid_request" },
+      // 413 Payload Too Large, where FastMCP answered 400.
+      "POST /oauth/consent 2MiB": { status: 413 },
+    }
+    const summary = async (res) => {
+      const text = await res.text()
+      const body = (() => {
+        try {
+          return JSON.parse(text)
+        } catch {
+          return null
+        }
+      })()
+      return {
+        code: body?.error,
+        headers: strip(res.headers),
+        keys: body && !body.error ? Object.keys(body).sort().join(",") : undefined,
+        status: res.status,
+        text,
+      }
+    }
     for (const [name, path, init] of cases) {
-      const a = await realFetch(`${base}${path}`, { ...init, redirect: "manual" })
-      const b = await ps.fetch(new Request(`${base}${path}`, init))
-      const ha = strip(a.headers),
-        hb = strip(b.headers)
-      const ba = await a.text(),
-        bb = await b.text()
-      // normalize register ok: random ids
-      const norm = (s) =>
-        s
-          .replace(/"client_id":"[^"]+"/, '"client_id":"*"')
-          .replace(/"client_secret":"[^"]+"/, '"client_secret":"*"')
-          .replace(/"client_id_issued_at":\d+/, '"client_id_issued_at":0')
-      const same = a.status === b.status && eq(ha, hb) && norm(ba) === norm(bb)
+      const a = await summary(await realFetch(`${base}${path}`, { ...init, redirect: "manual" }))
+      const b = await summary(await ps.fetch(new Request(`${base}${path}`, init)))
+      const expected = { ...a, ...deliberate[name] }
+      const same =
+        b.status === expected.status &&
+        b.code === expected.code &&
+        b.keys === a.keys &&
+        (deliberate[name]?.status !== undefined || eq(a.headers, b.headers)) &&
+        (a.code !== undefined || a.keys !== undefined || a.text === b.text)
       check(
-        `D ${name}`,
+        `D ${name}${deliberate[name] ? " (differs on purpose)" : ""}`,
         same,
         same
-          ? `${a.status} ${JSON.stringify(ha)}`
-          : `fastmcp ${a.status} ${JSON.stringify(ha)} ${ba.slice(0, 120)} || port ${b.status} ${JSON.stringify(hb)} ${bb.slice(0, 120)}`,
+          ? `${b.status} ${b.code ?? ""} ${JSON.stringify(b.headers)}`
+          : `fastmcp ${a.status} ${a.code} ${JSON.stringify(a.headers)} || somamcp ${b.status} ${b.code} ${JSON.stringify(b.headers)} ${b.text.slice(0, 120)}`,
       )
     }
-    // consent page content-type
+    // The consent page is somamcp's own: HTML on both sides, locked down on somamcp's.
     {
-      const regA = await (
-        await realFetch(`${base}/oauth/register`, {
+      const register = (fetcher) =>
+        fetcher(`${base}/oauth/register`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ redirect_uris: [redirectUri] }),
-        })
-      ).json()
-      const regB = await (
-        await ps.fetch(
-          new Request(`${base}/oauth/register`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ redirect_uris: [redirectUri] }),
-          }),
-        )
-      ).json()
+        }).then((r) => r.json())
+      const regA = await register((url, init) => realFetch(url, init))
+      const regB = await register((url, init) => ps.fetch(new Request(url, init)))
       const q = (id) =>
         `/oauth/authorize?${new URLSearchParams({ response_type: "code", client_id: id, redirect_uri: redirectUri, code_challenge: "abc", code_challenge_method: "S256", state: "s" })}`
       const a = await realFetch(`${base}${q(regA.client_id)}`)
       const b = await ps.fetch(new Request(`${base}${q(regB.client_id)}`))
       check(
-        "D consent page status+content-type",
-        a.status === b.status && a.headers.get("content-type") === b.headers.get("content-type"),
-        `fastmcp ${a.status} ${a.headers.get("content-type")} || port ${b.status} ${b.headers.get("content-type")}`,
+        "D consent page is HTML on both, and somamcp's cannot be framed",
+        a.status === 200 &&
+          b.status === 200 &&
+          String(a.headers.get("content-type")).startsWith("text/html") &&
+          String(b.headers.get("content-type")).startsWith("text/html") &&
+          b.headers.get("x-frame-options") === "DENY",
+        `fastmcp ${a.status} ${a.headers.get("content-type")} || somamcp ${b.status} ${b.headers.get("content-type")}`,
       )
-      const bodyA = (await a.text()).replace(/value="[^"]+"/, "").trim(),
-        bodyB = (await b.text()).replace(/value="[^"]+"/, "").trim()
-      check("D consent HTML identical modulo transaction id", bodyA === bodyB, `${bodyA.length} vs ${bodyB.length}`)
+      const transaction = /name="transaction_id" value="([^"]+)"/.exec(await b.text())?.[1]
+      check("D somamcp's consent form carries the transaction_id FastMCP's form did", Boolean(transaction))
     }
     await server.stop()
-    portProvider.destroy()
+    portProvider.close()
   }
 } catch (e) {
   console.error("SCRIPT ERROR", e)

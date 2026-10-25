@@ -78,19 +78,27 @@ Telemetry event types: `server.start`, `server.stop`, `tool.execute`, `tool.erro
 
 HTTP endpoints on the Hono app. Types: `StaticArtifact`, `DynamicArtifact`, `DirectoryArtifact`. `DashboardArtifact` auto-generates an HTML dashboard at `/dashboard`.
 
-### OAuth Proxy (`src/node/oauth/`, `somamcp/node` only)
+### OAuth Server (`src/node/oauth/`, `somamcp/node` only)
 
-A port of fastmcp 4.22.10's OAuth proxy (MIT), in token-swap mode only. `createAzureProvider` returns an `AuthProvider` (`src/types/auth.ts`) for `createServer({ auth })`: `authenticate` maps the proxy's JWT to the upstream tokens, `routes` serves the well-known metadata and `/oauth/*`, and `challenge` builds the 401 that mcp-proxy 6.7.19 sent in front of FastMCP.
+An OAuth 2.1 authorization server in front of an upstream provider. `createAzureProvider` and `createOAuthProxyProvider` (`provider.ts`) return an `AuthProvider` (`src/types/auth.ts`) for `createServer({ auth })`. The modules:
 
-**Compatibility is the contract.** These must stay byte-compatible with what FastMCP wrote, or every user of a migrated server has to sign in again:
+- `server.ts` puts the pieces together
+- `authorization.ts` is the browser flow (authorize, consent, callback)
+- `grants.ts` is the token endpoint
+- `upstream.ts` talks to the provider
+- `clients.ts` is registration
+- `http.ts` holds the routes and the MCP 401
+- `pages.ts` is the HTML
+- `errors.ts` is the `OAuthError` union, which only `http.ts` maps to wire codes
 
-- the storage key prefixes (`client:`, `code:`, `transaction:`, `mapping:`, `upstream:`)
-- the record shapes (`state.ts`)
+**Compatibility is the contract.** `records.ts` and `stores/` must stay byte-compatible with what FastMCP 4.22.10 wrote, or every user of a server moved off FastMCP has to sign in again. That covers:
+
+- the key prefixes and record shapes
 - the DiskStore file names and `{ expiresAt, value }` files
 - the `"<iv>:<tag>:<ciphertext>"` AES-256-GCM format with the `fastmcp-oauth-proxy-salt` scrypt key
-- the HS256 JWT format
+- the HS256 JWT format in `jwt.ts`
 
-`test/node/oauth-compat.test.ts` reads a store, tokens and HTTP captures that fastmcp generated (`test/fixtures/fastmcp-4.22.10-oauth`). Keep it passing.
+`test/node/oauth-compat.test.ts` reads what FastMCP wrote (`test/fixtures/fastmcp-4.22.10-oauth`). After changing any of those files, also run `pnpm build && node test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs dist/node/index.js <fastmcp-4.22.10 dist>`, which proves FastMCP reads what this server writes. Everything else, such as error wording, pages and structure, is somamcp's own.
 
 ### Content Helpers (`src/content/`)
 
