@@ -38,12 +38,20 @@ jobs:
           echo "Files to be published:"
           npm pack --dry-run
 
+      # A prerelease (a version with a hyphen, e.g. 2.2.0-next.0) goes to the `next`
+      # dist-tag, so `latest` and every caret range stay on the last stable release.
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: |
+          version=$(node -p "require('./package.json').version")
+          case "$version" in
+            *-*) npm publish --provenance --access public --tag next ;;
+            *) npm publish --provenance --access public ;;
+          esac
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
