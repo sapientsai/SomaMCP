@@ -1,4 +1,4 @@
-import { Option, Ref } from "functype"
+import { Ref } from "functype"
 import type { Hono } from "hono"
 
 import { registerArtifacts } from "./artifacts/ArtifactManager.js"
@@ -8,6 +8,7 @@ import { createInfoArtifact } from "./artifacts/InfoArtifact.js"
 import type { ArtifactAuthenticate } from "./artifacts/types.js"
 import type { Authenticate } from "./auth/index.js"
 import { createAuthMiddleware } from "./auth/index.js"
+import { resolveAuthenticate } from "./auth/resolve.js"
 import type { BackendFactory, BackendSession } from "./backend/adapter.js"
 import { getRuntimeInfo, resolveBuildInfo } from "./buildInfo.js"
 import { createGatewayManager } from "./gateway/GatewayManager.js"
@@ -68,6 +69,8 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   const telemetry: TelemetryCollector =
     telemetryOption ?? (logLayer ? createLogLayerTelemetry(logLayer) : NoopTelemetry)
   const backend = backendFactory(serverConfig, backendOptions)
+  // An explicit `authenticate`, else the auth provider's, for artifacts and protected routes.
+  const authenticate = resolveAuthenticate(serverConfig)
   const gatewayManager = createGatewayManager(telemetry)
 
   const registeredTools: Array<{ description?: string; name: string }> = []
@@ -173,7 +176,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     registerArtifacts(
       backend.getApp(),
       allArtifacts,
-      Option(serverConfig.authenticate as ArtifactAuthenticate).orUndefined(),
+      authenticate.map((check) => check as ArtifactAuthenticate).orUndefined(),
     )
   }
 
@@ -225,8 +228,13 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     const app = backend.getApp()
     const methods = Array.isArray(route.method) ? [...route.method] : [route.method]
     if (route.protected) {
-      const authenticate = Option(serverConfig.authenticate as Authenticate).orUndefined()
-      app.use(route.path, createAuthMiddleware({ authenticate, onUnauthorized: route.onUnauthorized }))
+      app.use(
+        route.path,
+        createAuthMiddleware({
+          authenticate: authenticate.map((check) => check as Authenticate).orUndefined(),
+          onUnauthorized: route.onUnauthorized,
+        }),
+      )
     }
     app.on(methods, route.path, (c) => route.handler(c))
   }

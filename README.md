@@ -173,6 +173,20 @@ server.addRoute({
 
 See [`examples/protected-upload-server`](examples/protected-upload-server) for a runnable end-to-end wiring: httpStream + `authenticate` + `addRoute` + a tool returning a content-array (text + inline image).
 
+## Auth Providers
+
+An auth provider is authentication that brings its own HTTP surface, such as an OAuth server. Pass it as `auth`:
+
+```typescript
+const server = createServer({ auth: provider, name: "my-server", version: "1.0.0" })
+```
+
+A provider (`AuthProvider`) has three parts:
+
+- **`authenticate(request)`** resolves the session that tools see as `context.session`, or `undefined` when the request has no valid credentials. Protected artifacts and routes use it too. An explicit `authenticate` option takes precedence, as in FastMCP, while the provider's routes and challenge still apply.
+- **`challenge({ endpoint, error, requestId })`** builds the response to an MCP request that failed authentication. This is typically a 401 with a `WWW-Authenticate` header. `requestId` is the request's JSON-RPC `id`, or `null` for a `GET`, a batch, or an unreadable body. `error` is what `authenticate` threw, and it is absent when `authenticate` resolved to no session. Only the MCP endpoint uses `challenge`: protected artifacts and routes keep their own `onUnauthorized`, or 401. Without a `challenge`, the endpoint answers a plain 401.
+- **`routes(endpoint)`** returns unprotected routes, such as OAuth metadata and `/oauth/*` endpoints. `endpoint()` reads the current MCP path, so the routes follow `start({ httpStream: { endpoint } })`.
+
 ## Content-Array Tool Returns
 
 A tool's `execute` may return a plain string **or** a full content-array with multimodal parts — telemetry passes the return value through unchanged. Use the exported `imageContent` / `audioContent` helpers to build parts without reaching into the backend. Both take `{ buffer }` (any `Uint8Array`, including a Node `Buffer`) or `{ url }` everywhere; the `somamcp/node` versions also take `{ path }`. A URL's or path's extension picks the MIME type.
@@ -479,7 +493,8 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 **Auth & Routes**
 
 - `createAuthMiddleware`, `getRequestHeader`
-- Types: `Authenticate`, `OnUnauthorized`, `AuthMiddlewareConfig`, `RouteConfig`, `RouteMethod`
+- `auth` on `ServerConfig`: an `AuthProvider` (`authenticate`, `challenge`, `routes`); see [Auth Providers](#auth-providers)
+- Types: `Authenticate`, `OnUnauthorized`, `AuthMiddlewareConfig`, `AuthProvider`, `AuthChallenge`, `RouteConfig`, `RouteMethod`
 
 **Transport**
 
