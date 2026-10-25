@@ -32,7 +32,9 @@ export const readBoundedText = async (request: Request, limit: number): Promise<
   return Option(request.body).fold(
     () => Promise.resolve(Option("")),
     (body) =>
-      readAll(body.getReader(), limit, List.empty<Uint8Array>(), 0)
+      // getReader() throws on a locked or consumed stream; keep that inside the chain.
+      Promise.resolve()
+        .then(() => readAll(body.getReader(), limit, List.empty<Uint8Array>(), 0))
         .then((bytes) => bytes.map((b) => new TextDecoder().decode(b)))
         .catch(() => Option.none<string>()),
   )

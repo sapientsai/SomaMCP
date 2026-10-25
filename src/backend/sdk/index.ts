@@ -175,6 +175,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
               async (challenge) =>
                 challenge({
                   endpoint: mcpPath.get(),
+                  request,
                   ...failure.fold(
                     () => ({}),
                     (error) => ({ error }),

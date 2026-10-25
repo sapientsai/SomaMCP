@@ -68,6 +68,7 @@ export type {
 export type {
   AuthChallenge,
   AuthProvider,
+  AuthRoute,
   HttpStreamConfig,
   Logger,
   RouteConfig,

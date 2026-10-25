@@ -8,16 +8,23 @@ import { ERAS, MCP_URL, rawRequest, withHeader } from "./sdk-clients.js"
 
 type Session = { accessToken: string }
 
+const describeError = (error: unknown): string => (error instanceof Error ? error.message : `raw:${String(error)}`)
+
 const provider = (overrides: Partial<AuthProvider<Session>> = {}): AuthProvider<Session> => ({
   authenticate: (request) =>
     Promise.resolve(
       request?.headers.get("authorization") === "Bearer good" ? { accessToken: "upstream-token" } : undefined,
     ),
-  challenge: ({ endpoint, error, requestId }: AuthChallenge) =>
-    new Response(JSON.stringify({ endpoint, error: error instanceof Error ? error.message : "none", requestId }), {
-      headers: { "WWW-Authenticate": `Bearer resource_metadata="${endpoint}"` },
-      status: 401,
-    }),
+  challenge: (challenge: AuthChallenge) =>
+    new Response(
+      JSON.stringify({
+        endpoint: challenge.endpoint,
+        error: "error" in challenge ? describeError(challenge.error) : "none",
+        method: challenge.request.method,
+        requestId: challenge.requestId,
+      }),
+      { headers: { "WWW-Authenticate": `Bearer resource_metadata="${challenge.endpoint}"` }, status: 401 },
+    ),
   routes: (endpoint) => [
     { handler: (c) => c.json({ endpoint: endpoint() }), method: "GET", path: "/.well-known/test" },
   ],
@@ -58,7 +65,7 @@ describe("createServer({ auth })", () => {
     const res = await makeServer().fetch(post({ id: 7, jsonrpc: "2.0", method: "tools/list" }))
     expect(res.status).toBe(401)
     expect(res.headers.get("www-authenticate")).toBe('Bearer resource_metadata="/mcp"')
-    expect(await res.json()).toEqual({ endpoint: "/mcp", error: "none", requestId: 7 })
+    expect(await res.json()).toEqual({ endpoint: "/mcp", error: "none", method: "POST", requestId: 7 })
   })
 
   it.each([
@@ -139,5 +146,62 @@ describe("createServer({ auth })", () => {
       new Request("http://sdk.test/private", { headers: { authorization: "Bearer good" } }),
     )
     expect(await allowed.text()).toBe("secret")
+  })
+
+  it("gives the challenge a null id when authenticate already read the body", async () => {
+    const reader = provider({
+      authenticate: async (request) => {
+        await request?.json()
+        return undefined
+      },
+    })
+    const res = await makeServer({ auth: reader }).fetch(post({ id: 4, jsonrpc: "2.0", method: "tools/list" }))
+    expect(res.status).toBe(401)
+    expect(((await res.json()) as AuthChallenge).requestId).toBeNull()
+  })
+
+  it("does not read a body whose declared length is over the bound", async () => {
+    const res = await makeServer({ maxRequestBodySize: 64 }).fetch(
+      post({ id: 5, jsonrpc: "2.0", method: "tools/list" }, { "content-length": "999999" }),
+    )
+    expect(((await res.json()) as AuthChallenge).requestId).toBeNull()
+  })
+
+  it("leaves error out when authenticate resolved to no session, and passes a non-Error throw as-is", async () => {
+    const none = await makeServer().fetch(rawRequest("tools/list", {}, { modern: true }))
+    expect(await none.json()).toMatchObject({ error: "none" })
+    const thrown = makeServer({ auth: provider({ authenticate: () => Promise.reject("nope") }) })
+    const res = await thrown.fetch(rawRequest("tools/list", {}, { modern: true }))
+    expect(await res.json()).toMatchObject({ error: "raw:nope" })
+  })
+
+  it("gives the challenge the request", async () => {
+    const res = await makeServer().fetch(new Request(MCP_URL, { method: "DELETE" }))
+    expect(await res.json()).toMatchObject({ method: "DELETE" })
+  })
+
+  it("protects artifacts with the provider's authenticate", async () => {
+    const server = makeServer({ enableDashboard: true })
+    expect((await server.fetch(new Request("http://sdk.test/dashboard"))).status).toBe(401)
+    const allowed = await server.fetch(
+      new Request("http://sdk.test/dashboard", { headers: { authorization: "Bearer good" } }),
+    )
+    expect(allowed.status).toBe(200)
+  })
+
+  it("protects routes with an explicit authenticate over the provider's", async () => {
+    const server = makeServer({
+      authenticate: (request) =>
+        Promise.resolve(
+          request?.headers.get("x-key") === "k" ? { accessToken: "explicit" } : (undefined as unknown as Session),
+        ),
+    })
+    server.addRoute({ handler: (c) => c.text("secret"), method: "GET", path: "/private", protected: true })
+    const provided = await server.fetch(
+      new Request("http://sdk.test/private", { headers: { authorization: "Bearer good" } }),
+    )
+    expect(provided.status).toBe(401)
+    const explicit = await server.fetch(new Request("http://sdk.test/private", { headers: { "x-key": "k" } }))
+    expect(await explicit.text()).toBe("secret")
   })
 })

@@ -1,4 +1,4 @@
-export type { AuthChallenge, AuthProvider } from "./auth.js"
+export type { AuthChallenge, AuthProvider, AuthRoute } from "./auth.js"
 export type {
   AudioContent,
   Completion,
