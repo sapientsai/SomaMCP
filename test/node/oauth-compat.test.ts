@@ -77,6 +77,18 @@ describe("OAuth proxy compatibility with fastmcp 4.22.10", () => {
       storage.destroy?.()
     })
 
+    it("logs, rather than silently drops, a value the key cannot decrypt", async () => {
+      const errors: unknown[][] = []
+      const storage = createEncryptedTokenStorage(createDiskStore({ directory: state.directory }), "the-wrong-key", {
+        error: (...args) => errors.push(args),
+      })
+      expect(await storage.get(`client:${registration.client_id}`)).toBeNull()
+      expect(String(errors[0]?.[0])).toContain(`Failed to decrypt value for client:${registration.client_id}`)
+      expect(await storage.get("client:nobody")).toBeNull()
+      expect(errors).toHaveLength(1)
+      storage.destroy?.()
+    })
+
     it("names the files it writes as fastmcp does", async () => {
       const storage = createDiskStore({ directory: state.directory })
       await storage.save("mapping:a.b/c+d", { x: 1 }, 60)

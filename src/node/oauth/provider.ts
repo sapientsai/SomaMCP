@@ -55,9 +55,9 @@ export type AzureProviderConfig = {
 }
 
 const MAX_BODY_SIZE = 1024 * 1024
-const CREDENTIAL_HEADERS = { "Cache-Control": "no-store", "Content-Type": "application/json", Pragma: "no-cache" }
-// The well-known documents and the 401 carry the content type FastMCP's server sent.
+// mcp-proxy added the charset to every JSON response FastMCP sent.
 const JSON_UTF8 = "application/json; charset=utf-8"
+const CREDENTIAL_HEADERS = { "Cache-Control": "no-store", "Content-Type": JSON_UTF8, Pragma: "no-cache" }
 const WELL_KNOWN_RESOURCE = "/.well-known/oauth-protected-resource"
 
 const camelToSnake = (key: string): string => key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)
@@ -82,7 +82,7 @@ const protectedResourceMetadataUrl = (resource: string): string =>
 const tooLarge = (): Response =>
   json({ error: "invalid_request", error_description: "Request body exceeds 1 MiB" }, 400, {
     Connection: "close",
-    "Content-Type": "application/json",
+    "Content-Type": JSON_UTF8,
   })
 
 const BASIC = /^Basic\s+(.+)$/
@@ -179,7 +179,7 @@ const oauthRoutes = (
 ): ReadonlyArray<AuthRoute> => {
   const protectedResource = (c: Context): Response => {
     if (c.req.path !== WELL_KNOWN_RESOURCE && c.req.path !== `${WELL_KNOWN_RESOURCE}${endpoint()}`)
-      return c.notFound() as Response
+      return new Response(null, { status: 404 })
     return json(
       toSnakeCase({
         authorizationServers: [baseUrl],
@@ -230,7 +230,7 @@ const oauthRoutes = (
     )
   }
 
-  const plainJson = { "Content-Type": "application/json" }
+  const plainJson = { "Content-Type": JSON_UTF8 }
 
   return [
     {

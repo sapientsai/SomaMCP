@@ -57,6 +57,16 @@ export type JwtIssuer = {
   verify: (token: string) => Either<string, JwtClaims>
 }
 
+/** A JWT payload segment as claims, or why it is not an object. */
+const parseClaims = (payload: string): Either<string, JwtClaims> =>
+  Try(() => JSON.parse(Buffer.from(payload, "base64url").toString("utf-8")) as unknown)
+    .toEither((error) => error.message)
+    .flatMap((parsed) =>
+      typeof parsed === "object" && parsed !== null
+        ? Right<string, JwtClaims>(parsed as JwtClaims)
+        : Left<string, JwtClaims>("Invalid token format"),
+    )
+
 const HEADER = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url")
 
 /**
@@ -98,14 +108,12 @@ export const createJwtIssuer = (config: JwtIssuerConfig): JwtIssuer => {
     if (parts.length !== 3) return Left("Invalid token format")
     const [header, payload, signature] = parts as [string, string, string]
     if (!signature || !equalsConstantTime(signature, sign(`${header}.${payload}`))) return Left("Invalid signature")
-    return Try(() => JSON.parse(Buffer.from(payload, "base64url").toString("utf-8")) as JwtClaims)
-      .toEither((error) => error.message)
-      .flatMap((claims) => {
-        if (claims.exp <= Math.floor(Date.now() / 1000)) return Left<string, JwtClaims>("Token expired")
-        if (claims.iss !== config.issuer) return Left<string, JwtClaims>("Invalid issuer")
-        if (claims.aud !== config.audience) return Left<string, JwtClaims>("Invalid audience")
-        return Right<string, JwtClaims>(claims)
-      })
+    return parseClaims(payload).flatMap((claims) => {
+      if (claims.exp <= Math.floor(Date.now() / 1000)) return Left<string, JwtClaims>("Token expired")
+      if (claims.iss !== config.issuer) return Left<string, JwtClaims>("Invalid issuer")
+      if (claims.aud !== config.audience) return Left<string, JwtClaims>("Invalid audience")
+      return Right<string, JwtClaims>(claims)
+    })
   }
 
   return { issueAccessToken: issue(accessTtl), issueRefreshToken: issue(refreshTtl), verify }

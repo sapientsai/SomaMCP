@@ -230,7 +230,7 @@ export const createOAuthProxy = (input: OAuthProxyConfig): OAuthProxy => {
   const storage =
     isEncryptedTokenStorage(base) || config.encryptionKey === false
       ? base
-      : createEncryptedTokenStorage(base, config.encryptionKey ?? randomHex())
+      : createEncryptedTokenStorage(base, config.encryptionKey ?? randomHex(), logger)
   const state = createStateStore(storage)
   // Mappings and upstream token sets are stored by the proxy itself, so they are read as-is.
   const read = async <A>(key: string): Promise<Option<A>> => Option((await storage.get(key)) as A)

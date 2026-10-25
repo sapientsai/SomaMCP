@@ -8,6 +8,8 @@ import { join } from "node:path"
 
 import { List, Map, Option, Ref, Try, Tuple } from "functype"
 
+import type { Logger } from "../../types/server.js"
+
 /**
  * Where the OAuth proxy keeps clients, codes, transactions and tokens. Values are
  * JSON-serializable; `ttl` is in seconds, and no ttl means no expiry. `get` and `take`
@@ -98,10 +100,12 @@ export const createMemoryTokenStorage = (cleanupIntervalMs = CLEANUP_INTERVAL_MS
 
 // ── Disk ──────────────────────────────────────────────────────────────
 
+/** `logger` reports unreadable files, as FastMCP's `console.error` did. Defaults to `console`. */
 export type DiskStoreOptions = {
   cleanupIntervalMs?: number
   directory: string
   fileExtension?: string
+  logger?: Pick<Logger, "error">
 }
 
 const isMissing = (error: unknown): boolean =>
@@ -119,6 +123,13 @@ const parseEntry = (content: string): Option<Entry> => Try(() => JSON.parse(cont
 export const createDiskStore = (options: DiskStoreOptions): TokenStorage => {
   const { directory } = options
   const extension = options.fileExtension ?? ".json"
+  const logger = options.logger ?? console
+  /** A file that does not parse reads as missing, and says so. */
+  const parsed = (key: string, text: string): Option<Entry> => {
+    const entry = parseEntry(text)
+    if (entry.isNone()) logger.error(`[somamcp] Failed to read key ${key}: not a valid entry`)
+    return entry
+  }
   const pathOf = (key: string): string => join(directory, `${key.replace(/[^a-zA-Z0-9_-]/g, "_")}${extension}`)
 
   const ensureDirectory = async (): Promise<void> => {
@@ -167,9 +178,12 @@ export const createDiskStore = (options: DiskStoreOptions): TokenStorage => {
     const path = pathOf(key)
     const content = await Try.fromPromise(readFile(path, "utf-8"))
     return content.fold(
-      () => null,
+      (error) => {
+        if (!isMissing(error)) logger.error(`[somamcp] Failed to read key ${key}:`, error)
+        return null
+      },
       async (text) =>
-        parseEntry(text).fold(
+        parsed(key, text).fold(
           () => null,
           async (entry) => {
             if (entry.expiresAt >= Date.now()) return entry.value
@@ -211,7 +225,7 @@ export const createDiskStore = (options: DiskStoreOptions): TokenStorage => {
     await rm(claim, { force: true })
     return content
       .toOption()
-      .flatMap(parseEntry)
+      .flatMap((text) => parsed(key, text))
       .filter((entry) => entry.expiresAt >= Date.now())
       .fold(
         () => null,
@@ -239,7 +253,9 @@ const ENCRYPTED = Symbol.for("somamcp/oauth/encrypted-storage")
 
 /** Whether `storage` already encrypts, so the proxy does not wrap it twice. */
 export const isEncryptedTokenStorage = (storage: TokenStorage): boolean =>
-  (storage as { [ENCRYPTED]?: true })[ENCRYPTED] === true
+  (storage as { [ENCRYPTED]?: true })[ENCRYPTED] === true ||
+  // FastMCP's own class, should one be passed in.
+  storage.constructor.name === "EncryptedTokenStorage"
 
 const encrypt = (plaintext: string, key: Buffer): string => {
   const iv = randomBytes(16)
@@ -265,22 +281,33 @@ const decrypt = (ciphertext: string, key: Buffer): Option<string> => {
  * `scrypt(encryptionKey, "fastmcp-oauth-proxy-salt", 32)`. That is FastMCP's
  * `EncryptedTokenStorage` format. A value that does not decrypt reads as missing.
  */
-export const createEncryptedTokenStorage = (backend: TokenStorage, encryptionKey: string): TokenStorage => {
+export const createEncryptedTokenStorage = (
+  backend: TokenStorage,
+  encryptionKey: string,
+  logger: Pick<Logger, "error"> = console,
+): TokenStorage => {
   const key = scryptSync(encryptionKey, Buffer.from(SALT), 32)
   const parseJson = (json: string): Option<unknown> => Try(() => JSON.parse(json) as unknown).toOption()
-  const open = (stored: unknown): unknown =>
-    (typeof stored === "string" ? decrypt(stored, key).flatMap(parseJson) : Option.none()).orElse(null)
+  // A value that will not decrypt usually means the encryption key changed: every stored
+  // sign-in then reads as missing, so say so rather than fail silently.
+  const open = (name: string, stored: unknown): unknown => {
+    if (stored === null || stored === undefined) return null
+    const value = (typeof stored === "string" ? decrypt(stored, key).flatMap(parseJson) : Option.none()).orElse(null)
+    if (value === null)
+      logger.error(`[somamcp] Failed to decrypt value for ${name}: wrong encryption key, or corrupt data`)
+    return value
+  }
 
   return {
     [ENCRYPTED]: true,
     cleanup: () => backend.cleanup(),
     delete: (k) => backend.delete(k),
     destroy: backend.destroy,
-    get: async (k) => open(await backend.get(k)),
+    get: async (k) => open(k, await backend.get(k)),
     save: (k, value, ttl) => backend.save(k, encrypt(JSON.stringify(value), key), ttl),
     take: async (k) => {
-      if (backend.take) return open(await backend.take(k))
-      const value = open(await backend.get(k))
+      if (backend.take) return open(k, await backend.take(k))
+      const value = open(k, await backend.get(k))
       await backend.delete(k)
       return value
     },

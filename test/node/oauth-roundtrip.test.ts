@@ -23,7 +23,11 @@ const upstreamTokens = (n: number) => ({
 
 const setup = () => {
   const calls: Array<{ body: URLSearchParams; headers: Headers; url: string }> = []
+  // Responses queued here are served once each, before the default success.
+  const failures: Response[] = []
   const microsoft = vi.fn((url: string, init: RequestInit) => {
+    const failure = failures.shift()
+    if (failure) return Promise.resolve(failure)
     calls.push({ body: new URLSearchParams(String(init.body)), headers: new Headers(init.headers), url })
     return Promise.resolve(
       new Response(JSON.stringify(upstreamTokens(calls.length)), { headers: { "content-type": "application/json" } }),
@@ -48,7 +52,7 @@ const setup = () => {
     parameters: z.object({}),
   })
   const fetchPath = (path: string, init?: RequestInit) => server.fetch(new Request(`${BASE}${path}`, init))
-  return { calls, fetchPath, provider }
+  return { calls, failures, fetchPath, provider }
 }
 
 const form = (fields: Record<string, string>): RequestInit => ({
@@ -236,5 +240,33 @@ describe("OAuth proxy round trip", () => {
     const back = new URL(denied.headers.get("location") ?? "")
     expect(back.searchParams.get("error")).toBe("access_denied")
     expect(back.searchParams.get("state")).toBe("s")
+  })
+
+  it("relays Microsoft's refresh error and keeps the refresh token usable", async () => {
+    const { client, failures, fetchPath, tokens } = await signIn()
+    const refresh = () =>
+      fetchPath(
+        "/oauth/token",
+        form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: tokens.refresh_token }),
+      )
+    failures.push(
+      new Response(JSON.stringify({ error: "temporarily_unavailable", error_description: "AADSTS90033: try again" }), {
+        headers: { "content-type": "application/json" },
+        status: 400,
+      }),
+    )
+    const failed = await refresh()
+    expect(failed.status).toBe(400)
+    expect(await failed.json()).toEqual({
+      error: "temporarily_unavailable",
+      error_description: "AADSTS90033: try again",
+    })
+    failures.push(new Response("bad gateway", { status: 502, statusText: "Bad Gateway" }))
+    expect(await (await refresh()).json()).toEqual({
+      error: "invalid_grant",
+      error_description: "Upstream returned HTTP 502 Bad Gateway",
+    })
+    // The mapping was put back each time, so the same refresh token still works.
+    expect((await refresh()).status).toBe(200)
   })
 })

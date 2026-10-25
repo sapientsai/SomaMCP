@@ -39,3 +39,13 @@ like a JWT, so claims passthrough had something to copy, but its signature is no
     node gen.mjs <fastmcp-4.22.10 dist dir> <microsoft365 package dir> <out dir>
 
 This needs Node 24, because it imports `scopes.ts` with native type stripping.
+
+## The other direction: `xcheck.mjs`
+
+The fixture proves that what FastMCP wrote reads in somamcp. `xcheck.mjs` proves the reverse:
+fastmcp 4.22.10 reads, refreshes and redeems what somamcp's proxy wrote, over a shared DiskStore,
+which a rolling deploy or a rollback depends on. It also compares the `/oauth/*` responses of a
+real FastMCP server with somamcp's. fastmcp is not a somamcp dependency, so this runs by hand
+after any change to `src/node/oauth/`:
+
+    pnpm build && node test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs dist/node/index.js <fastmcp-4.22.10 dist dir>
