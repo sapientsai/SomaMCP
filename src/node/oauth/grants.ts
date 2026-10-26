@@ -147,7 +147,10 @@ export const createGrants = (
         // A provider that leaves scope or the id token out of a refresh keeps what it granted.
         const tokens = {
           ...fresh,
-          idToken: Option(fresh.idToken).or(Option(current.idToken)).orUndefined(),
+          idToken: Option(fresh.idToken)
+            .filter((idToken) => idToken !== "")
+            .or(Option(current.idToken))
+            .orUndefined(),
           scope: fresh.scope.length > 0 ? fresh.scope : current.scope,
         }
         await keepUpstream(grant.upstreamTokenKey, tokens)

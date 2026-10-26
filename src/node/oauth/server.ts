@@ -29,7 +29,8 @@ export type Lifetimes = {
 
 /**
  * - `acceptSignIn` — given the id token's claims, the reason to refuse a sign-in, or
- *   `undefined` to accept it. It runs only when the provider sent an id token.
+ *   `undefined` to accept it. When `scopes` include `openid`, a sign-in without an id token is
+ *   refused, since a client could otherwise ask for less and skip the check.
  * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
  *   match. Unset allows loopback URIs only; `[]` allows none.
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
@@ -101,7 +102,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const signer = createJwtSigner(config.baseUrl, config.jwtSigningKey ?? randomHex())
   const authorization = createAuthorization(
     {
-      acceptSignIn: (claims) => Option(config.acceptSignIn?.(claims)),
+      acceptSignIn: Option(config.acceptSignIn).map((accept) => (claims) => Option(accept(claims))),
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
       callbackUrl: `${config.baseUrl}/oauth/callback`,

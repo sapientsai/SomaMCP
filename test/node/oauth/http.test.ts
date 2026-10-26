@@ -88,7 +88,7 @@ const chunked = (
 const transactionIn = (html: string): string => /name="transaction_id" value="([^"]+)"/.exec(html)?.[1] ?? ""
 
 /** What claude.ai does on connect: register, sign in, and redeem the code. */
-const signIn = async (env: ReturnType<typeof setup>) => {
+const signIn = async (env: ReturnType<typeof setup>, extra: Record<string, string> = {}) => {
   const { fake, request } = env
   const client = (await (
     await request("/oauth/register", postJson({ client_name: "Claude", redirect_uris: [CALLBACK] }))
@@ -105,6 +105,7 @@ const signIn = async (env: ReturnType<typeof setup>) => {
       redirect_uri: CALLBACK,
       response_type: "code",
       state: "client-state",
+      ...extra,
     })}`,
   )
   const consent = await request(
@@ -489,9 +490,31 @@ describe("who signed in", () => {
         form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: tokens.refresh_token ?? "" }),
       )
     ).json()) as { access_token: string }
+    // The fake's default refresh answer carries no id_token, so the identity is the sign-in's.
+    expect((await sessionFor(env, refreshed.access_token))?.upn).toBe("avery@contoso.example")
+  })
+
+  it("keeps the id token when a refresh sends an empty one", async () => {
+    const env = setup({ scopes: ["openid", "User.Read"] })
+    withIdToken(env, person(TENANT))
+    const { client, tokens } = await signIn(env)
+    env.fake.queue(json({ ...upstreamTokens(2), id_token: "" }))
+    const refreshed = (await (
+      await env.request(
+        "/oauth/token",
+        form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: tokens.refresh_token ?? "" }),
+      )
+    ).json()) as { access_token: string }
     const session = await sessionFor(env, refreshed.access_token)
-    expect(session?.accessToken).toBe("access-1")
+    expect(session?.accessToken).toBe("access-2")
     expect(session?.upn).toBe("avery@contoso.example")
+  })
+
+  it("gives empty claims for an id token it cannot read, and still signs in without the check", async () => {
+    const env = setup({ scopes: ["openid"] })
+    env.fake.queue(json({ ...upstreamTokens(1), id_token: "not-a-jwt" }))
+    const { tokens } = await signIn(env)
+    expect((await sessionFor(env, tokens.access_token ?? ""))?.claims).toEqual({})
   })
 
   describe("with tenantId set to a tenant's id", () => {
@@ -518,7 +541,24 @@ describe("who signed in", () => {
       expect(flow.back.searchParams.get("state")).toBe("client-state")
     })
 
-    it("cannot check without an id token, so it signs the user in and says so at startup", async () => {
+    it("refuses an id token it cannot read", async () => {
+      const env = setup({ scopes: ["openid"], tenantId: TENANT })
+      env.fake.queue(json({ ...upstreamTokens(1), id_token: "not-a-jwt" }))
+      expect((await signIn(env)).back.searchParams.get("error")).toBe("access_denied")
+    })
+
+    it("refuses a client that leaves openid out of its scope to skip the check", async () => {
+      const env = setup({ scopes: ["openid", "User.Read"], tenantId: TENANT })
+      const flow = await signIn(env, { scope: "User.Read" })
+      expect(flow.upstream.searchParams.get("scope")).toBe("User.Read")
+      expect(flow.back.searchParams.get("error")).toBe("access_denied")
+      expect(flow.back.searchParams.get("error_description")).toBe(
+        "The provider sent no id token, so the account could not be checked.",
+      )
+      expect(flow.back.searchParams.get("code")).toBeNull()
+    })
+
+    it("cannot check when the server's scopes leave out openid, so it signs the user in and says so at startup", async () => {
       const warn = vi.fn()
       const env = setup({ logger: { error: () => {}, warn }, tenantId: TENANT })
       expect(warn).toHaveBeenCalledWith(expect.stringContaining("the tenant is not checked"))

@@ -217,14 +217,14 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 
 **Who signed in.** Tools get the user from the sign-in, never from a tool argument:
 
-- `session.claims` holds the id token's claims, or `{}` when Microsoft sent no id token.
+- `session.claims` holds the id token's claims, or `{}` when Microsoft sent no id token or one that can't be read.
 - The Azure provider's session (`AzureSession`) adds `oid` (the user's object id), `tid` (their tenant) and `upn` (their sign-in name, from `preferred_username`).
 - Microsoft sends an id token only when the scopes include `openid`. Without it, all of these are empty, and the server warns at startup.
-- The id token comes straight from Microsoft's token endpoint over TLS, so its signature isn't checked. OpenID Connect Core §3.1.3.7 allows that, and somamcp does no JWKS fetch. Microsoft's access token for Graph is never read: Microsoft says clients must treat it as opaque.
+- The id token comes straight from Microsoft's token endpoint over TLS, so its signature isn't checked. OpenID Connect Core §3.1.3.7 allows that, and somamcp does no JWKS fetch. The session's identity never comes from Microsoft's access token, which Microsoft says clients must treat as opaque.
 
-**Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. Two settings skip the check:
+**Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. So does a sign-in that comes back without an id token, because a client chooses the scope it asks Microsoft for and could otherwise leave out `openid` to skip the check. Two settings skip the check:
 
-- **No id token:** without `openid` there is nothing to check, so the sign-in goes ahead, and the startup warning says the tenant isn't checked.
+- **Server scopes without `openid`:** Microsoft never sends an id token, so there's nothing to check. The sign-in goes ahead, and the startup warning says the tenant isn't checked.
 - **A domain name, or `common`, `organizations` or `consumers`:** there's no single tenant id to compare. Give the GUID to get the check.
 
 The generic provider takes the same kind of rule as `acceptSignIn(claims)`, which returns the reason to refuse a sign-in, or `undefined` to accept it.

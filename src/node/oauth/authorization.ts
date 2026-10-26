@@ -37,7 +37,7 @@ export type BrowserStep =
 
 export type AuthorizationSettings = {
   /** The reason to refuse a sign-in, given its id token's claims. */
-  acceptSignIn: (claims: Readonly<Record<string, unknown>>) => Option<string>
+  acceptSignIn: Option<(claims: Readonly<Record<string, unknown>>) => Option<string>>
   allowPlainPkce: boolean
   authorizationCodeLifetime: number
   /** `<baseUrl>/oauth/callback`: the redirect URI registered with the provider. */
@@ -205,18 +205,34 @@ export const createAuthorization = (
     return toClient(request.clientCallbackUrl, request.state, { code })
   }
 
+  /**
+   * Why `acceptSignIn` refuses who signed in, if it does. A client chooses the scope it asks the
+   * provider for, so when the server's own scopes include `openid` an id token is required:
+   * otherwise asking without `openid` would skip the check.
+   */
+  const refusal = (tokens: UpstreamTokens): Option<string> =>
+    settings.acceptSignIn.flatMap((accept) =>
+      Option(tokens.idToken)
+        .filter((idToken) => idToken !== "")
+        .fold(
+          () =>
+            settings.scopes.includes("openid")
+              ? Option("The provider sent no id token, so the account could not be checked.")
+              : Option.none<string>(),
+          (idToken) => accept(idTokenClaims(idToken)),
+        ),
+    )
+
   /** Issue the client its code, unless `acceptSignIn` refuses who signed in. */
   const finish = (
     request: PendingAuthorization,
     tokens: UpstreamTokens,
     back: (error: OAuthError) => BrowserStep,
   ): Promise<BrowserStep> =>
-    Option(tokens.idToken)
-      .flatMap((idToken) => settings.acceptSignIn(idTokenClaims(idToken)))
-      .fold(
-        () => issueCode(request, tokens),
-        (reason) => Promise.resolve(back(Errors.providerRejected("access_denied", Option(reason)))),
-      )
+    refusal(tokens).fold(
+      () => issueCode(request, tokens),
+      (reason) => Promise.resolve(back(Errors.providerRejected("access_denied", Option(reason)))),
+    )
 
   /** The provider sends the user back here, with a code or with an error. */
   const callback = async (url: URL): Promise<Either<OAuthError, BrowserStep>> => {
