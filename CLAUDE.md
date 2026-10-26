@@ -88,8 +88,8 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `upstream.ts` talks to the provider
 - `clients.ts` is registration
 - `http.ts` holds the routes and the MCP 401
-- `pages.ts` is the HTML
-- `errors.ts` is the `OAuthError` union, which only `http.ts` maps to wire codes
+- `pages.ts` is the HTML: no scripts (the CSP forbids them), so the long scope list folds with `<details>`
+- `errors.ts` is the `OAuthError` union; `http.ts` turns it into wire codes, and `authorization.ts` does the same on redirects back to a client
 
 **Compatibility is the contract.** `records.ts` and `stores/` must stay byte-compatible with what FastMCP 4.22.10 wrote, or every user of a server moved off FastMCP has to sign in again. That covers:
 

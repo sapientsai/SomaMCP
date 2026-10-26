@@ -8,7 +8,7 @@ import {
   createServer,
 } from "../../../src/node/index.js"
 import type { OAuthAuthProvider } from "../../../src/node/oauth/provider.js"
-import { consentPage, errorPage, escapeHtml } from "../../../src/node/oauth/pages.js"
+import { consentPage, errorPage, escapeHtml, VISIBLE_SCOPES } from "../../../src/node/oauth/pages.js"
 import { CALLBACK, createFakeProvider, quiet } from "./harness.js"
 
 const BASE = "https://ms365.test"
@@ -164,9 +164,41 @@ describe("the pages", () => {
 
   it("call a client without a registered name 'An app', and leave out an empty scope list", () => {
     const html = consentPage(screen, "ms365.test")
-    expect(html).toContain("<h1>Authorize An app</h1>")
+    expect(html).toContain("<h1>Allow An app to use this server?</h1>")
+    expect(html).toContain("registered no name")
     expect(html).not.toContain("Access requested")
-    expect(html).toContain('<div class="eyebrow">ms365.test</div>')
+    expect(html).toContain('<p class="host">ms365.test</p>')
+  })
+
+  it("put the app's first letter in its tile, escaped", () => {
+    expect(consentPage({ ...screen, clientName: Option("claude") }, "ms365.test")).toContain(
+      '<div class="tile">C</div>',
+    )
+    expect(consentPage({ ...screen, clientName: Option("<x>") }, "ms365.test")).toContain(
+      '<div class="tile">&lt;</div>',
+    )
+  })
+
+  it("show a short scope list in full, with no fold", () => {
+    const scope = Array.from({ length: VISIBLE_SCOPES }, (_, n) => `Scope.${n}`)
+    const html = consentPage({ ...screen, scope }, "ms365.test")
+    expect(html).toContain(`<span class="count">${VISIBLE_SCOPES}</span>`)
+    expect(html).not.toContain("<details>")
+    for (const name of scope) expect(html).toContain(`<li class="chip">${name}</li>`)
+  })
+
+  it("fold a long scope list behind 'Show all', keeping every scope on the page", () => {
+    // The Microsoft 365 server asks for 22 by default.
+    const scope = [...Array.from({ length: 21 }, (_, n) => `Scope.${n}`), "https://graph.microsoft.com/.default"]
+    const html = consentPage({ ...screen, scope }, "ms365.test")
+    expect(html).toContain('<span class="count">22</span>')
+    expect(html).toContain("Show all 22")
+    const [shown, folded] = html.split("<details>")
+    for (const name of scope.slice(0, VISIBLE_SCOPES)) expect(shown).toContain(`<li class="chip">${name}</li>`)
+    for (const name of scope.slice(VISIBLE_SCOPES)) {
+      expect(shown).not.toContain(`>${name}<`)
+      expect(folded).toContain(`<li class="chip">${name}</li>`)
+    }
   })
 
   it("show the error's code and description on the error page", () => {
@@ -175,10 +207,11 @@ describe("the pages", () => {
     expect(html).toContain("Bad &quot;thing&quot;")
   })
 
-  it("fit a phone: a viewport, a 16px gutter, and a card that never overflows", () => {
+  it("fit a phone: a viewport, a 16px gutter, and chips that wrap", () => {
     const html = consentPage(screen, "ms365.test")
     expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">')
-    expect(html).toContain("padding: 24px 16px")
-    expect(html).toContain("max-width: 440px")
+    expect(html).toContain("padding: 40px 16px")
+    expect(html).toContain("max-width: 452px")
+    expect(html).toContain("overflow-wrap: anywhere")
   })
 })

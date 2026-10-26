@@ -347,9 +347,10 @@ describe("pages for people", () => {
     expect(page.headers.get("cache-control")).toBe("no-store")
     const html = await page.text()
     expect(html).not.toContain("<script")
-    expect(html).toContain("Authorize Claude")
+    expect(html).toContain("Allow Claude to use this server?")
     expect(html).toContain("sign in with <strong>Microsoft</strong>")
-    expect(html).toContain('<li class="chip">claude.ai</li>')
+    expect(html).toContain("You return to <code>claude.ai</code>")
+    expect(html).toContain("started this from <strong>claude.ai</strong>")
     expect(html).toContain(`action="${BASE}/oauth/consent"`)
     // Deny comes first, so pressing Enter declines.
     expect(html.indexOf('value="deny"')).toBeLessThan(html.indexOf('value="approve"'))
@@ -377,7 +378,7 @@ describe("pages for people", () => {
     expect(asPage.status).toBe(400)
     expect(asPage.headers.get("content-type")).toBe("text/html; charset=utf-8")
     const html = await asPage.text()
-    expect(html).toContain("Sign-in can't continue")
+    expect(html).toContain("This sign-in can't continue")
     expect(html).toContain("invalid_client")
     const asJson = await env.request("/oauth/authorize?client_id=nobody&redirect_uri=x")
     expect(await asJson.json()).toEqual({
