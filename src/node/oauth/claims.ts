@@ -75,6 +75,12 @@ export const createClaimsCopier = (policy: boolean | ClaimsPolicy, logger: Pick<
   }
 }
 
+/**
+ * The claims of an id token, or `{}` when it cannot be read. The signature is not checked: the server took the id token straight from the
+ * provider's token endpoint over TLS, which OpenID Connect Core 1.0 §3.1.3.7 accepts in its place.
+ */
+export const idTokenClaims = (idToken: string): Record<string, unknown> => readClaims(idToken).orElse({})
+
 /** The length of a value as JSON, or infinity when it cannot be serialized. */
 const jsonLength = (value: object): number =>
   Try(() => JSON.stringify(value)).fold(

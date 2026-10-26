@@ -2,10 +2,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
-import { createAzureProvider, createMemoryStore, createServer, type OAuthSession } from "../../../src/node/index.js"
+import { type AzureSession, createAzureProvider, createMemoryStore, createServer } from "../../../src/node/index.js"
 import type { OAuthAuthProvider } from "../../../src/node/oauth/provider.js"
 import { rawRequest } from "../../backend/sdk-clients.js"
-import { CALLBACK, createFakeProvider, type FakeProvider, pkcePair, quiet } from "./harness.js"
+import { CALLBACK, createFakeProvider, type FakeProvider, json, pkcePair, quiet, upstreamTokens } from "./harness.js"
 
 const BASE = "https://ms365.test"
 
@@ -37,7 +37,7 @@ const azure = (fake: FakeProvider, overrides: Partial<Parameters<typeof createAz
 const setup = (overrides: Partial<Parameters<typeof createAzureProvider>[0]> = {}, serverOptions = {}) => {
   const fake = createFakeProvider()
   const auth = azure(fake, overrides)
-  const server = createServer<OAuthSession>({
+  const server = createServer<AzureSession>({
     auth,
     enableDashboard: false,
     name: "ms365",
@@ -408,7 +408,7 @@ describe("authenticating MCP requests", () => {
     const fake = createFakeProvider()
     const auth = azure(fake)
     const authenticate = vi.spyOn(auth, "authenticate")
-    const server = createServer<OAuthSession>({ auth, enableDashboard: false, name: "ms365", version: "1.0.0" })
+    const server = createServer<AzureSession>({ auth, enableDashboard: false, name: "ms365", version: "1.0.0" })
     const post = (body: unknown, headers: Record<string, string> = {}) =>
       server.fetch(
         new Request(`${BASE}/mcp`, {
@@ -434,5 +434,114 @@ describe("authenticating MCP requests", () => {
     // A 2026-07-28 request, with the per-request envelope and routing headers.
     await server.fetch(rawRequest("tools/list", {}, { headers: { authorization: "Bearer x" }, modern: true }))
     expect(authenticate).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe("who signed in", () => {
+  const TENANT = "8f2a1c4e-0b3d-4e5f-9a6b-7c8d9e0f1a2b"
+  const OTHER = "11111111-2222-3333-4444-555555555555"
+  /** An id token as Microsoft's token endpoint returns it; the server never checks its signature. */
+  const idToken = (claims: Record<string, unknown>) =>
+    ['{"alg":"RS256","typ":"JWT"}', JSON.stringify(claims)]
+      .map((part) => Buffer.from(part).toString("base64url"))
+      .concat("signature")
+      .join(".")
+  const person = (tid: string, iss = `https://login.microsoftonline.com/${tid}/v2.0`) => ({
+    iss,
+    name: "Avery Example",
+    oid: "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+    preferred_username: "avery@contoso.example",
+    tid,
+  })
+  const withIdToken = (env: ReturnType<typeof setup>, claims: Record<string, unknown>) =>
+    env.fake.queue(json({ ...upstreamTokens(1), id_token: idToken(claims) }))
+  const sessionFor = (env: ReturnType<typeof setup>, accessToken: string) =>
+    env.auth.authenticate(new Request(`${BASE}/mcp`, { headers: { authorization: `Bearer ${accessToken}` } }))
+
+  it("gives tools the user's oid, tenant and sign-in name from the id token", async () => {
+    const env = setup({ scopes: ["openid", "User.Read"] })
+    withIdToken(env, person(TENANT))
+    const { tokens } = await signIn(env)
+    const session = await sessionFor(env, tokens.access_token ?? "")
+    expect(session).toMatchObject({
+      oid: "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9",
+      tid: TENANT,
+      upn: "avery@contoso.example",
+    })
+    expect(session?.claims).toMatchObject({ name: "Avery Example", tid: TENANT })
+  })
+
+  it("leaves them unset, with empty claims, when Microsoft sends no id token", async () => {
+    const env = setup()
+    const { tokens } = await signIn(env)
+    const session = await sessionFor(env, tokens.access_token ?? "")
+    expect(session?.claims).toEqual({})
+    expect([session?.oid, session?.tid, session?.upn]).toEqual([undefined, undefined, undefined])
+  })
+
+  it("keeps the id token when a refresh comes back without one", async () => {
+    const env = setup({ scopes: ["openid", "User.Read"] })
+    withIdToken(env, person(TENANT))
+    const { client, tokens } = await signIn(env)
+    const refreshed = (await (
+      await env.request(
+        "/oauth/token",
+        form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: tokens.refresh_token ?? "" }),
+      )
+    ).json()) as { access_token: string }
+    const session = await sessionFor(env, refreshed.access_token)
+    expect(session?.accessToken).toBe("access-1")
+    expect(session?.upn).toBe("avery@contoso.example")
+  })
+
+  describe("with tenantId set to a tenant's id", () => {
+    it("accepts a sign-in from that tenant", async () => {
+      const env = setup({ scopes: ["openid"], tenantId: TENANT.toUpperCase() })
+      withIdToken(env, person(TENANT))
+      const flow = await signIn(env)
+      expect(flow.back.searchParams.get("code")).not.toBeNull()
+      expect(flow.token.status).toBe(200)
+    })
+
+    it.each([
+      ["another tenant", person(OTHER)],
+      ["an issuer that names another tenant", person(TENANT, `https://login.microsoftonline.com/${OTHER}/v2.0`)],
+      ["no tenant at all", { oid: "x", preferred_username: "y" }],
+    ])("refuses %s, back on the client's redirect URI with access_denied", async (_name, claims) => {
+      const env = setup({ scopes: ["openid"], tenantId: TENANT })
+      withIdToken(env, claims)
+      const flow = await signIn(env)
+      expect(`${flow.back.origin}${flow.back.pathname}`).toBe(CALLBACK)
+      expect(flow.back.searchParams.get("error")).toBe("access_denied")
+      expect(flow.back.searchParams.get("error_description")).toBe("This account belongs to another organization.")
+      expect(flow.back.searchParams.get("code")).toBeNull()
+      expect(flow.back.searchParams.get("state")).toBe("client-state")
+    })
+
+    it("cannot check without an id token, so it signs the user in and says so at startup", async () => {
+      const warn = vi.fn()
+      const env = setup({ logger: { error: () => {}, warn }, tenantId: TENANT })
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("the tenant is not checked"))
+      const flow = await signIn(env)
+      expect(flow.token.status).toBe(200)
+    })
+  })
+
+  it("does not check the tenant when tenantId is a name, not an id", async () => {
+    const env = setup({ scopes: ["openid"], tenantId: "contoso.onmicrosoft.com" })
+    withIdToken(env, person(OTHER))
+    expect((await signIn(env)).token.status).toBe(200)
+  })
+
+  it("warns at startup when the scopes leave out openid, and not otherwise", () => {
+    const warn = vi.fn()
+    setup({ logger: { error: () => {}, warn } })
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+      expect.stringContaining("scopes leave out openid, so Microsoft sends no id token"),
+    ])
+    expect(warn.mock.calls[0]?.[0]).not.toContain("tenant")
+    const quietWarn = vi.fn()
+    setup({ logger: { error: () => {}, warn: quietWarn }, scopes: ["openid"] })
+    expect(quietWarn).not.toHaveBeenCalled()
   })
 })

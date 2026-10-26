@@ -89,6 +89,7 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `clients.ts` is registration
 - `http.ts` holds the routes and the MCP 401
 - `pages.ts` is the HTML: no scripts (the CSP forbids them), so the long scope list folds with `<details>`
+- `provider.ts` builds the session tools see: `claims` from the id token (never the access token, which Microsoft calls opaque), and for Azure `oid`, `tid` and `upn`, plus the tenant check when `tenantId` is a GUID
 - `errors.ts` is the `OAuthError` union; `http.ts` turns it into wire codes, and `authorization.ts` does the same on redirects back to a client
 
 **Compatibility is the contract.** `records.ts` and `stores/` must stay byte-compatible with what FastMCP 4.22.10 wrote, or every user of a server moved off FastMCP has to sign in again. That covers:

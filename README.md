@@ -215,6 +215,20 @@ server.addTool({
 await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType: "httpStream" })
 ```
 
+**Who signed in.** Tools get the user from the sign-in, never from a tool argument:
+
+- `session.claims` holds the id token's claims, or `{}` when Microsoft sent no id token.
+- The Azure provider's session (`AzureSession`) adds `oid` (the user's object id), `tid` (their tenant) and `upn` (their sign-in name, from `preferred_username`).
+- Microsoft sends an id token only when the scopes include `openid`. Without it, all of these are empty, and the server warns at startup.
+- The id token comes straight from Microsoft's token endpoint over TLS, so its signature isn't checked. OpenID Connect Core §3.1.3.7 allows that, and somamcp does no JWKS fetch. Microsoft's access token for Graph is never read: Microsoft says clients must treat it as opaque.
+
+**Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. Two settings skip the check:
+
+- **No id token:** without `openid` there is nothing to check, so the sign-in goes ahead, and the startup warning says the tenant isn't checked.
+- **A domain name, or `common`, `organizations` or `consumers`:** there's no single tenant id to compare. Give the GUID to get the check.
+
+The generic provider takes the same kind of rule as `acceptSignIn(claims)`, which returns the reason to refuse a sign-in, or `undefined` to accept it.
+
 For another upstream provider, `createOAuthProxyProvider` takes its endpoints under `upstream` (`authorizationEndpoint`, `tokenEndpoint`, `clientId`, `clientSecret`, `name`).
 
 **Routes:**
@@ -239,6 +253,8 @@ An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer res
 - AES-256-GCM with the same scrypt-derived key
 - HS256 JWTs with the same claims
 - the same record shapes and key prefixes
+
+They survive only if the new server gets the same four values FastMCP had: `baseUrl` (the tokens' issuer and audience), `jwtSigningKey`, `encryptionKey`, and a `tokenStorage` on the same directory. A missing key falls back to a random one, as it does in FastMCP, which signs everyone out on the next restart.
 
 Two things guard this. `test/node/oauth-compat.test.ts` reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory runs this server and FastMCP against a shared store, in both directions.
 
@@ -593,7 +609,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 - `createAzureProvider`, `createOAuthProxyProvider`
 - Stores: `createDiskStore`, `createMemoryStore`, `createEncryptedStore`
-- Types: `AzureProviderConfig`, `OAuthAuthProvider` (adds `upstreamTokens(bearer)` and `close()`), `OAuthSession`, `OAuthProxyConfig`, `UpstreamConfig`, `Lifetimes`, `ClaimsPolicy`, `OAuthError`, `TokenStore`, `DiskStoreOptions`, `UpstreamTokens`
+- Types: `AzureProviderConfig`, `AzureSession`, `OAuthAuthProvider` (adds `upstreamTokens(bearer)` and `close()`), `OAuthSession`, `OAuthProxyConfig`, `UpstreamConfig`, `Lifetimes`, `ClaimsPolicy`, `OAuthError`, `TokenStore`, `DiskStoreOptions`, `UpstreamTokens`
 
 **Content helpers**
 
