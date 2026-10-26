@@ -1,6 +1,6 @@
 export type { ClaimsPolicy } from "./claims.js"
 export type { OAuthError } from "./errors.js"
-export type { AzureProviderConfig, OAuthAuthProvider, OAuthSession } from "./provider.js"
+export type { AzureProviderConfig, AzureSession, OAuthAuthProvider, OAuthSession } from "./provider.js"
 export { createAzureProvider, createOAuthProxyProvider } from "./provider.js"
 export type { UpstreamTokens } from "./records.js"
 export type { Lifetimes, OAuthProxyConfig } from "./server.js"

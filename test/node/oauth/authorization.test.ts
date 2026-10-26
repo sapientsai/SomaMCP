@@ -349,6 +349,38 @@ describe("/oauth/callback", () => {
   })
 })
 
+describe("acceptSignIn", () => {
+  const idToken = (claims: Record<string, unknown>) =>
+    [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
+
+  it("sees the id token's claims, and its reason goes back to the client as access_denied", async () => {
+    const provider = createFakeProvider()
+    const accept = vi.fn((claims: Readonly<Record<string, unknown>>) =>
+      claims.email === "ok@example.com" ? undefined : "Not on the list.",
+    )
+    const server = make(provider, { acceptSignIn: accept })
+    const { client_id } = await register(server)
+    provider.queue(json({ access_token: "a", id_token: idToken({ email: "ok@example.com" }) }))
+    expect((await signIn(server, client_id)).back.searchParams.get("code")).not.toBeNull()
+    provider.queue(json({ access_token: "a", id_token: idToken({ email: "other@example.com" }) }))
+    const refused = (await signIn(server, client_id)).back
+    expect(refused.searchParams.get("error")).toBe("access_denied")
+    expect(refused.searchParams.get("error_description")).toBe("Not on the list.")
+    expect(accept.mock.calls.map(([claims]) => claims.email)).toEqual(["ok@example.com", "other@example.com"])
+  })
+
+  it("needs an id token when the server's scopes include openid, and not otherwise", async () => {
+    const accept = vi.fn(() => undefined)
+    const withOpenid = make(createFakeProvider(), { acceptSignIn: accept })
+    const a = await register(withOpenid)
+    expect((await signIn(withOpenid, a.client_id)).back.searchParams.get("error")).toBe("access_denied")
+    const without = make(createFakeProvider(), { acceptSignIn: accept, scopes: ["User.Read"] })
+    const b = await register(without)
+    expect((await signIn(without, b.client_id)).back.searchParams.get("code")).not.toBeNull()
+    expect(accept).not.toHaveBeenCalled()
+  })
+})
+
 describe("iss on redirects (RFC 9207)", () => {
   it("is advertised and sent by default", async () => {
     const server = make(createFakeProvider())

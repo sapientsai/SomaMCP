@@ -9,6 +9,7 @@
 import type { Either } from "functype"
 import { Left, Option, Right } from "functype"
 
+import { idTokenClaims } from "./claims.js"
 import type { ClientRegistry } from "./clients.js"
 import { OAuthError as Errors, type OAuthError, toWireError } from "./errors.js"
 import { createPkcePair, isPkceMethod } from "./pkce.js"
@@ -35,6 +36,8 @@ export type BrowserStep =
   | { readonly _tag: "Consent"; readonly screen: ConsentScreen }
 
 export type AuthorizationSettings = {
+  /** The reason to refuse a sign-in, given its id token's claims. */
+  acceptSignIn: Option<(claims: Readonly<Record<string, unknown>>) => Option<string>>
   allowPlainPkce: boolean
   authorizationCodeLifetime: number
   /** `<baseUrl>/oauth/callback`: the redirect URI registered with the provider. */
@@ -202,6 +205,35 @@ export const createAuthorization = (
     return toClient(request.clientCallbackUrl, request.state, { code })
   }
 
+  /**
+   * Why `acceptSignIn` refuses who signed in, if it does. A client chooses the scope it asks the
+   * provider for, so when the server's own scopes include `openid` an id token is required:
+   * otherwise asking without `openid` would skip the check.
+   */
+  const refusal = (tokens: UpstreamTokens): Option<string> =>
+    settings.acceptSignIn.flatMap((accept) =>
+      Option(tokens.idToken)
+        .filter((idToken) => idToken !== "")
+        .fold(
+          () =>
+            settings.scopes.includes("openid")
+              ? Option("The provider sent no id token, so the account could not be checked.")
+              : Option.none<string>(),
+          (idToken) => accept(idTokenClaims(idToken)),
+        ),
+    )
+
+  /** Issue the client its code, unless `acceptSignIn` refuses who signed in. */
+  const finish = (
+    request: PendingAuthorization,
+    tokens: UpstreamTokens,
+    back: (error: OAuthError) => BrowserStep,
+  ): Promise<BrowserStep> =>
+    refusal(tokens).fold(
+      () => issueCode(request, tokens),
+      (reason) => Promise.resolve(back(Errors.providerRejected("access_denied", Option(reason)))),
+    )
+
   /** The provider sends the user back here, with a code or with an error. */
   const callback = async (url: URL): Promise<Either<OAuthError, BrowserStep>> => {
     const state = url.searchParams.get("state") ?? ""
@@ -239,7 +271,7 @@ export const createAuthorization = (
     })
     return exchanged.fold(
       (error) => Promise.resolve(Right<OAuthError, BrowserStep>(back(error))),
-      async (tokens) => Right<OAuthError, BrowserStep>(await issueCode(request, tokens)),
+      async (tokens) => Right<OAuthError, BrowserStep>(await finish(request, tokens, back)),
     )
   }
 

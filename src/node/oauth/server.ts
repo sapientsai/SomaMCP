@@ -28,6 +28,9 @@ export type Lifetimes = {
 }
 
 /**
+ * - `acceptSignIn` — given the id token's claims, the reason to refuse a sign-in, or
+ *   `undefined` to accept it. When `scopes` include `openid`, a sign-in without an id token is
+ *   refused, since a client could otherwise ask for less and skip the check.
  * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
  *   match. Unset allows loopback URIs only; `[]` allows none.
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
@@ -43,6 +46,8 @@ export type Lifetimes = {
  * - `store` — where clients, codes and tokens live. Defaults to memory.
  */
 export type OAuthProxyConfig = {
+  // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
+  acceptSignIn?: (claims: Readonly<Record<string, unknown>>) => string | undefined
   allowedRedirectUriPatterns?: ReadonlyArray<string>
   allowPlainPkce?: boolean
   authorizationResponseIss?: boolean
@@ -97,6 +102,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const signer = createJwtSigner(config.baseUrl, config.jwtSigningKey ?? randomHex())
   const authorization = createAuthorization(
     {
+      acceptSignIn: Option(config.acceptSignIn).map((accept) => (claims) => Option(accept(claims))),
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
       callbackUrl: `${config.baseUrl}/oauth/callback`,
