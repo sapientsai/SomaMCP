@@ -164,8 +164,10 @@ describe("the pages", () => {
 
   it("call a client without a registered name 'An app', and leave out an empty scope list", () => {
     const html = consentPage(screen, "ms365.test")
-    expect(html).toContain("<h1>Allow An app to use this server?</h1>")
+    expect(html).toContain("<h1>Allow an app to use this server?</h1>")
     expect(html).toContain("registered no name")
+    // With no scopes there is no list, so the page must not point at one.
+    expect(html).toContain("act with your Microsoft account.</p>")
     expect(html).not.toContain("Access requested")
     expect(html).toContain('<p class="host">ms365.test</p>')
   })
@@ -207,11 +209,12 @@ describe("the pages", () => {
     expect(html).toContain("Bad &quot;thing&quot;")
   })
 
-  it("fit a phone: a viewport, a 16px gutter, and chips that wrap", () => {
+  it("fit a phone: a viewport, a 16px gutter, and long words that wrap", () => {
     const html = consentPage(screen, "ms365.test")
     expect(html).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">')
     expect(html).toContain("padding: 40px 16px")
     expect(html).toContain("max-width: 452px")
-    expect(html).toContain("overflow-wrap: anywhere")
+    // On the card itself, so every line in it breaks, the warning's return host included.
+    expect(html).toMatch(/\nmain \{[^}]*overflow-wrap: anywhere;/)
   })
 })

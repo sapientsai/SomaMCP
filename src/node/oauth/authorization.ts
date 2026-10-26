@@ -148,7 +148,10 @@ export const createAuthorization = (
       _tag: "Consent",
       screen: {
         action: `${settings.issuer}/oauth/consent`,
-        clientName: client.flatMap((c) => Option(c.metadata?.client_name)).filter((name) => name !== ""),
+        clientName: client
+          .flatMap((c) => Option(c.metadata?.client_name))
+          .map((name) => name.trim())
+          .filter((name) => name !== ""),
         provider: settings.providerName,
         returnsTo: hostOf(redirectUri),
         scope: request.scope,

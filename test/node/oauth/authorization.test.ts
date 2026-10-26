@@ -47,6 +47,16 @@ describe("/oauth/authorize", () => {
     expect(screen.transactionId).toMatch(/^[A-Za-z0-9_-]{43}$/)
   })
 
+  it("treats a name of only spaces as no name, and trims the rest", async () => {
+    const server = make(createFakeProvider())
+    const nameOf = async (client_name: string) => {
+      const { client_id } = right(await server.register({ client_name, redirect_uris: [CALLBACK] }))
+      return consentOf(right(await authorize(server, client_id, pkcePair().challenge))).clientName.orUndefined()
+    }
+    expect(await nameOf("   ")).toBeUndefined()
+    expect(await nameOf("  Claude ")).toBe("Claude")
+  })
+
   it("asks for the scopes the client requested, when it requests any", async () => {
     const server = make(createFakeProvider())
     const { client_id } = await register(server)

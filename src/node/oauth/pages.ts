@@ -51,7 +51,7 @@ body {
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 main {
-  width: 100%; max-width: 452px; padding: 32px 28px 28px;
+  width: 100%; max-width: 452px; padding: 32px 28px 28px; overflow-wrap: anywhere;
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
 }
 @media (max-width: 480px) { main { padding: 28px 22px 24px; } }
@@ -64,12 +64,12 @@ svg { display: block; }
 .link { flex: 1; display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .link::before, .link::after { content: ""; flex: 1; border-top: 1px dashed var(--line); }
 .tile.danger { width: 44px; height: 44px; background: var(--danger-tile); border-color: var(--danger-border); color: var(--danger); }
-.host { margin-top: 22px; font-size: 13px; color: var(--muted); letter-spacing: 0.01em; overflow-wrap: anywhere; }
-h1 { margin-top: 6px; font-size: 23px; line-height: 1.3; font-weight: 650; overflow-wrap: anywhere; }
+.host { margin-top: 22px; font-size: 13px; color: var(--muted); letter-spacing: 0.01em; }
+h1 { margin-top: 6px; font-size: 23px; line-height: 1.3; font-weight: 650; }
 .lede { margin-top: 10px; color: var(--muted); }
 section { margin-top: 24px; }
 h2 { margin-bottom: 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--label); }
-h2 .count { margin-left: 6px; letter-spacing: 0; text-transform: none; font-weight: 500; }
+h2 .count { margin-left: 2px; letter-spacing: 0; text-transform: none; font-weight: 500; }
 ol { padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
 ol li { display: flex; gap: 12px; align-items: flex-start; line-height: 24px; }
 .step {
@@ -81,7 +81,6 @@ strong { font-weight: 600; }
 code, .chip {
   font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   background: var(--tile); border: 1px solid var(--tile-border); border-radius: 6px; color: var(--chip-text);
-  overflow-wrap: anywhere;
 }
 code { padding: 2px 7px; }
 .chips { padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
@@ -148,7 +147,7 @@ ${body}
 `
 
 const chips = (scopes: ReadonlyArray<string>): string =>
-  `<ul class="chips">${scopes.map((scope) => `<li class="chip">${escapeHtml(scope)}</li>`).join("")}</ul>`
+  `<ul class="chips" role="list">${scopes.map((scope) => `<li class="chip">${escapeHtml(scope)}</li>`).join("")}</ul>`
 
 /** Every scope stays on the page; past VISIBLE_SCOPES the rest sit one tap away. */
 const accessSection = (scopes: ReadonlyArray<string>): string => {
@@ -159,7 +158,7 @@ const accessSection = (scopes: ReadonlyArray<string>): string => {
       ? ""
       : `\n<details>\n<summary><span class="closed">Show all ${scopes.length}</span><span class="opened">Show fewer</span></summary>\n${chips(rest)}\n</details>`
   return `<section>
-<h2>Access requested<span class="count">${scopes.length}</span></h2>
+<h2>Access requested <span class="count">${scopes.length}</span></h2>
 ${chips(scopes.slice(0, VISIBLE_SCOPES))}${more}
 </section>`
 }
@@ -177,16 +176,17 @@ const appTile = (name: Option<string>): string =>
 const proof = (name: Option<string>): string =>
   name.fold(
     () => "The app registered no name, so its return address is all that identifies it.",
-    (value) => `Any app can register as “${escapeHtml(value)}”; the return address is what proves it.`,
+    (value) => `Any app can register as “${escapeHtml(value)}”; only the return address proves where it comes from.`,
   )
 
 /** The page that asks the user to approve an app. `server` is the server's own host. */
 export const consentPage = (screen: ConsentScreen, server: string): string => {
-  const app = escapeHtml(screen.clientName.orElse("An app"))
+  const name = screen.clientName.orElse("an app")
+  const app = escapeHtml(name)
   const provider = escapeHtml(screen.provider)
   const returnsTo = escapeHtml(screen.returnsTo)
   return page(
-    `Allow ${screen.clientName.orElse("an app")} to use this server?`,
+    `Allow ${name} to use this server?`,
     `<div class="tiles">
 ${appTile(screen.clientName)}
 <div class="link">${LOCK}</div>
@@ -194,13 +194,13 @@ ${appTile(screen.clientName)}
 </div>
 <p class="host">${escapeHtml(server)}</p>
 <h1>Allow ${app} to use this server?</h1>
-<p class="lede">It will act with your ${provider} account, within the access below.</p>
+<p class="lede">It will act with your ${provider} account${screen.scope.length === 0 ? "" : ", within the access below"}.</p>
 <section>
 <h2>What happens next</h2>
-<ol>
-<li><span class="step now">1</span><span>You approve here.</span></li>
+<ol role="list">
+<li aria-current="step"><span class="step now">1</span><span>You approve here.</span></li>
 <li><span class="step">2</span><span>You sign in with <strong>${provider}</strong>. This server never sees your password.</span></li>
-<li><span class="step">3</span><span>You return to <code>${returnsTo}</code></span></li>
+<li><span class="step">3</span><span>You return to <code>${returnsTo}</code>.</span></li>
 </ol>
 </section>
 ${accessSection(screen.scope)}
