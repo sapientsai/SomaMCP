@@ -29,8 +29,8 @@ export type Lifetimes = {
 
 /**
  * - `acceptSignIn` — given the id token's claims, the reason to refuse a sign-in, or
- *   `undefined` to accept it. When `scopes` include `openid`, a sign-in without an id token is
- *   refused, since a client could otherwise ask for less and skip the check.
+ *   `undefined` to accept it. When `scopes` include `openid`, every request asks for it, and a
+ *   sign-in that still comes back without an id token is refused.
  * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
  *   match. Unset allows loopback URIs only; `[]` allows none.
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.

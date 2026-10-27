@@ -1,10 +1,14 @@
-// Which scopes the server asks the provider for. Its configured list is the cap: a client can
-// narrow the list but never add to it. RFC 6749 §3.3 lets the server "fully or partially ignore"
-// the scope a client asks for, and the token response reports what was granted.
+// Which scopes the server asks the provider for. At sign-in its configured list is the cap, and on
+// a refresh the grant is (grants.ts): a client can narrow but never add. RFC 6749 §3.3 lets the
+// server "fully or partially ignore" the scope a client asks for, and the token response reports
+// what was granted.
 import { List, Option } from "functype"
 
 /** Kept whenever the server's list has them, whatever the client asks for: the id token, and refresh. */
 const ALWAYS = List(["openid", "offline_access"])
+
+/** Whether `scope` is one the server keeps whatever a client asks for. */
+export const isAlwaysKept = (scope: string): boolean => ALWAYS.contains(scope)
 
 /** A `scope` parameter as a list, without empty parts. */
 export const splitScope = (scope: string): ReadonlyArray<string> => scope.split(" ").filter((part) => part !== "")

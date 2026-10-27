@@ -206,9 +206,9 @@ export const createAuthorization = (
   }
 
   /**
-   * Why `acceptSignIn` refuses who signed in, if it does. A client chooses the scope it asks the
-   * provider for, so when the server's own scopes include `openid` an id token is required:
-   * otherwise asking without `openid` would skip the check.
+   * Why `acceptSignIn` refuses who signed in, if it does. When the server's own scopes include
+   * `openid` the request always carries it (scopes.ts), so an id token is required: a sign-in
+   * that still comes back without one is refused rather than let through unchecked.
    */
   const refusal = (tokens: UpstreamTokens): Option<string> =>
     settings.acceptSignIn.flatMap((accept) =>

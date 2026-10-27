@@ -22,6 +22,11 @@ describe("copying upstream claims into issued tokens", () => {
     expect(copied.orUndefined()).toEqual({ age: 36, name: "Ada", oid: "u-1", verified: true })
   })
 
+  it("never lets a prefix rename a claim into one the server sets", () => {
+    const copied = copier({ prefix: "j" })({ accessToken: jwtWith({ ti: "forged", name: "Ada" }) })
+    expect(copied.orUndefined()).toEqual({ jname: "Ada" })
+  })
+
   it("never copies the claims the server sets itself, scope included", () => {
     const copied = copier(true)({
       accessToken: jwtWith({

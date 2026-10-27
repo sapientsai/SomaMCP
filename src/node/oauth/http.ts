@@ -43,7 +43,8 @@ const resourceFor = (issuer: string, endpoint: string): string => `${issuer.repl
 /** What a 401 tells the client about a failure: a `UserError`'s message, else nothing internal. */
 const challengeMessage = (error: unknown, logger: Pick<Logger, "error">): string => {
   if (error === undefined) return "Unauthorized: Authentication failed"
-  if (error instanceof UserError) return error.message
+  // By name too, in case two copies of somamcp are installed and instanceof fails across them.
+  if (error instanceof UserError || (error instanceof Error && error.name === "UserError")) return error.message
   logger.error("[somamcp/oauth] authenticating an MCP request failed:", error)
   return "Unauthorized: Authentication error"
 }

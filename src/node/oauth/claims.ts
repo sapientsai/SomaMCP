@@ -45,7 +45,8 @@ export const createClaimsCopier = (policy: boolean | ClaimsPolicy, logger: Pick<
   }
 
   const wanted = ([name, value]: [string, unknown]): boolean => {
-    if (RESERVED.contains(name) || blocked.contains(name)) return false
+    // Checked under the copied name too, so a prefix can't turn `ti` into `jti`.
+    if (RESERVED.contains(name) || RESERVED.contains(rename(name)) || blocked.contains(name)) return false
     if (allowed.exists((names) => !names.contains(name))) return false
     if (fits(value)) return true
     logger.warn(`[somamcp/oauth] not copying claim "${name}": its value is too large or not a simple value`)

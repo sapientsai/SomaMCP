@@ -435,9 +435,21 @@ describe("refreshing", () => {
     const { clientId, provider, server, tokens } = await signedIn()
     provider.queue(json({ access_token: "a2", expires_in: 3600, refresh_token: "r2" }))
     const next = right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "User.Read Mail.Send"))
-    // The server's list is openid User.Read: Mail.Send is dropped and openid kept.
-    expect(provider.requests[1]?.body.get("scope")).toBe("openid User.Read")
+    // The grant is User.Read Mail.Read: Mail.Send was never granted, and openid may be asked again.
+    expect(provider.requests[1]?.body.get("scope")).toBe("User.Read openid")
     expect(next.scope).toBe("User.Read Mail.Read")
+  })
+
+  it("never asks for more on a refresh than the sign-in was granted, even if the server's list has it", async () => {
+    const env = setup({ scopes: ["openid", "offline_access", "User.Read", "Mail.Send"] })
+    const { client_id } = await register(env.server)
+    env.provider.queue(json({ access_token: "a1", expires_in: 3600, refresh_token: "r1", scope: "User.Read" }))
+    const tokens = await issueTokens(env.server, client_id)
+    const first = right(await refreshWith(env.server, client_id, tokens.refresh_token ?? "", "Mail.Send"))
+    // Mail.Send is on the server's list but was never granted, so no scope is sent.
+    expect(env.provider.requests[1]?.body.has("scope")).toBe(false)
+    right(await refreshWith(env.server, client_id, first.refresh_token ?? "", "Mail.Send User.Read"))
+    expect(env.provider.requests[2]?.body.get("scope")).toBe("User.Read openid offline_access")
   })
 
   it("sends no scope on a refresh that asks for nothing on the server's list", async () => {

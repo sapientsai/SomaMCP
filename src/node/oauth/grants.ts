@@ -13,7 +13,7 @@ import { OAuthError as Errors, type OAuthError } from "./errors.js"
 import { type JwtSigner, type TokenUse, usableAs } from "./jwt.js"
 import { verifiesChallenge } from "./pkce.js"
 import { type Records, secondsUntil, type TokenGrant, type UpstreamTokens } from "./records.js"
-import { narrowScope, splitScope } from "./scopes.js"
+import { isAlwaysKept, narrowScope, splitScope } from "./scopes.js"
 import { randomToken } from "./secrets.js"
 import type { Upstream } from "./upstream.js"
 
@@ -40,7 +40,7 @@ export type GrantSettings = {
   defaultAccessTokenLifetime: number
   /** For upstream refresh tokens that came without a `refresh_expires_in`. */
   refreshTokenLifetime: number
-  /** The most a refresh may ask the provider for. */
+  /** The server's scopes, for the openid and offline_access a refresh may ask for again. */
   scopes: ReadonlyArray<string>
 }
 
@@ -163,6 +163,12 @@ export const createGrants = (
     )
   }
 
+  /** What a refresh may ask for: the grant's scope, plus openid and offline_access from the server's list. */
+  const refreshCap = (granted: ReadonlyArray<string>): ReadonlyArray<string> => [
+    ...granted,
+    ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !granted.includes(scope)),
+  ]
+
   const refresh = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
     const claims = signer.verify(request.refreshToken ?? "").filterOrElse(usableAs("refresh"), () => "an access token")
     if (claims.isLeft()) return Left(Errors.invalidGrant("The refresh token is invalid or has expired."))
@@ -184,8 +190,9 @@ export const createGrants = (
     const outcome = await Try.fromPromise(
       rotate(
         grant,
+        // RFC 6749 §6: never more than was granted. openid and offline_access may be asked again.
         Option(request.scope)
-          .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
+          .flatMap((s) => narrowScope(splitScope(s), refreshCap(grant.scope)))
           .map((scope) => scope.join(" ")),
       ),
     )
