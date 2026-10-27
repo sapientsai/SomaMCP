@@ -14,6 +14,7 @@ import type { ClientRegistry } from "./clients.js"
 import { OAuthError as Errors, type OAuthError, toWireError } from "./errors.js"
 import { createPkcePair, isPkceMethod } from "./pkce.js"
 import type { PendingAuthorization, Records, UpstreamTokens } from "./records.js"
+import { narrowScope, splitScope } from "./scopes.js"
 import { randomToken } from "./secrets.js"
 import type { Upstream } from "./upstream.js"
 
@@ -140,8 +141,7 @@ export const createAuthorization = (
       proxyCodeChallenge: ownPkce.challenge,
       proxyCodeVerifier: ownPkce.verifier,
       scope: Option(params.scope)
-        .map((s) => s.split(" ").filter((part) => part !== ""))
-        .filter((parts) => parts.length > 0)
+        .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
         .orElse([...settings.scopes]),
       state,
     }
@@ -206,9 +206,9 @@ export const createAuthorization = (
   }
 
   /**
-   * Why `acceptSignIn` refuses who signed in, if it does. A client chooses the scope it asks the
-   * provider for, so when the server's own scopes include `openid` an id token is required:
-   * otherwise asking without `openid` would skip the check.
+   * Why `acceptSignIn` refuses who signed in, if it does. When the server's own scopes include
+   * `openid` the request always carries it (scopes.ts), so an id token is required: a sign-in
+   * that still comes back without one is refused rather than let through unchecked.
    */
   const refusal = (tokens: UpstreamTokens): Option<string> =>
     settings.acceptSignIn.flatMap((accept) =>

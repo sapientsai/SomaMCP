@@ -96,7 +96,7 @@ describe("the JWT signer", () => {
   const ISSUER = "https://mcp.test"
   const signer = createJwtSigner(ISSUER, "signing-secret")
   const issue = (lifetime = 3600, extraClaims?: Record<string, unknown>) =>
-    signer.issue({ clientId: "client-1", extraClaims, lifetime, scope: ["User.Read", "Mail.Read"] })
+    signer.issue({ clientId: "client-1", extraClaims, lifetime, scope: ["User.Read", "Mail.Read"], use: "access" })
 
   it("issues an RFC 7519 JWT: three base64url parts, an HS256 header, and the server's claims", () => {
     vi.useFakeTimers({ now: 1_700_000_000_000, toFake: ["Date"] })
@@ -113,6 +113,7 @@ describe("the JWT signer", () => {
       iss: ISSUER,
       jti,
       scope: ["User.Read", "Mail.Read"],
+      token_use: "access",
     })
   })
 
@@ -137,12 +138,18 @@ describe("the JWT signer", () => {
       "scope",
       "name",
       "oid",
+      "token_use",
     ])
     expect(signer.verify(token).isRight()).toBe(true)
   })
 
   it("rejects a token signed with another secret", () => {
-    const other = createJwtSigner(ISSUER, "another-secret").issue({ clientId: "c", lifetime: 60, scope: [] })
+    const other = createJwtSigner(ISSUER, "another-secret").issue({
+      clientId: "c",
+      lifetime: 60,
+      scope: [],
+      use: "access",
+    })
     expect(
       signer.verify(other.token).fold(
         (why) => why,
@@ -188,6 +195,7 @@ describe("the JWT signer", () => {
       clientId: "c",
       lifetime: 60,
       scope: [],
+      use: "access",
     })
     expect(
       signer.verify(elsewhere.token).fold(

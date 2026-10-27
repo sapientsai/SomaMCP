@@ -4,7 +4,6 @@ import { Option } from "functype"
 
 import { getRequestHeader } from "../../auth/request.js"
 import type { AuthProvider } from "../../types/auth.js"
-import type { Logger } from "../../types/server.js"
 import { idTokenClaims } from "./claims.js"
 import { createOAuthRoutes, mcpChallenge } from "./http.js"
 import type { UpstreamTokens } from "./records.js"
@@ -72,7 +71,7 @@ const buildProvider = <S extends OAuthSession>(
         () => Promise.resolve(undefined),
         async (bearer) => (await resolve(bearer)).map(sessionOf).orUndefined(),
       ),
-    challenge: mcpChallenge(server.issuer),
+    challenge: mcpChallenge(server.issuer, config.logger ?? console),
     close: server.close,
     routes: createOAuthRoutes(server, config.logger ?? console),
     upstreamTokens: async (bearer) => (await resolve(bearer)).orUndefined(),
@@ -80,23 +79,15 @@ const buildProvider = <S extends OAuthSession>(
 }
 
 /**
- * FastMCP's `AzureProviderConfig`, so a server moving off FastMCP passes the same object.
+ * FastMCP's `AzureProviderConfig`, so a server moving off FastMCP passes the same object, plus
+ * every option of the generic provider except `upstream` and `store` (here `tokenStorage`).
  * `tenantId` defaults to `"common"`, and `scopes` to `openid profile email`. When `tenantId` is
- * a tenant's id (a GUID), a sign-in whose id token names another tenant is refused.
+ * a tenant's id (a GUID), a sign-in whose id token names another tenant is refused, before
+ * `acceptSignIn` runs.
  */
-export type AzureProviderConfig = {
-  allowedRedirectUriPatterns?: ReadonlyArray<string>
-  allowPlainPkce?: boolean
-  authorizationResponseIss?: boolean
-  baseUrl: string
+export type AzureProviderConfig = Omit<OAuthProxyConfig, "scopes" | "store" | "upstream"> & {
   clientId: string
   clientSecret: string
-  consentRequired?: boolean
-  encryptionKey?: string | false
-  /** For calls to Microsoft's token endpoint. Defaults to the global `fetch`. */
-  fetch?: OAuthProxyConfig["fetch"]
-  jwtSigningKey?: string
-  logger?: Pick<Logger, "error" | "warn">
   scopes?: ReadonlyArray<string>
   tenantId?: string
   tokenStorage?: TokenStore
@@ -136,40 +127,48 @@ const sameTenant =
 
 /** Sign-in with Microsoft Entra ID (`login.microsoftonline.com/{tenant}/oauth2/v2.0`). */
 export const createAzureProvider = (config: AzureProviderConfig): OAuthAuthProvider<AzureSession> => {
-  const tenantId = config.tenantId ?? "common"
+  const { acceptSignIn, clientId, clientSecret, scopes: configured, tenantId: tenant, tokenStorage, ...shared } = config
+  const tenantId = tenant ?? "common"
   const authority = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0`
-  const scopes = config.scopes ?? ["openid", "profile", "email"]
-  const logger = config.logger ?? console
-  const checked = TENANT_ID.test(tenantId) ? Option(sameTenant(tenantId)) : Option.none<ReturnType<typeof sameTenant>>()
+  const scopes = configured ?? ["openid", "profile", "email"]
+  const tenantCheck = TENANT_ID.test(tenantId)
+    ? Option(sameTenant(tenantId))
+    : Option.none<ReturnType<typeof sameTenant>>()
+  const ownRule = Option(acceptSignIn)
   if (!scopes.includes("openid")) {
-    const unchecked = checked.fold(
-      () => "",
-      () => ", and the tenant is not checked",
-    )
-    logger.warn(
-      `[somamcp/oauth] scopes leave out openid, so Microsoft sends no id token: sessions have no oid, tid or upn${unchecked}.`,
+    const skipped = [
+      ...tenantCheck.fold(
+        () => [],
+        () => ["the tenant is not checked"],
+      ),
+      ...ownRule.fold(
+        () => [],
+        () => ["acceptSignIn never runs"],
+      ),
+    ]
+    ;(config.logger ?? console).warn(
+      `[somamcp/oauth] scopes leave out openid, so Microsoft sends no id token: sessions have no oid, tid or upn${skipped.map((s) => `, and ${s}`).join("")}.`,
     )
   }
+  const anyRule = tenantCheck.isSome() || ownRule.isSome()
+  /** The tenant check first, then the caller's own rule. */
+  const refusal = (claims: Readonly<Record<string, unknown>>): Option<string> =>
+    tenantCheck
+      .flatMap((check) => check(claims))
+      .fold(
+        () => ownRule.flatMap((rule) => Option(rule(claims))),
+        (reason) => Option(reason),
+      )
   return buildProvider(
     {
-      acceptSignIn: checked
-        .map((check) => (claims: Readonly<Record<string, unknown>>) => check(claims).orUndefined())
-        .orUndefined(),
-      allowedRedirectUriPatterns: config.allowedRedirectUriPatterns,
-      allowPlainPkce: config.allowPlainPkce,
-      authorizationResponseIss: config.authorizationResponseIss,
-      baseUrl: config.baseUrl,
-      consentRequired: config.consentRequired,
-      encryptionKey: config.encryptionKey,
-      fetch: config.fetch,
-      jwtSigningKey: config.jwtSigningKey,
-      logger: config.logger,
+      ...shared,
+      acceptSignIn: anyRule ? (claims) => refusal(claims).orUndefined() : undefined,
       scopes,
-      store: config.tokenStorage,
+      store: tokenStorage,
       upstream: {
         authorizationEndpoint: `${authority}/authorize`,
-        clientId: config.clientId,
-        clientSecret: config.clientSecret,
+        clientId,
+        clientSecret,
         name: "Microsoft",
         tokenEndpoint: `${authority}/token`,
       },
