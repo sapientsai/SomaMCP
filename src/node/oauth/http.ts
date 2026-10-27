@@ -5,6 +5,7 @@ import { Option, Try } from "functype"
 import type { Context } from "hono"
 
 import type { AuthChallenge, AuthRoute } from "../../types/auth.js"
+import { UserError } from "../../types/core.js"
 import type { Logger } from "../../types/server.js"
 import { readBoundedText } from "../../utils/body.js"
 import type { BrowserStep } from "./authorization.js"
@@ -39,20 +40,24 @@ export const protectedResourceMetadataUrl = (resource: string): string =>
 
 const resourceFor = (issuer: string, endpoint: string): string => `${issuer.replace(/\/+$/, "")}${endpoint}`
 
+/** What a 401 tells the client about a failure: a `UserError`'s message, else nothing internal. */
+const challengeMessage = (error: unknown, logger: Pick<Logger, "error">): string => {
+  if (error === undefined) return "Unauthorized: Authentication failed"
+  if (error instanceof UserError) return error.message
+  logger.error("[somamcp/oauth] authenticating an MCP request failed:", error)
+  return "Unauthorized: Authentication error"
+}
+
 /**
  * The 401 for an MCP request without a valid token, in the shape mcp-proxy sent in front of
  * FastMCP: the challenge points at the protected resource metadata (RFC 9728 §5.1), and the
- * body is a JSON-RPC error that echoes the request's id.
+ * body is a JSON-RPC error that echoes the request's id. Only a `UserError` reaches the client
+ * in words; anything else thrown is logged, because its message can name files or store keys.
  */
 export const mcpChallenge =
-  (issuer: string) =>
+  (issuer: string, logger: Pick<Logger, "error">) =>
   ({ endpoint, error, requestId }: AuthChallenge): Response => {
-    const message =
-      error === undefined
-        ? "Unauthorized: Authentication failed"
-        : error instanceof Error
-          ? error.message
-          : "Unauthorized: Authentication error"
+    const message = challengeMessage(error, logger)
     const parameters = [
       `resource_metadata="${protectedResourceMetadataUrl(resourceFor(issuer, endpoint))}"`,
       'error="invalid_token"',

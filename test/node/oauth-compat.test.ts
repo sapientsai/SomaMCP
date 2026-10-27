@@ -191,10 +191,31 @@ describe("compatibility with what fastmcp 4.22.10 stored and issued", () => {
       expect(res.status).toBe(200)
       const tokens = (await res.json()) as Record<string, string>
       expect(Object.keys(tokens).sort()).toEqual(Object.keys(flow1.tokenResponse).sort())
-      // The same claims, in the same order, as the token fastmcp issued for the same user.
-      expect(Object.keys(claimsOf(tokens.access_token ?? ""))).toEqual(
-        Object.keys(claimsOf(flow1.tokenResponse.access_token)),
+      // The server's own claims in fastmcp's order, then the token's type, which fastmcp's lack.
+      // fastmcp also copied Microsoft's claims (oid, name, …); somamcp copies none unless asked.
+      const own = ["aud", "client_id", "exp", "iat", "iss", "jti", "scope"]
+      expect(Object.keys(claimsOf(flow1.tokenResponse.access_token)).slice(0, own.length)).toEqual(own)
+      expect(Object.keys(claimsOf(tokens.access_token ?? ""))).toEqual([...own, "token_use"])
+    })
+
+    it("copy the same claims fastmcp did when claims are turned on", async () => {
+      const code = new URL(flow2.clientCallbackUrl).searchParams.get("code") ?? ""
+      const res = await serve(provider({ claims: true })).fetch(
+        new Request(
+          `${BASE}/oauth/token`,
+          form({
+            client_id: registration.client_id,
+            code,
+            code_verifier: flow2.codeVerifier,
+            grant_type: "authorization_code",
+          }),
+        ),
       )
+      const tokens = (await res.json()) as Record<string, string>
+      expect(Object.keys(claimsOf(tokens.access_token ?? ""))).toEqual([
+        ...Object.keys(claimsOf(flow1.tokenResponse.access_token)),
+        "token_use",
+      ])
     })
 
     it("report the code fastmcp marked spent as already used", async () => {

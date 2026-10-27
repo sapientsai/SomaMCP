@@ -431,12 +431,19 @@ describe("refreshing", () => {
     expect(provider.requests[2]?.body.get("refresh_token")).toBe("refresh-1")
   })
 
-  it("keeps the granted scope when the provider leaves it out, and passes a requested one on", async () => {
+  it("keeps the granted scope when the provider leaves it out, and passes a requested one on, narrowed", async () => {
     const { clientId, provider, server, tokens } = await signedIn()
     provider.queue(json({ access_token: "a2", expires_in: 3600, refresh_token: "r2" }))
-    const next = right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "User.Read"))
-    expect(provider.requests[1]?.body.get("scope")).toBe("User.Read")
+    const next = right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "User.Read Mail.Send"))
+    // The server's list is openid User.Read: Mail.Send is dropped and openid kept.
+    expect(provider.requests[1]?.body.get("scope")).toBe("openid User.Read")
     expect(next.scope).toBe("User.Read Mail.Read")
+  })
+
+  it("sends no scope on a refresh that asks for nothing on the server's list", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "Mail.Send Files.ReadWrite.All"))
+    expect(provider.requests[1]?.body.has("scope")).toBe(false)
   })
 
   it("chains: each new refresh token works once, and each new access token resolves", async () => {
@@ -509,5 +516,64 @@ describe("authenticating to the provider's token endpoint", () => {
     const tokens = await issueTokens(server, client_id)
     await refreshWith(server, client_id, tokens.refresh_token ?? "")
     expect(provider.requests[1]?.headers.get("authorization")).toMatch(/^Basic /)
+  })
+})
+
+describe("each token's type (token_use)", () => {
+  const signedIn = async () => {
+    const env = setup()
+    const { client_id } = await register(env.server)
+    return { ...env, clientId: client_id, tokens: await issueTokens(env.server, client_id) }
+  }
+
+  it("marks the access token access and the refresh token refresh", async () => {
+    const { tokens } = await signedIn()
+    expect(readClaims(tokens.access_token).orThrow().token_use).toBe("access")
+    expect(readClaims(tokens.refresh_token ?? "").orThrow().token_use).toBe("refresh")
+  })
+
+  it("refuses an access token as a refresh token, and leaves the real refresh token usable", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    expect(left(await refreshWith(server, clientId, tokens.access_token))._tag).toBe("InvalidGrant")
+    // Refused before the provider was called or anything was spent.
+    expect(provider.requests).toHaveLength(1)
+    expect((await refreshWith(server, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+
+  it("does not resolve a refresh token as a bearer token", async () => {
+    const { server, tokens } = await signedIn()
+    expect((await server.resolve(tokens.refresh_token ?? "")).isNone()).toBe(true)
+    expect((await server.resolve(tokens.access_token)).isSome()).toBe(true)
+  })
+})
+
+describe("claims in the issued tokens", () => {
+  const jwt = (claims: Record<string, unknown>) =>
+    `${Buffer.from('{"alg":"none"}').toString("base64url")}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.x`
+  const graphLike = { ipaddr: "203.0.113.7", name: "Avery Example", oid: "u-1", scp: "Mail.Read", upn: "a@x.test" }
+
+  it("carry none of the provider's by default, even when its access token is a readable JWT", async () => {
+    const { provider, server } = setup()
+    provider.queue(json({ access_token: jwt(graphLike), expires_in: 3600, refresh_token: "r" }))
+    const { client_id } = await register(server)
+    const tokens = await issueTokens(server, client_id)
+    expect(Object.keys(readClaims(tokens.access_token).orThrow())).toEqual([
+      "aud",
+      "client_id",
+      "exp",
+      "iat",
+      "iss",
+      "jti",
+      "scope",
+      "token_use",
+    ])
+  })
+
+  it("carry them when claims are turned on, and never let one replace token_use", async () => {
+    const { provider, server } = setup({ claims: true })
+    provider.queue(json({ access_token: jwt({ ...graphLike, token_use: "refresh" }), expires_in: 3600 }))
+    const { client_id } = await register(server)
+    const claims = readClaims((await issueTokens(server, client_id)).access_token).orThrow()
+    expect(claims).toMatchObject({ name: "Avery Example", oid: "u-1", token_use: "access" })
   })
 })

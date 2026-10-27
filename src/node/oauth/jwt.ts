@@ -3,13 +3,17 @@
 // The format is fixed by the tokens already in clients' hands. FastMCP signed them, so a
 // token verifies here when it has the header {"alg":"HS256","typ":"JWT"}, carries `jti`,
 // `exp`, `iss` and `aud`, and is signed with HMAC-SHA256 over the signing secret's raw UTF-8
-// bytes. Tokens issued here follow the same format, so FastMCP accepts them too.
+// bytes. Tokens issued here add `token_use`, so an access token can't stand in for a refresh
+// token or the other way round (RFC 8725 §3.12). FastMCP's tokens have none, so they are
+// accepted in either role until the first refresh replaces them.
 import { createHmac, randomBytes } from "node:crypto"
 
 import type { Either } from "functype"
 import { Left, Option, Right, Try } from "functype"
 
 import { sameSecret } from "./secrets.js"
+
+export type TokenUse = "access" | "refresh"
 
 export type TokenClaims = {
   readonly [claim: string]: unknown
@@ -20,6 +24,7 @@ export type TokenClaims = {
   readonly iss: string
   readonly jti: string
   readonly scope: ReadonlyArray<string>
+  readonly token_use?: unknown
 }
 
 export type TokenToIssue = {
@@ -28,6 +33,7 @@ export type TokenToIssue = {
   extraClaims?: Record<string, unknown>
   lifetime: number
   scope: ReadonlyArray<string>
+  use: TokenUse
 }
 
 export type JwtSigner = {
@@ -63,12 +69,18 @@ const checkClaims =
     return Right(claims as TokenClaims)
   }
 
+/** Whether a token may be used as `use`: it says so, or it predates `token_use` (FastMCP's). */
+export const usableAs =
+  (use: TokenUse) =>
+  (claims: TokenClaims): boolean =>
+    claims.token_use === undefined || claims.token_use === use
+
 /** Signs and verifies tokens whose issuer and audience are both `issuer`, the server's base URL. */
 export const createJwtSigner = (issuer: string, secret: string): JwtSigner => {
   const key = Buffer.from(secret, "utf8")
   const signature = (input: string): string => createHmac("sha256", key).update(input).digest("base64url")
 
-  const issue = ({ clientId, extraClaims, lifetime, scope }: TokenToIssue) => {
+  const issue = ({ clientId, extraClaims, lifetime, scope, use }: TokenToIssue) => {
     const iat = nowSeconds()
     const jti = randomBytes(16).toString("base64url")
     const claims = {
@@ -80,6 +92,7 @@ export const createJwtSigner = (issuer: string, secret: string): JwtSigner => {
       jti,
       scope,
       ...extraClaims,
+      token_use: use,
     }
     const payload = Buffer.from(JSON.stringify(claims)).toString("base64url")
     return { jti, token: `${encodedHeader}.${payload}.${signature(`${encodedHeader}.${payload}`)}` }

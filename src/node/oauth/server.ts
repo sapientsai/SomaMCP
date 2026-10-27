@@ -37,12 +37,15 @@ export type Lifetimes = {
  * - `authorizationResponseIss` — send `iss` on redirects back to the client (RFC 9207). Defaults to true.
  * - `baseUrl` — the server's public URL. It is the issuer and audience of its tokens, so it
  *   must not change while tokens are in use.
- * - `claims` — which upstream claims to copy into issued tokens. Defaults to every simple one.
+ * - `claims` — which upstream claims to copy into issued tokens. Off by default: tools get the
+ *   user from the session, and clients treat the token as opaque.
  * - `consentRequired` — show the consent page before the provider's sign-in. Defaults to true.
  * - `encryptionKey` — encrypts the store's contents. Unset generates one per process, so
  *   stored tokens do not survive a restart; `false` stores them unencrypted.
  * - `jwtSigningKey` — signs issued tokens. Unset generates one per process, so tokens stop
  *   working on restart.
+ * - `scopes` — the most the server asks the provider for. A client's `scope` narrows the list
+ *   and never adds to it; `openid` and `offline_access` stay whenever the list has them.
  * - `store` — where clients, codes and tokens live. Defaults to memory.
  */
 export type OAuthProxyConfig = {
@@ -122,12 +125,13 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       allowPlainPkce,
       defaultAccessTokenLifetime: lifetimes.accessToken,
       refreshTokenLifetime: lifetimes.refreshToken,
+      scopes: config.scopes,
     },
     records,
     clients,
     upstream,
     signer,
-    createClaimsCopier(config.claims ?? true, logger),
+    createClaimsCopier(config.claims ?? false, logger),
     logger,
   )
 

@@ -14,6 +14,7 @@ import type { ClientRegistry } from "./clients.js"
 import { OAuthError as Errors, type OAuthError, toWireError } from "./errors.js"
 import { createPkcePair, isPkceMethod } from "./pkce.js"
 import type { PendingAuthorization, Records, UpstreamTokens } from "./records.js"
+import { narrowScope, splitScope } from "./scopes.js"
 import { randomToken } from "./secrets.js"
 import type { Upstream } from "./upstream.js"
 
@@ -140,8 +141,7 @@ export const createAuthorization = (
       proxyCodeChallenge: ownPkce.challenge,
       proxyCodeVerifier: ownPkce.verifier,
       scope: Option(params.scope)
-        .map((s) => s.split(" ").filter((part) => part !== ""))
-        .filter((parts) => parts.length > 0)
+        .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
         .orElse([...settings.scopes]),
       state,
     }

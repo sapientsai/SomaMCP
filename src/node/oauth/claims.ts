@@ -24,7 +24,7 @@ export type ClaimsPolicy = {
 }
 
 /** Claims the server sets itself, or that would change how its token is validated. */
-const RESERVED = List(["aud", "client_id", "exp", "iat", "iss", "jti", "nbf", "scope"])
+const RESERVED = List(["aud", "client_id", "exp", "iat", "iss", "jti", "nbf", "scope", "token_use"])
 
 export type ClaimsCopier = (tokens: { accessToken: string; idToken?: string }) => Option<Record<string, unknown>>
 

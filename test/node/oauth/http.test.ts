@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { z } from "zod"
 
 import { type AzureSession, createAzureProvider, createMemoryStore, createServer } from "../../../src/node/index.js"
+import { mcpChallenge } from "../../../src/node/oauth/http.js"
 import type { OAuthAuthProvider } from "../../../src/node/oauth/provider.js"
+import { UserError } from "../../../src/types/core.js"
 import { rawRequest } from "../../backend/sdk-clients.js"
 import { CALLBACK, createFakeProvider, type FakeProvider, json, pkcePair, quiet, upstreamTokens } from "./harness.js"
 
@@ -518,6 +520,24 @@ describe("who signed in", () => {
   })
 
   describe("with tenantId set to a tenant's id", () => {
+    it("runs acceptSignIn after the tenant check, and only for accounts in the tenant", async () => {
+      const rule = vi.fn((claims: Readonly<Record<string, unknown>>) =>
+        claims.preferred_username === "avery@contoso.example" ? undefined : "Not on the pilot list.",
+      )
+      const outcome = async (claims: Record<string, unknown>) => {
+        const env = setup({ acceptSignIn: rule, scopes: ["openid"], tenantId: TENANT })
+        withIdToken(env, claims)
+        const back = (await signIn(env)).back
+        return back.searchParams.get("error_description") ?? `code: ${String(back.searchParams.has("code"))}`
+      }
+      expect(await outcome(person(OTHER))).toBe("This account belongs to another organization.")
+      expect(rule).not.toHaveBeenCalled()
+      expect(await outcome({ ...person(TENANT), preferred_username: "sam@contoso.example" })).toBe(
+        "Not on the pilot list.",
+      )
+      expect(await outcome(person(TENANT))).toBe("code: true")
+    })
+
     it("accepts a sign-in from that tenant", async () => {
       const env = setup({ scopes: ["openid"], tenantId: TENANT.toUpperCase() })
       withIdToken(env, person(TENANT))
@@ -547,10 +567,10 @@ describe("who signed in", () => {
       expect((await signIn(env)).back.searchParams.get("error")).toBe("access_denied")
     })
 
-    it("refuses a client that leaves openid out of its scope to skip the check", async () => {
+    it("keeps openid when a client leaves it out, and refuses a sign-in that still has no id token", async () => {
       const env = setup({ scopes: ["openid", "User.Read"], tenantId: TENANT })
       const flow = await signIn(env, { scope: "User.Read" })
-      expect(flow.upstream.searchParams.get("scope")).toBe("User.Read")
+      expect(flow.upstream.searchParams.get("scope")).toBe("openid User.Read")
       expect(flow.back.searchParams.get("error")).toBe("access_denied")
       expect(flow.back.searchParams.get("error_description")).toBe(
         "The provider sent no id token, so the account could not be checked.",
@@ -565,6 +585,21 @@ describe("who signed in", () => {
       const flow = await signIn(env)
       expect(flow.token.status).toBe(200)
     })
+  })
+
+  it("takes the generic provider's options, such as claims", async () => {
+    const env = setup({ claims: { allow: ["name"] }, scopes: ["openid"] })
+    withIdToken(env, person(TENANT))
+    const { tokens } = await signIn(env)
+    const claims = JSON.parse(Buffer.from((tokens.access_token ?? "").split(".")[1] ?? "", "base64url").toString())
+    expect(claims).toMatchObject({ name: "Avery Example", token_use: "access" })
+    expect(claims).not.toHaveProperty("oid")
+  })
+
+  it("warns that acceptSignIn never runs when the scopes leave out openid", () => {
+    const warn = vi.fn()
+    setup({ acceptSignIn: () => undefined, logger: { error: () => {}, warn } })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("and acceptSignIn never runs"))
   })
 
   it("does not check the tenant when tenantId is a name, not an id", async () => {
@@ -583,5 +618,24 @@ describe("who signed in", () => {
     const quietWarn = vi.fn()
     setup({ logger: { error: () => {}, warn: quietWarn }, scopes: ["openid"] })
     expect(quietWarn).not.toHaveBeenCalled()
+  })
+})
+
+describe("the MCP 401", () => {
+  it("tells the client what a UserError says, and nothing of any other error, which it logs", async () => {
+    const errors: unknown[][] = []
+    const challenge = mcpChallenge(BASE, { error: (...args: unknown[]) => errors.push(args) })
+    const answer = async (error?: unknown) => {
+      const res = challenge({ endpoint: "/mcp", error, request: new Request(`${BASE}/mcp`), requestId: 1 })
+      const body = (await res.json()) as { error: { message: string } }
+      return { header: res.headers.get("www-authenticate") ?? "", message: body.error.message }
+    }
+    expect((await answer(new UserError("Your access was switched off."))).message).toBe("Your access was switched off.")
+    expect(await answer()).toMatchObject({ message: "Unauthorized: Authentication failed" })
+    expect(errors).toHaveLength(0)
+    const leak = await answer(new Error("ENOENT: /var/lib/mcp/tokens/mapping_abc.json"))
+    expect(leak.message).toBe("Unauthorized: Authentication error")
+    expect(leak.header).not.toContain("/var/lib")
+    expect(String(errors[0]?.[1])).toContain("/var/lib/mcp/tokens")
   })
 })

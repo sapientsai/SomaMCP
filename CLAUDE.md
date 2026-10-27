@@ -84,7 +84,8 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 
 - `server.ts` puts the pieces together
 - `authorization.ts` is the browser flow (authorize, consent, callback)
-- `grants.ts` is the token endpoint
+- `grants.ts` is the token endpoint; `jwt.ts` marks each token `access` or `refresh` (`token_use`)
+- `scopes.ts` caps what a client can ask the provider for at the server's `scopes`
 - `upstream.ts` talks to the provider
 - `clients.ts` is registration
 - `http.ts` holds the routes and the MCP 401
@@ -92,14 +93,14 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `provider.ts` builds the session tools see: `claims` from the id token (never the access token, which Microsoft calls opaque), and for Azure `oid`, `tid` and `upn`, plus the tenant check when `tenantId` is a GUID
 - `errors.ts` is the `OAuthError` union; `http.ts` turns it into wire codes, and `authorization.ts` does the same on redirects back to a client
 
-**Compatibility is the contract.** `records.ts` and `stores/` must stay byte-compatible with what FastMCP 4.22.10 wrote, or every user of a server moved off FastMCP has to sign in again. That covers:
+**Compatibility is the contract, one way.** somamcp must keep reading what FastMCP 4.22.10 wrote, or every user of a server moved off FastMCP has to sign in again. Nothing moves back to FastMCP (Jordan, 2026-10-27), so FastMCP need not read what somamcp writes. The contract covers:
 
 - the key prefixes and record shapes
 - the DiskStore file names and `{ expiresAt, value }` files
 - the `"<iv>:<tag>:<ciphertext>"` AES-256-GCM format with the `fastmcp-oauth-proxy-salt` scrypt key
-- the HS256 JWT format in `jwt.ts`
+- the HS256 JWT format in `jwt.ts`. somamcp's own tokens add `token_use`; FastMCP's lack it and are accepted in either role
 
-`test/node/oauth-compat.test.ts` reads what FastMCP wrote (`test/fixtures/fastmcp-4.22.10-oauth`). After changing any of those files, also run `pnpm build && node test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs dist/node/index.js <fastmcp-4.22.10 dist>`, which proves FastMCP reads what this server writes. Everything else, such as error wording, pages and structure, is somamcp's own.
+`test/node/oauth-compat.test.ts` reads what FastMCP wrote (`test/fixtures/fastmcp-4.22.10-oauth`), and is the check that matters. `pnpm build && node test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs dist/node/index.js <fastmcp-4.22.10 dist>` also runs both servers on one store; its FastMCP-reads-somamcp checks are informational. Everything else, such as error wording, pages and structure, is somamcp's own.
 
 ### Content Helpers (`src/content/`)
 

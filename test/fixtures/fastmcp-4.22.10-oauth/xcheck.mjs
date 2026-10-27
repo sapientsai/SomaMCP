@@ -446,8 +446,14 @@ try {
       `${tokens.access_token.split(".")[0]} vs ${t4.access_token.split(".")[0]}`,
     )
     const claimsFm = Object.keys(JSON.parse(Buffer.from(tokens.access_token.split(".")[1], "base64url").toString()))
+    // The server's own seven claims in fastmcp's order. somamcp copies no provider claims by
+    // default, and adds token_use last, so an access token can't pass as a refresh token (#51).
     const claimsPort = Object.keys(JSON.parse(Buffer.from(t4.access_token.split(".")[1], "base64url").toString()))
-    check("B10 JWT claim keys and order identical", eq(claimsFm, claimsPort), `${claimsFm} | ${claimsPort}`)
+    check(
+      "B10 JWT claim keys and order: fastmcp's own seven, then token_use",
+      eq([...claimsFm.slice(0, 7), "token_use"], claimsPort),
+      `${claimsFm} | ${claimsPort}`,
+    )
     w.destroy()
     r.destroy()
   }

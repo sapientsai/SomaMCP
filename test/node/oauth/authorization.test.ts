@@ -57,13 +57,19 @@ describe("/oauth/authorize", () => {
     expect(await nameOf("  Claude ")).toBe("Claude")
   })
 
-  it("asks for the scopes the client requested, when it requests any", async () => {
-    const server = make(createFakeProvider())
+  it("narrows a client's scope to the server's list, and never widens it", async () => {
+    const server = make(createFakeProvider(), { scopes: ["openid", "offline_access", "User.Read", "Mail.Read"] })
     const { client_id } = await register(server)
-    const screen = consentOf(
-      right(await authorize(server, client_id, pkcePair().challenge, { scope: "Mail.Read  Files.Read" })),
-    )
-    expect(screen.scope).toEqual(["Mail.Read", "Files.Read"])
+    const scopeFor = async (scope: string) =>
+      consentOf(right(await authorize(server, client_id, pkcePair().challenge, { scope }))).scope
+    // openid and offline_access stay; Mail.Send and Files.ReadWrite.All are not on the list.
+    expect(await scopeFor("Mail.Read  Mail.Send Files.ReadWrite.All")).toEqual([
+      "openid",
+      "offline_access",
+      "Mail.Read",
+    ])
+    // Nothing the client asked for is on the list, so it gets the list.
+    expect(await scopeFor("Mail.Send")).toEqual(["openid", "offline_access", "User.Read", "Mail.Read"])
   })
 
   it("goes straight to the provider when consent is not required, and the sign-in completes", async () => {

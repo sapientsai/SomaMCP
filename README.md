@@ -222,12 +222,14 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 - Microsoft sends an id token only when the scopes include `openid`. Without it, all of these are empty, and the server warns at startup.
 - The id token comes straight from Microsoft's token endpoint over TLS, so its signature isn't checked. OpenID Connect Core §3.1.3.7 allows that, and somamcp does no JWKS fetch. The session's identity never comes from Microsoft's access token, which Microsoft says clients must treat as opaque.
 
-**Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. So does a sign-in that comes back without an id token, because a client chooses the scope it asks Microsoft for and could otherwise leave out `openid` to skip the check. Two settings skip the check:
+**Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. The server keeps `openid` whatever scope a client asks for, so Microsoft always sends an id token; a sign-in that still comes back without one is refused. Two settings skip the check:
 
 - **Server scopes without `openid`:** Microsoft never sends an id token, so there's nothing to check. The sign-in goes ahead, and the startup warning says the tenant isn't checked.
 - **A domain name, or `common`, `organizations` or `consumers`:** there's no single tenant id to compare. Give the GUID to get the check.
 
-The generic provider takes the same kind of rule as `acceptSignIn(claims)`, which returns the reason to refuse a sign-in, or `undefined` to accept it.
+`acceptSignIn(claims)` adds a rule of your own: it gets the id token's claims and returns the reason to refuse a sign-in, or `undefined` to accept it. On the Azure provider it runs after the tenant check, so it only sees accounts from your tenant. It runs at sign-in, not on refresh.
+
+`createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
 
 For another upstream provider, `createOAuthProxyProvider` takes its endpoints under `upstream` (`authorizationEndpoint`, `tokenEndpoint`, `clientId`, `clientSecret`, `name`).
 
@@ -241,22 +243,22 @@ For another upstream provider, `createOAuthProxyProvider` takes its endpoints un
 - `GET /oauth/callback`. Register `<baseUrl>/oauth/callback` as the app's redirect URI in Entra ID.
 - `POST /oauth/token`
 
-An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata="…", error="invalid_token", error_description="…"`.
+An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata="…", error="invalid_token", error_description="…"`. The description is `Unauthorized: Authentication failed` when there's no valid token. When `authenticate` throws, the client sees the message only of a `UserError`; anything else is logged and the 401 says `Unauthorized: Authentication error`, because an internal message can name files or store keys.
 
 **Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. They become the standard OAuth codes (`invalid_grant`, `invalid_client`, …) only where a response leaves the server, because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
 
 **The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part. The page has no scripts and can't be framed, and Deny comes first in the tab order. It has a light mode and works at phone width. A long scope list, such as the 20 or more a Microsoft 365 server asks for, shows its count and first 8 scopes, and the rest are one tap away under "Show all".
 
-**Moving from FastMCP.** `createAzureProvider` takes FastMCP's `AzureProviderConfig` unchanged, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. The storage formats match FastMCP 4.22.10's, so existing sign-ins survive the move, and a rollback to FastMCP keeps them too:
+**Moving from FastMCP.** `createAzureProvider` takes FastMCP's `AzureProviderConfig` unchanged, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. The move is one way: somamcp reads everything FastMCP 4.22.10 stored and issued, so existing sign-ins survive it. It reads:
 
 - the store layout and file names
 - AES-256-GCM with the same scrypt-derived key
-- HS256 JWTs with the same claims
+- FastMCP's HS256 JWTs
 - the same record shapes and key prefixes
 
 They survive only if the new server gets the same four values FastMCP had: `baseUrl` (the tokens' issuer and audience), `jwtSigningKey`, `encryptionKey`, and a `tokenStorage` on the same directory. A missing key falls back to a random one, as it does in FastMCP, which signs everyone out on the next restart.
 
-Two things guard this. `test/node/oauth-compat.test.ts` reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory runs this server and FastMCP against a shared store, in both directions.
+`test/node/oauth-compat.test.ts` guards this: it reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory also runs this server and FastMCP against a shared store. Its checks that FastMCP reads what somamcp writes are informational now, since nothing goes back to FastMCP.
 
 Defaults:
 
@@ -265,15 +267,16 @@ Defaults:
 - codes last 5 minutes and sign-ins 10
 - the upstream timeout is 10 seconds
 
-Set `lifetimes` on the generic provider to change them.
+Set `lifetimes` to change them.
 
 Behaviour to know about:
 
 - **PKCE is required.** A request without a `code_challenge` is sent back to the client with `invalid_request`.
 - **The token endpoint does not check `client_secret`.** PKCE binds a code to the client that started the flow. This matches FastMCP, so clients registered there keep working.
-- **Access and refresh tokens are interchangeable**, as they were in FastMCP: each works where the other is expected. Fixing it means changing the stored format, so it is tracked in #51.
+- **The client's `scope` can narrow the server's `scopes`, never widen them.** RFC 6749 §3.3 lets a server ignore part of what a client asks for. Scopes not on the list are dropped, `openid` and `offline_access` stay whenever the list has them, and a request with nothing on the list gets the whole list. The same goes for the scope on a refresh. The token response says what Microsoft granted. MCP clients ask for `scopes_supported`, which is the server's list, so they get what they ask for.
+- **Each token says what it is.** Issued tokens carry `token_use` (`access` or `refresh`), and each is refused in the other's place, as RFC 8725 §3.12 requires of an issuer of several kinds of JWT. FastMCP's tokens carry none, so they're accepted in either place until the client's first refresh replaces them, or for at most 30 days.
 - **A sign-in must pass the consent page.** A callback for a request that was never approved is refused. This is defence in depth: the real protection is the random transaction id and the redirect-URI allow-list, because nothing ties the consent POST to the browser that showed the page.
-- **Microsoft's token claims are copied into the issued JWTs**, except `aud`, `client_id`, `exp`, `iat`, `iss`, `jti`, `nbf` and `scope`. Set `claims` on the generic provider to narrow this or turn it off.
+- **Issued JWTs carry no claims from Microsoft by default.** Tools get the user from `session`, and clients treat the token as opaque. FastMCP copied every simple claim, which put each user's name, sign-in name and IP address into bearer tokens. Set `claims` to copy some (`true`, or a policy with `allow`, `block` and `prefix`). It reads the id token, and the access token unless `fromAccessToken: false`; Microsoft says clients should treat that one as opaque. `aud`, `client_id`, `exp`, `iat`, `iss`, `jti`, `nbf`, `scope` and `token_use` are never copied.
 - **Without `jwtSigningKey` or `encryptionKey`, a random key is generated per process**, so sign-ins and stored tokens do not survive a restart. The server warns at startup when `jwtSigningKey` is missing, and when `encryptionKey` is missing for a store you passed in.
 - **A value that will not decrypt is logged**, so a changed `encryptionKey` shows up in the logs instead of silently signing everyone out.
 
