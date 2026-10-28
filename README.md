@@ -245,7 +245,7 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 
 `acceptSignIn(claims)` adds a rule of your own: it gets the id token's claims and returns the reason to refuse a sign-in, or `undefined` to accept it. On the Azure provider it runs after the tenant check, so it only sees accounts from your tenant.
 
-Both run again on every refresh, on the newest id token. A rule tightened later, or a `tenantId` changed to a GUID, ends the sessions it now refuses: their next refresh gets `invalid_grant`, which makes the client sign in again. Access tokens already issued work until they expire, an hour by default. A session signed in without an id token, because `openid` was added later, has nothing to check, so it keeps refreshing until its user next signs in.
+Both run again on every refresh, on the newest id token. A rule tightened later, or a `tenantId` changed to a GUID, ends the sessions it now refuses: their next refresh gets `invalid_grant`, which makes the client sign in again. Access tokens already issued work until they expire, an hour by default. A session signed in without an id token, because `openid` was added later, has nothing to check. Its refreshes ask Microsoft only for what the sign-in granted, so no id token ever comes, and it keeps refreshing, unchecked, for as long as it's in use. If those sessions must end, change `jwtSigningKey`, which signs everyone out.
 
 `createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
 
@@ -278,7 +278,7 @@ The page is a confirmation for the user, not a guard against a hostile client. W
 
 They survive only if the new server gets the same four values FastMCP had: `baseUrl` (the tokens' issuer and audience), `jwtSigningKey`, `encryptionKey`, and a `tokenStorage` on the same directory. A missing key falls back to a random one, as it does in FastMCP, which signs everyone out on the next restart.
 
-Registered clients now expire 90 days after their last sign-in or refresh. A client FastMCP registered gets that expiry the next time it is used, so the store stops growing.
+Registered clients now expire 90 days after their last sign-in or refresh. A client FastMCP registered gets that expiry the next time it signs in or refreshes, so the store stops growing. A client unused that long gets `invalid_client` when it next tries to sign in, and some MCP clients then need the user to add the server again.
 
 `test/node/oauth-compat.test.ts` guards this: it reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory also runs this server and FastMCP against a shared store. Its checks that FastMCP reads what somamcp writes are informational now, since nothing goes back to FastMCP.
 

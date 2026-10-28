@@ -15,7 +15,7 @@ import { createMemoryStore } from "./stores/memory.js"
 import { background, type TokenStore } from "./stores/types.js"
 import { createUpstream, type UpstreamConfig } from "./upstream.js"
 
-/** Lifetimes in seconds. */
+/** Lifetimes in seconds. One left unset, or set to zero or less, takes its default. */
 export type Lifetimes = {
   /** For upstream access tokens that came without an `expires_in`. Defaults to an hour. */
   accessToken?: number
@@ -85,7 +85,18 @@ const DEFAULTS = {
 
 export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const logger = config.logger ?? console
-  const lifetimes = { ...DEFAULTS, ...config.lifetimes }
+  // An unset, zero or negative lifetime takes the default: to a store, a ttl of 0 means "never expires".
+  const lifetime = (name: keyof typeof DEFAULTS): number =>
+    Option(config.lifetimes?.[name])
+      .filter((seconds) => seconds > 0)
+      .orElse(DEFAULTS[name])
+  const lifetimes = {
+    accessToken: lifetime("accessToken"),
+    authorizationCode: lifetime("authorizationCode"),
+    client: lifetime("client"),
+    refreshToken: lifetime("refreshToken"),
+    transaction: lifetime("transaction"),
+  }
   const allowPlainPkce = config.allowPlainPkce ?? true
   const sendIssuer = config.authorizationResponseIss ?? true
 

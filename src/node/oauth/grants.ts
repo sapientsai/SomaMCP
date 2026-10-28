@@ -108,8 +108,15 @@ export const createGrants = (
     }
   }
 
+  /** A completed sign-in or refresh keeps the client longer. Failing to save it never fails either. */
+  const keepClient = (clientId: string): Promise<void> =>
+    clients.use(clientId).then(
+      () => undefined,
+      (error: unknown) => logger.error("[somamcp/oauth] could not keep a client after issuing it tokens:", error),
+    )
+
   const redeemCode = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
-    if (request.clientId === "" || (await clients.use(request.clientId)).isNone())
+    if (request.clientId === "" || (await clients.find(request.clientId)).isNone())
       return Left(Errors.unknownClient(request.clientId))
     const code = request.code ?? ""
     const redemption = await records.codes.redeem(code)
@@ -132,7 +139,9 @@ export const createGrants = (
 
     const key = randomToken()
     await keepUpstream(key, issued.upstreamTokens)
-    return Right(await issuePair(issued.clientId, issued.upstreamTokens, key))
+    const pair = await issuePair(issued.clientId, issued.upstreamTokens, key)
+    await keepClient(issued.clientId)
+    return Right(pair)
   }
 
   /**
@@ -183,13 +192,6 @@ export const createGrants = (
     ...granted,
     ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !granted.includes(scope)),
   ]
-
-  /** A refresh is a use of the client, so it is kept longer. Failing to save that never fails the refresh. */
-  const keepClient = (clientId: string): Promise<void> =>
-    clients.use(clientId).then(
-      () => undefined,
-      (error: unknown) => logger.error("[somamcp/oauth] could not extend a client after a refresh:", error),
-    )
 
   /** Whether a refresh that failed this way may be tried again with the same token. */
   const retryable = (error: OAuthError): boolean => error._tag !== "SignInRefused"

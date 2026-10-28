@@ -30,8 +30,9 @@ describe("requireScopes", () => {
     expect(mail(undefined)).toBe(false)
   })
 
-  it("with no scopes named, is requireAuth", () => {
-    expect(requireScopes()({})).toBe(true)
+  it("with no scopes named, needs a session with a scopes field, as FastMCP's did", () => {
+    expect(requireScopes()({ scopes: [] })).toBe(true)
+    expect(requireScopes()({})).toBe(false)
     expect(requireScopes()(undefined)).toBe(false)
   })
 

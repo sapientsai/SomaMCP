@@ -625,6 +625,8 @@ describe("acceptSignIn on a refresh", () => {
       _tag: "InvalidGrant",
       reason: "The refresh token was already used or has expired.",
     })
+    // Nothing from the refused refresh is kept; the access token already issued lasts its hour.
+    expect((await after.resolve(tokens.access_token)).orUndefined()?.accessToken).toBe("a")
   })
 
   it("keeps refreshing an account the rule accepts", async () => {
@@ -683,20 +685,38 @@ describe("how long a registered client is kept", () => {
     expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
   })
 
-  it("starts over at each authorize, code redemption and refresh", async () => {
+  it("starts over at each completed sign-in and refresh", async () => {
     const { saves, server } = setup()
     const { client_id } = await register(server)
     const tokens = await issueTokens(server, client_id)
-    // register, then authorize and the code's redemption
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS, NINETY_DAYS])
+    // registration, then the code's redemption
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS])
     right(await refreshWith(server, client_id, tokens.refresh_token ?? ""))
-    expect(clientSaves(saves, client_id)).toHaveLength(4)
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS, NINETY_DAYS])
+  })
+
+  it("not for an authorize alone, which anyone can send with a client's public id", async () => {
+    const { saves, server } = setup()
+    const { client_id } = await register(server)
+    await authorize(server, client_id, pkcePair().challenge)
+    await authorize(server, client_id, pkcePair().challenge, { redirect_uri: "https://elsewhere.example/cb" })
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
   })
 
   it("for lifetimes.client when set", async () => {
     const { saves, server } = setup({ lifetimes: { client: 3_600_000, refreshToken: 3_600 } })
     const { client_id } = await register(server)
     expect(clientSaves(saves, client_id)).toEqual([3_600_000])
+  })
+
+  it.each([
+    ["zero", 0],
+    ["negative", -1],
+    ["unset", undefined],
+  ])("for the default when lifetimes.client is %s, never for ever", async (_name, client) => {
+    const { saves, server } = setup({ lifetimes: { client } })
+    const { client_id } = await register(server)
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
   })
 
   it("warns when it is shorter than the refresh token's lifetime", () => {
@@ -726,7 +746,7 @@ describe("how long a registered client is kept", () => {
       redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
       registeredAt: new Date().toISOString(),
     })
-    consentOf(right(await authorize(server, "from-fastmcp", pkcePair().challenge)))
+    await issueTokens(server, "from-fastmcp")
     expect(clientSaves(saves, "from-fastmcp")).toEqual([undefined, NINETY_DAYS])
   })
 

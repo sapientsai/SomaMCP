@@ -550,6 +550,29 @@ describe("who signed in", () => {
       expect(await outcome(person(TENANT))).toBe("code: true")
     })
 
+    it("checks the tenant again on every refresh, and ends a session that now names another", async () => {
+      const env = setup({ scopes: ["openid"], tenantId: TENANT })
+      withIdToken(env, person(TENANT))
+      const { client, tokens } = await signIn(env)
+      const refresh = (refreshToken: string) =>
+        env.request(
+          "/oauth/token",
+          form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: refreshToken }),
+        )
+      // No id token on this refresh: the one from sign-in is judged, and passes.
+      const first = await refresh(tokens.refresh_token ?? "")
+      expect(first.status).toBe(200)
+      const next = ((await first.json()) as { refresh_token: string }).refresh_token
+      env.fake.queue(json({ ...upstreamTokens(3), id_token: idToken(person(OTHER)) }))
+      const refused = await refresh(next)
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toEqual({
+        error: "invalid_grant",
+        error_description: "This account belongs to another organization.",
+      })
+      expect(await (await refresh(next)).json()).toMatchObject({ error: "invalid_grant" })
+    })
+
     it("accepts a sign-in from that tenant", async () => {
       const env = setup({ scopes: ["openid"], tenantId: TENANT.toUpperCase() })
       withIdToken(env, person(TENANT))

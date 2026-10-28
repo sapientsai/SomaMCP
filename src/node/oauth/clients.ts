@@ -65,8 +65,8 @@ export type RegistrationResponse = ClientRegistration & {
 }
 
 /**
- * `lifetime` is how long, in seconds, a client is kept after it was registered or last used. A
- * client nobody signs in with or refreshes for that long is forgotten, so open registration
+ * `lifetime` is how long, in seconds, a client is kept after it registered, or last completed a
+ * sign-in or a refresh. A client nobody uses for that long is forgotten, so open registration
  * cannot fill the store.
  */
 export const createClientRegistry = (records: Records, patterns: Option<ReadonlyArray<string>>, lifetime: number) => {
@@ -121,7 +121,7 @@ export const createClientRegistry = (records: Records, patterns: Option<Readonly
     })
   }
 
-  /** The client, kept for another `lifetime` because it is in use. Nothing when it is gone. */
+  /** Keep the client another `lifetime`, after a completed sign-in or refresh. Nothing when it is gone. */
   const use = async (clientId: string): Promise<Option<RegisteredClient>> => {
     const client = await records.clients.find(clientId)
     await client.fold(
