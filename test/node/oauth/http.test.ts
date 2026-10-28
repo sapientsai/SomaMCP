@@ -293,19 +293,31 @@ describe("the token endpoint's client credentials", () => {
 })
 
 describe("request bodies", () => {
-  it("are refused past 1 MiB, declared or streamed, and the connection closed", async () => {
+  it("are refused past 64 KiB, declared or streamed, and the connection closed", async () => {
     const env = setup()
     const declared = await env.request(
       "/oauth/register",
-      postJson({ client_name: "x".repeat(1024 * 1024), redirect_uris: [CALLBACK] }),
+      postJson({ client_name: "x".repeat(64 * 1024), redirect_uris: [CALLBACK] }),
     )
     expect(declared.status).toBe(413)
     expect(declared.headers.get("connection")).toBe("close")
+    expect(await declared.json()).toEqual({
+      error: "invalid_request",
+      error_description: "The request body is over 64 KiB, or could not be read.",
+    })
     const streamed = await env.request(
       "/oauth/register",
-      chunked(Array.from({ length: 20 }, () => "x".repeat(64 * 1024))),
+      chunked(Array.from({ length: 5 }, () => "x".repeat(16 * 1024))),
     )
     expect(streamed.status).toBe(413)
+  })
+
+  it("are accepted up to the limit, with room for a client's jwks", async () => {
+    const res = await setup().request(
+      "/oauth/register",
+      postJson({ jwks: { keys: [{ n: "x".repeat(60 * 1024) }] }, redirect_uris: [CALLBACK] }),
+    )
+    expect(res.status).toBe(201)
   })
 
   it("arrive whole when sent in slow chunks, with characters split between chunks intact", async () => {

@@ -26,6 +26,11 @@ export type SdkBackendOptions = {
 const DEFAULT_MCP_PATH = "/mcp"
 /** The SDK's own default for `maxRequestBodySize`. */
 const DEFAULT_MAX_REQUEST_BODY_SIZE = 4 * 1024 * 1024
+/**
+ * How much of a rejected request is read to find its id. Anyone can send one, so it reads
+ * no more than a normal call needs; a bigger body gets a 401 with a null id.
+ */
+const MAX_REJECTED_BODY_SIZE = 64 * 1024
 /** somamcp 1.x's default keepalive interval, kept so `streamKeepalive` means what it did. */
 const DEFAULT_KEEPALIVE_MS = 20_000
 const SESSION_KEY = "somamcp/session"
@@ -147,7 +152,8 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   /** The JSON-RPC `id` of a rejected request, for its 401 body, or null. */
   const readRequestId = async (request: Request): Promise<AuthChallenge["requestId"]> => {
     if (request.method !== "POST") return null
-    const text = await readBoundedText(request, config.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE)
+    const limit = Math.min(config.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE, MAX_REJECTED_BODY_SIZE)
+    const text = await readBoundedText(request, limit)
     return text
       .flatMap(parseJson)
       .flatMap((message) => Option((message as { id?: unknown } | null)?.id))

@@ -187,6 +187,19 @@ A provider (`AuthProvider`) has three parts:
 - **`challenge({ endpoint, error, request, requestId })`** builds the response to an MCP request that failed authentication. This is typically a 401 with a `WWW-Authenticate` header. `requestId` is the request's JSON-RPC `id`, or `null` for a `GET`, a batch, or an unreadable body. `error` is what `authenticate` threw, and it is absent when `authenticate` resolved to no session. Only the MCP endpoint uses `challenge`: protected artifacts and routes keep their own `onUnauthorized`, or 401. Without a `challenge`, the endpoint answers a plain 401.
 - **`routes(endpoint)`** returns unprotected routes, such as OAuth metadata and `/oauth/*` endpoints. They are mounted once, when the server is created, so a route's path must not embed the MCP endpoint, which `start({ httpStream: { endpoint } })` can move later. To serve a path under the endpoint, such as `/.well-known/oauth-protected-resource/mcp`, mount a wildcard (`/.well-known/oauth-protected-resource/*`) and compare `c.req.path` with `endpoint()`, which reads the current path.
 
+### Gating tools
+
+A tool's `canAccess` decides, per session, whether a caller sees and can call it. `requireAuth` and `requireScopes`, from the main entry, cover the usual checks under the names FastMCP gave them:
+
+```typescript
+import { requireAuth, requireScopes } from "somamcp"
+
+server.addTool({ canAccess: requireAuth, name: "me" /* … */ })
+server.addTool({ canAccess: requireScopes("Mail.Send"), name: "send-mail" /* … */ })
+```
+
+`requireScopes` needs every scope it names in `session.scopes`, an array or a Set. With the OAuth providers below, those are the scopes Microsoft granted.
+
 ### OAuth server (`somamcp/node`)
 
 `createAzureProvider` makes the server its own OAuth 2.1 authorization server in front of Microsoft Entra ID. It handles dynamic client registration (RFC 7591), PKCE (RFC 7636), a consent page and token swap. Clients get the server's own JWTs, while Microsoft's tokens stay in encrypted storage, and tools see Microsoft's access token as `context.session.accessToken`.
@@ -201,8 +214,8 @@ const auth = createAzureProvider({
   clientSecret: process.env.AZURE_CLIENT_SECRET!,
   encryptionKey: process.env.TOKEN_ENCRYPTION_KEY!,
   jwtSigningKey: process.env.JWT_SIGNING_KEY!,
-  scopes: ["offline_access", "User.Read"],
-  tenantId: "common",
+  scopes: ["openid", "profile", "offline_access", "User.Read"],
+  tenantId: process.env.AZURE_TENANT_ID!, // the tenant's id, a GUID
   tokenStorage: createDiskStore({ directory: "/var/lib/mcp/tokens" }),
 })
 
@@ -215,11 +228,14 @@ server.addTool({
 await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType: "httpStream" })
 ```
 
+**Use the tenant's GUID and `openid`.** With both, Microsoft sends an id token, the session knows who signed in, and accounts from other tenants are refused. With `common` or without `openid`, any account Entra ID lets sign in to the app gets a session, and nothing says whose it is. The server warns at startup when `openid` is missing.
+
 **Who signed in.** Tools get the user from the sign-in, never from a tool argument:
 
 - `session.claims` holds the id token's claims, or `{}` when Microsoft sent no id token or one that can't be read.
 - The Azure provider's session (`AzureSession`) adds `oid` (the user's object id), `tid` (their tenant) and `upn` (their sign-in name, from `preferred_username`).
 - Microsoft sends an id token only when the scopes include `openid`. Without it, all of these are empty, and the server warns at startup.
+- The id token stays in the server's store, like Microsoft's other tokens. The token response to the client has no `id_token`, so a client never holds one.
 - The id token comes straight from Microsoft's token endpoint over TLS, so its signature isn't checked. OpenID Connect Core §3.1.3.7 allows that, and somamcp does no JWKS fetch. The session's identity never comes from Microsoft's access token, which Microsoft says clients must treat as opaque.
 
 **Restricting the tenant.** When `tenantId` is a tenant's id (a GUID), a sign-in whose id token names another tenant is refused. Both `tid` and the issuer must match, and the client gets `access_denied` on its redirect URI. The server keeps `openid` whatever scope a client asks for, so Microsoft always sends an id token; a sign-in that still comes back without one is refused. Two settings skip the check:
@@ -227,7 +243,9 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 - **Server scopes without `openid`:** Microsoft never sends an id token, so there's nothing to check. The sign-in goes ahead, and the startup warning says the tenant isn't checked.
 - **A domain name, or `common`, `organizations` or `consumers`:** there's no single tenant id to compare. Give the GUID to get the check.
 
-`acceptSignIn(claims)` adds a rule of your own: it gets the id token's claims and returns the reason to refuse a sign-in, or `undefined` to accept it. On the Azure provider it runs after the tenant check, so it only sees accounts from your tenant. It runs at sign-in, not on refresh.
+`acceptSignIn(claims)` adds a rule of your own: it gets the id token's claims and returns the reason to refuse a sign-in, or `undefined` to accept it. On the Azure provider it runs after the tenant check, so it only sees accounts from your tenant.
+
+Both run again on every refresh, on the newest id token. A rule tightened later, or a `tenantId` changed to a GUID, ends the sessions it now refuses: their next refresh gets `invalid_grant`, which makes the client sign in again. Access tokens already issued work until they expire, an hour by default. A session signed in without an id token, because `openid` was added later, has nothing to check, so it keeps refreshing until its user next signs in.
 
 `createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
 
@@ -247,7 +265,9 @@ An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer res
 
 **Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. They become the standard OAuth codes (`invalid_grant`, `invalid_client`, …) only where a response leaves the server, because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
 
-**The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part. The page has no scripts and can't be framed, and Deny comes first in the tab order. It has a light mode and works at phone width. A long scope list, such as the 20 or more a Microsoft 365 server asks for, shows its count and first 8 scopes, and the rest are one tap away under "Show all".
+**The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part.
+
+The page is a confirmation for the user, not a guard against a hostile client. Whoever starts a sign-in holds its transaction id, so they can approve it themselves. What stops a stolen sign-in is the redirect-URI allow-list: the code only ever goes to a URI on it. Keep `allowedRedirectUriPatterns` to hosts you trust, such as `https://claude.ai/*` and loopback, and never a pattern like `https://*` that lets anyone register a host they run. The page has no scripts and can't be framed, and Deny comes first in the tab order. It has a light mode and works at phone width. A long scope list, such as the 20 or more a Microsoft 365 server asks for, shows its count and first 8 scopes, and the rest are one tap away under "Show all".
 
 **Moving from FastMCP.** `createAzureProvider` takes FastMCP's `AzureProviderConfig` unchanged, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. The move is one way: somamcp reads everything FastMCP 4.22.10 stored and issued, so existing sign-ins survive it. It reads:
 
@@ -258,6 +278,8 @@ An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer res
 
 They survive only if the new server gets the same four values FastMCP had: `baseUrl` (the tokens' issuer and audience), `jwtSigningKey`, `encryptionKey`, and a `tokenStorage` on the same directory. A missing key falls back to a random one, as it does in FastMCP, which signs everyone out on the next restart.
 
+Registered clients now expire 90 days after their last sign-in or refresh. A client FastMCP registered gets that expiry the next time it is used, so the store stops growing.
+
 `test/node/oauth-compat.test.ts` guards this: it reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory also runs this server and FastMCP against a shared store. Its checks that FastMCP reads what somamcp writes are informational now, since nothing goes back to FastMCP.
 
 Defaults:
@@ -265,12 +287,14 @@ Defaults:
 - access tokens follow Microsoft's `expires_in`
 - refresh tokens last 30 days
 - codes last 5 minutes and sign-ins 10
+- registered clients last 90 days after their last sign-in or refresh
 - the upstream timeout is 10 seconds
 
 Set `lifetimes` to change them.
 
 Behaviour to know about:
 
+- **Request bodies are capped at 64 KiB.** A registration, consent or token request over that gets a 413. An MCP request that fails authentication is read up to 64 KiB for its JSON-RPC id; past that, the 401 has a `null` id.
 - **PKCE is required.** A request without a `code_challenge` is sent back to the client with `invalid_request`.
 - **The token endpoint does not check `client_secret`.** PKCE binds a code to the client that started the flow. This matches FastMCP, so clients registered there keep working.
 - **The client's `scope` can narrow the server's `scopes`, never widen them.** RFC 6749 §3.3 lets a server ignore part of what a client asks for. Scopes not on the list are dropped, `openid` and `offline_access` stay whenever the list has them, and a request with nothing on the list gets the whole list. A refresh is capped at what the sign-in was granted instead (RFC 6749 §6), and one with nothing granted on it sends no scope, so Microsoft keeps the original. The token response says what Microsoft granted. MCP clients ask for `scopes_supported`, which is the server's list, so they get what they ask for.
@@ -587,7 +611,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 **Auth & Routes**
 
-- `createAuthMiddleware`, `getRequestHeader`
+- `createAuthMiddleware`, `getRequestHeader`, `requireAuth`, `requireScopes`
 - `auth` on `ServerConfig`: an `AuthProvider` (`authenticate`, `challenge`, `routes`); see [Auth Providers](#auth-providers)
 - Types: `Authenticate`, `OnUnauthorized`, `AuthMiddlewareConfig`, `AuthProvider`, `AuthChallenge`, `AuthRoute`, `RouteConfig`, `RouteMethod`
 

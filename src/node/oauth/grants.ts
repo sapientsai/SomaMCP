@@ -3,11 +3,12 @@
 // Clients never see the provider's tokens. The server issues its own JWT pair and keeps the
 // provider's tokens in the store: each JWT's `jti` maps to a key under which they live.
 // Authorization codes and refresh tokens are single-use, claimed with the store's atomic
-// `take`; a refresh that fails puts its token back, so the client can retry it.
+// `take`; a refresh that fails puts its token back, so the client can retry it, unless it
+// failed because `acceptSignIn` now refuses the account.
 import type { Either } from "functype"
 import { Left, Option, Right, Try } from "functype"
 
-import type { ClaimsCopier } from "./claims.js"
+import { type ClaimsCopier, idTokenClaims } from "./claims.js"
 import type { ClientRegistry } from "./clients.js"
 import { OAuthError as Errors, type OAuthError } from "./errors.js"
 import { type JwtSigner, type TokenUse, usableAs } from "./jwt.js"
@@ -35,6 +36,8 @@ export type TokenResponse = {
 }
 
 export type GrantSettings = {
+  /** The reason to refuse a sign-in, given its id token's claims. Checked again on every refresh. */
+  acceptSignIn: Option<(claims: Readonly<Record<string, unknown>>) => Option<string>>
   allowPlainPkce: boolean
   /** For upstream tokens that came without an `expires_in`. */
   defaultAccessTokenLifetime: number
@@ -106,7 +109,7 @@ export const createGrants = (
   }
 
   const redeemCode = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
-    if (request.clientId === "" || (await clients.find(request.clientId)).isNone())
+    if (request.clientId === "" || (await clients.use(request.clientId)).isNone())
       return Left(Errors.unknownClient(request.clientId))
     const code = request.code ?? ""
     const redemption = await records.codes.redeem(code)
@@ -132,6 +135,16 @@ export const createGrants = (
     return Right(await issuePair(issued.clientId, issued.upstreamTokens, key))
   }
 
+  /**
+   * Why `acceptSignIn` refuses the account behind a refresh, judged on the newest id token. A
+   * session signed in without one (no `openid` then) has nothing to judge, and is let through:
+   * refusing it would sign out every user of a server that adds `openid` later.
+   */
+  const refusal = (tokens: UpstreamTokens): Option<string> =>
+    settings.acceptSignIn.flatMap((accept) =>
+      Option(tokens.idToken).flatMap((idToken) => accept(idTokenClaims(idToken))),
+    )
+
   /** After a failed refresh: save the grant again under its original expiry, so retrying never extends it. */
   const restore = async (grant: TokenGrant): Promise<void> => {
     if (grant.expiresAt.getTime() <= Date.now()) return
@@ -153,10 +166,12 @@ export const createGrants = (
           ...fresh,
           idToken: Option(fresh.idToken)
             .filter((idToken) => idToken !== "")
-            .or(Option(current.idToken))
+            .or(Option(current.idToken).filter((idToken) => idToken !== ""))
             .orUndefined(),
           scope: fresh.scope.length > 0 ? fresh.scope : current.scope,
         }
+        const refused = refusal(tokens)
+        if (refused.isSome()) return Left<OAuthError, TokenResponse>(Errors.signInRefused(refused.orElse("")))
         await keepUpstream(grant.upstreamTokenKey, tokens)
         return Right<OAuthError, TokenResponse>(await issuePair(grant.clientId, tokens, grant.upstreamTokenKey))
       },
@@ -168,6 +183,16 @@ export const createGrants = (
     ...granted,
     ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !granted.includes(scope)),
   ]
+
+  /** A refresh is a use of the client, so it is kept longer. Failing to save that never fails the refresh. */
+  const keepClient = (clientId: string): Promise<void> =>
+    clients.use(clientId).then(
+      () => undefined,
+      (error: unknown) => logger.error("[somamcp/oauth] could not extend a client after a refresh:", error),
+    )
+
+  /** Whether a refresh that failed this way may be tried again with the same token. */
+  const retryable = (error: OAuthError): boolean => error._tag !== "SignInRefused"
 
   const refresh = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
     const claims = signer.verify(request.refreshToken ?? "").filterOrElse(usableAs("refresh"), () => "an access token")
@@ -196,8 +221,16 @@ export const createGrants = (
           .map((scope) => scope.join(" ")),
       ),
     )
-    if (outcome.isFailure() || outcome.orThrow().isLeft()) await putBack()
-    return outcome.orThrow()
+    if (outcome.isFailure()) {
+      await putBack()
+      return outcome.orThrow()
+    }
+    const result = outcome.orThrow()
+    await result.fold(
+      (error) => (retryable(error) ? putBack() : Promise.resolve()),
+      () => keepClient(grant.clientId),
+    )
+    return result
   }
 
   const token = (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {

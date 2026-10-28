@@ -13,7 +13,8 @@ import { type OAuthError, toWireError, wireErrorBody } from "./errors.js"
 import { consentPage, errorPage, PAGE_SECURITY_HEADERS } from "./pages.js"
 import type { AuthorizationServer } from "./server.js"
 
-const MAX_BODY_BYTES = 1024 * 1024
+/** Registration, consent and token requests need a few KiB; this leaves room for a client's `jwks`. */
+const MAX_BODY_KIB = 64
 const JSON_TYPE = "application/json; charset=utf-8"
 const HTML_TYPE = "text/html; charset=utf-8"
 /** Responses carrying credentials must not be cached (RFC 6749 §5.1). */
@@ -70,9 +71,16 @@ export const mcpChallenge =
   }
 
 const tooLarge = (): Response =>
-  json({ error: "invalid_request", error_description: "The request body is over 1 MiB, or could not be read." }, 413, {
-    Connection: "close",
-  })
+  json(
+    {
+      error: "invalid_request",
+      error_description: `The request body is over ${MAX_BODY_KIB} KiB, or could not be read.`,
+    },
+    413,
+    {
+      Connection: "close",
+    },
+  )
 
 const formDecode = (part: string): string => Try(() => decodeURIComponent(part.replace(/\+/g, " "))).orElse(part)
 
@@ -130,7 +138,7 @@ export const createOAuthRoutes = (
     )
 
   const withBody = async (c: Context, handle: (body: string) => Promise<Response>): Promise<Response> =>
-    (await readBoundedText(c.req.raw, MAX_BODY_BYTES)).fold(
+    (await readBoundedText(c.req.raw, MAX_BODY_KIB * 1024)).fold(
       () => Promise.resolve(tooLarge()),
       (body) => handle(body),
     )

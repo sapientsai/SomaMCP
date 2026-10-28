@@ -589,3 +589,154 @@ describe("claims in the issued tokens", () => {
     expect(claims).toMatchObject({ name: "Avery Example", oid: "u-1", token_use: "access" })
   })
 })
+
+describe("acceptSignIn on a refresh", () => {
+  const idToken = (claims: Record<string, unknown>) =>
+    [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
+  const onlyOk = (claims: Readonly<Record<string, unknown>>) =>
+    claims.email === "ok@example.com" ? undefined : "Not on the list."
+
+  /** Signed in on one server, refreshed on another with the same store and keys: a restart with new settings. */
+  const signedInThenRestarted = async (
+    first: Parameters<typeof createTestServer>[1],
+    second: Parameters<typeof createTestServer>[1],
+    signInAnswer?: Response,
+  ) => {
+    const provider = createFakeProvider()
+    const store = createMemoryStore()
+    const before = make(provider, { encryptionKey: false, store, ...first })
+    const { client_id } = await register(before)
+    if (signInAnswer) provider.queue(signInAnswer)
+    const tokens = await issueTokens(before, client_id)
+    before.close()
+    const after = make(provider, { encryptionKey: false, store, ...second })
+    return { after, clientId: client_id, provider, tokens }
+  }
+
+  it("ends the session, with invalid_grant, once the rule refuses the account, and does not put the token back", async () => {
+    const { after, clientId, tokens } = await signedInThenRestarted(
+      {},
+      { acceptSignIn: onlyOk },
+      json({ access_token: "a", id_token: idToken({ email: "other@example.com" }), refresh_token: "r" }),
+    )
+    const refused = await refreshWith(after, clientId, tokens.refresh_token ?? "")
+    expect(wire(refused)).toEqual({ code: "invalid_grant", description: "Not on the list.", status: 400 })
+    expect(left(await refreshWith(after, clientId, tokens.refresh_token ?? ""))).toEqual({
+      _tag: "InvalidGrant",
+      reason: "The refresh token was already used or has expired.",
+    })
+  })
+
+  it("keeps refreshing an account the rule accepts", async () => {
+    const { after, clientId, tokens } = await signedInThenRestarted(
+      {},
+      { acceptSignIn: onlyOk },
+      json({ access_token: "a", id_token: idToken({ email: "ok@example.com" }), refresh_token: "r" }),
+    )
+    expect((await refreshWith(after, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+
+  it("judges the id token the refresh brought, when it brought one", async () => {
+    const accept = vi.fn(onlyOk)
+    const env = setup({ acceptSignIn: accept })
+    const { client_id } = await register(env.server)
+    env.provider.queue(json({ access_token: "a", id_token: idToken({ email: "ok@example.com" }), refresh_token: "r" }))
+    const tokens = await issueTokens(env.server, client_id)
+    env.provider.queue(
+      json({ access_token: "b", id_token: idToken({ email: "moved@example.com" }), refresh_token: "s" }),
+    )
+    expect(wire(await refreshWith(env.server, client_id, tokens.refresh_token ?? "")).description).toBe(
+      "Not on the list.",
+    )
+    expect(accept.mock.calls.map(([claims]) => claims.email)).toEqual(["ok@example.com", "moved@example.com"])
+  })
+
+  it("lets through a session signed in without an id token, so adding openid and a rule signs no one out", async () => {
+    const accept = vi.fn(() => "Refuses everyone.")
+    const { after, clientId, tokens } = await signedInThenRestarted(
+      { scopes: ["User.Read"] },
+      { acceptSignIn: accept, scopes: ["openid", "User.Read"] },
+    )
+    expect((await refreshWith(after, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+    expect(accept).not.toHaveBeenCalled()
+  })
+
+  it("still puts the token back when the provider fails, with a rule set", async () => {
+    const env = setup({ acceptSignIn: onlyOk })
+    const { client_id } = await register(env.server)
+    env.provider.queue(json({ access_token: "a", id_token: idToken({ email: "ok@example.com" }), refresh_token: "r" }))
+    const tokens = await issueTokens(env.server, client_id)
+    env.provider.queue(json({ error: "temporarily_unavailable" }, 503))
+    expect((await refreshWith(env.server, client_id, tokens.refresh_token ?? "")).isLeft()).toBe(true)
+    expect((await refreshWith(env.server, client_id, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+})
+
+describe("how long a registered client is kept", () => {
+  const NINETY_DAYS = 90 * 24 * 60 * 60
+  const clientSaves = (saves: ReturnType<typeof setup>["saves"], clientId: string) =>
+    saves.filter((s) => s.key === `client:${clientId}`).map((s) => s.ttl)
+
+  it("90 days from registration by default", async () => {
+    const { saves, server } = setup()
+    const { client_id } = await register(server)
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
+  })
+
+  it("starts over at each authorize, code redemption and refresh", async () => {
+    const { saves, server } = setup()
+    const { client_id } = await register(server)
+    const tokens = await issueTokens(server, client_id)
+    // register, then authorize and the code's redemption
+    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS, NINETY_DAYS])
+    right(await refreshWith(server, client_id, tokens.refresh_token ?? ""))
+    expect(clientSaves(saves, client_id)).toHaveLength(4)
+  })
+
+  it("for lifetimes.client when set", async () => {
+    const { saves, server } = setup({ lifetimes: { client: 3_600_000, refreshToken: 3_600 } })
+    const { client_id } = await register(server)
+    expect(clientSaves(saves, client_id)).toEqual([3_600_000])
+  })
+
+  it("warns when it is shorter than the refresh token's lifetime", () => {
+    const warn = vi.fn()
+    setup({ lifetimes: { client: 60 }, logger: { error: () => {}, warn } })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lifetimes.client is shorter"))
+  })
+
+  it("forgets a client the store has dropped, while its refresh tokens keep working", async () => {
+    const { server, store } = setup()
+    const { client_id } = await register(server)
+    const tokens = await issueTokens(server, client_id)
+    await store.delete(`client:${client_id}`)
+    expect(left(await authorize(server, client_id, pkcePair().challenge))).toEqual({
+      _tag: "UnknownClient",
+      clientId: client_id,
+    })
+    expect((await refreshWith(server, client_id, tokens.refresh_token ?? "")).isRight()).toBe(true)
+    expect(await store.get(`client:${client_id}`)).toBeUndefined()
+  })
+
+  it("gives a client FastMCP saved with no expiry one on its next use", async () => {
+    const { saves, server, store } = setup()
+    await store.save("client:from-fastmcp", {
+      callbackUrl: "https://claude.ai/api/mcp/auth_callback",
+      clientId: "from-fastmcp",
+      redirectUris: ["https://claude.ai/api/mcp/auth_callback"],
+      registeredAt: new Date().toISOString(),
+    })
+    consentOf(right(await authorize(server, "from-fastmcp", pkcePair().challenge)))
+    expect(clientSaves(saves, "from-fastmcp")).toEqual([undefined, NINETY_DAYS])
+  })
+
+  it("never fails a refresh because the client could not be saved again", async () => {
+    const env = setup()
+    const { client_id } = await register(env.server)
+    const tokens = await issueTokens(env.server, client_id)
+    const save = env.store.save
+    env.store.save = (key, value, ttl) =>
+      key.startsWith("client:") ? Promise.reject(new Error("disk full")) : save(key, value, ttl)
+    expect((await refreshWith(env.server, client_id, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+})

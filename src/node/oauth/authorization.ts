@@ -113,7 +113,7 @@ export const createAuthorization = (
     const redirectUri = params.redirect_uri ?? ""
     if (clientId === "" || redirectUri === "")
       return Left(Errors.invalidRequest("The request needs a client_id and a redirect_uri."))
-    const client = await clients.find(clientId)
+    const client = await clients.use(clientId)
     if (client.isNone()) return Left(Errors.unknownClient(clientId))
     if (!client.exists((c) => c.redirectUris.includes(redirectUri)))
       return Left(Errors.invalidRequest("That redirect_uri is not registered for this client."))

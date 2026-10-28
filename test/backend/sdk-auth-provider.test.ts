@@ -77,6 +77,16 @@ describe("createServer({ auth })", () => {
     expect(((await res.json()) as AuthChallenge).requestId).toBeNull()
   })
 
+  it("reads no more than 64 KiB of a rejected request for its id, whatever maxRequestBodySize allows", async () => {
+    const server = makeServer({ maxRequestBodySize: 10 * 1024 * 1024 })
+    const sized = (pad: number) =>
+      post({ id: 3, jsonrpc: "2.0", method: "tools/list", params: { pad: "x".repeat(pad) } })
+    expect(((await (await server.fetch(sized(60 * 1024))).json()) as AuthChallenge).requestId).toBe(3)
+    const big = await server.fetch(sized(65 * 1024))
+    expect(big.status).toBe(401)
+    expect(((await big.json()) as AuthChallenge).requestId).toBeNull()
+  })
+
   it("does not read a body over maxRequestBodySize for the id", async () => {
     const res = await makeServer({ maxRequestBodySize: 64 }).fetch(
       post({ id: 3, jsonrpc: "2.0", method: "tools/list", params: { pad: "x".repeat(200) } }),

@@ -80,7 +80,7 @@ export { UserError } from "./types/index.js"
 
 // Auth helpers (for `authenticate` callbacks + custom middleware)
 export type { Authenticate, AuthMiddlewareConfig, OnUnauthorized } from "./auth/index.js"
-export { createAuthMiddleware, getRequestHeader } from "./auth/index.js"
+export { createAuthMiddleware, getRequestHeader, requireAuth, requireScopes } from "./auth/index.js"
 
 // Content helpers
 export type { ContentInput } from "./content/index.js"
