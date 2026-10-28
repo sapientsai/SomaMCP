@@ -5,7 +5,7 @@
 // keeps every user signed in. test/node/oauth-compat.test.ts and
 // test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs hold it in place: change a field name or a
 // prefix here and they fail.
-import { Map, Option, Ref, Tuple } from "functype"
+import { Option } from "functype"
 import { z } from "zod"
 
 import type { TokenStore } from "./stores/types.js"
@@ -131,31 +131,20 @@ export const createRecords = (store: TokenStore) => {
     return value
   }
 
-  // Clients are immutable once registered, so after the first read they are served from memory.
-  const known = Ref(Map.empty<string, RegisteredClient>())
-  const remember = (client: RegisteredClient): void => {
-    known.set(known.get().add(Tuple<[string, RegisteredClient]>([client.clientId, client])))
-  }
-
+  // No cache in front: a client lasts as long as the store keeps it, and every instance sees the same.
   const clients = {
-    /** Saved before it is cached: if the save fails, this instance must not know a client the others never will. */
-    add: async (client: RegisteredClient): Promise<void> => {
-      await store.save(`${KEY.client}${client.clientId}`, client)
-      remember(client)
-    },
     find: async (clientId: string): Promise<Option<RegisteredClient>> => {
-      const cached = known.get().get(clientId)
-      if (cached.isSome()) return cached
       const stored = decode(clientSchema, await store.get(`${KEY.client}${clientId}`))
       // Only clients FastMCP fetched from a metadata document have an expiresAt; this server never writes one.
       if (stored.exists((client) => client.expiresAt !== undefined && lapsed(client.expiresAt))) {
         await store.delete(`${KEY.client}${clientId}`)
         return Option.none()
       }
-      stored.forEach(remember)
       return stored
     },
-    forget: (): void => known.set(Map.empty()),
+    /** Kept for `ttl` seconds from now; saving it again starts the time over. */
+    save: (client: RegisteredClient, ttl: number): Promise<void> =>
+      store.save(`${KEY.client}${client.clientId}`, client, ttl),
   }
 
   const pending = {

@@ -64,7 +64,12 @@ export type RegistrationResponse = ClientRegistration & {
   token_endpoint_auth_method: string
 }
 
-export const createClientRegistry = (records: Records, patterns: Option<ReadonlyArray<string>>) => {
+/**
+ * `lifetime` is how long, in seconds, a client is kept after it registered, or last completed a
+ * sign-in or a refresh. A client nobody uses for that long is forgotten, so open registration
+ * cannot fill the store.
+ */
+export const createClientRegistry = (records: Records, patterns: Option<ReadonlyArray<string>>, lifetime: number) => {
   const register = async (input: unknown): Promise<Either<OAuthError, RegistrationResponse>> => {
     const parsed = registrationSchema.safeParse(input)
     if (!parsed.success) {
@@ -101,7 +106,7 @@ export const createClientRegistry = (records: Records, patterns: Option<Readonly
       redirectUris: request.redirect_uris,
       registeredAt: new Date(),
     }
-    await records.clients.add(client)
+    await records.clients.save(client, lifetime)
 
     return Right({
       ...request,
@@ -116,9 +121,20 @@ export const createClientRegistry = (records: Records, patterns: Option<Readonly
     })
   }
 
+  /** Keep the client another `lifetime`, after a completed sign-in or refresh. Nothing when it is gone. */
+  const use = async (clientId: string): Promise<Option<RegisteredClient>> => {
+    const client = await records.clients.find(clientId)
+    await client.fold(
+      () => Promise.resolve(),
+      (found) => records.clients.save(found, lifetime),
+    )
+    return client
+  }
+
   return {
     find: (clientId: string): Promise<Option<RegisteredClient>> => records.clients.find(clientId),
     register,
+    use,
   }
 }
 

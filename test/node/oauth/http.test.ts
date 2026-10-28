@@ -293,19 +293,31 @@ describe("the token endpoint's client credentials", () => {
 })
 
 describe("request bodies", () => {
-  it("are refused past 1 MiB, declared or streamed, and the connection closed", async () => {
+  it("are refused past 64 KiB, declared or streamed, and the connection closed", async () => {
     const env = setup()
     const declared = await env.request(
       "/oauth/register",
-      postJson({ client_name: "x".repeat(1024 * 1024), redirect_uris: [CALLBACK] }),
+      postJson({ client_name: "x".repeat(64 * 1024), redirect_uris: [CALLBACK] }),
     )
     expect(declared.status).toBe(413)
     expect(declared.headers.get("connection")).toBe("close")
+    expect(await declared.json()).toEqual({
+      error: "invalid_request",
+      error_description: "The request body is over 64 KiB, or could not be read.",
+    })
     const streamed = await env.request(
       "/oauth/register",
-      chunked(Array.from({ length: 20 }, () => "x".repeat(64 * 1024))),
+      chunked(Array.from({ length: 5 }, () => "x".repeat(16 * 1024))),
     )
     expect(streamed.status).toBe(413)
+  })
+
+  it("are accepted up to the limit, with room for a client's jwks", async () => {
+    const res = await setup().request(
+      "/oauth/register",
+      postJson({ jwks: { keys: [{ n: "x".repeat(60 * 1024) }] }, redirect_uris: [CALLBACK] }),
+    )
+    expect(res.status).toBe(201)
   })
 
   it("arrive whole when sent in slow chunks, with characters split between chunks intact", async () => {
@@ -536,6 +548,29 @@ describe("who signed in", () => {
         "Not on the pilot list.",
       )
       expect(await outcome(person(TENANT))).toBe("code: true")
+    })
+
+    it("checks the tenant again on every refresh, and ends a session that now names another", async () => {
+      const env = setup({ scopes: ["openid"], tenantId: TENANT })
+      withIdToken(env, person(TENANT))
+      const { client, tokens } = await signIn(env)
+      const refresh = (refreshToken: string) =>
+        env.request(
+          "/oauth/token",
+          form({ client_id: client.client_id, grant_type: "refresh_token", refresh_token: refreshToken }),
+        )
+      // No id token on this refresh: the one from sign-in is judged, and passes.
+      const first = await refresh(tokens.refresh_token ?? "")
+      expect(first.status).toBe(200)
+      const next = ((await first.json()) as { refresh_token: string }).refresh_token
+      env.fake.queue(json({ ...upstreamTokens(3), id_token: idToken(person(OTHER)) }))
+      const refused = await refresh(next)
+      expect(refused.status).toBe(400)
+      expect(await refused.json()).toEqual({
+        error: "invalid_grant",
+        error_description: "This account belongs to another organization.",
+      })
+      expect(await (await refresh(next)).json()).toMatchObject({ error: "invalid_grant" })
     })
 
     it("accepts a sign-in from that tenant", async () => {

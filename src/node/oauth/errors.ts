@@ -22,6 +22,8 @@ export type OAuthError =
   | { readonly _tag: "ProviderRejected"; readonly code: string; readonly description: Option<string> }
   /** The upstream provider could not be reached, timed out, or answered with something unusable. */
   | { readonly _tag: "ProviderUnavailable"; readonly reason: string }
+  /** On a refresh, `acceptSignIn` now refuses the account. The session ends; the client must sign in again. */
+  | { readonly _tag: "SignInRefused"; readonly reason: string }
 
 export const OAuthError = {
   invalidGrant: (reason: string): OAuthError => ({ _tag: "InvalidGrant", reason }),
@@ -34,6 +36,7 @@ export const OAuthError = {
   }),
   providerUnavailable: (reason: string): OAuthError => ({ _tag: "ProviderUnavailable", reason }),
   redirectUriNotAllowed: (uri: string): OAuthError => ({ _tag: "RedirectUriNotAllowed", uri }),
+  signInRefused: (reason: string): OAuthError => ({ _tag: "SignInRefused", reason }),
   unknownClient: (clientId: string): OAuthError => ({ _tag: "UnknownClient", clientId }),
   unsupportedGrantType: (grantType: string): OAuthError => ({ _tag: "UnsupportedGrantType", grantType }),
   unsupportedResponseType: (responseType: string): OAuthError => ({
@@ -72,6 +75,9 @@ export const toWireError = (error: OAuthError): WireError => {
     // A failure on the provider's side is not the client's fault, so it is a 502.
     case "ProviderUnavailable":
       return wire("server_error", error.reason, 502)
+    // invalid_grant is what makes a client drop its refresh token and sign in again.
+    case "SignInRefused":
+      return wire("invalid_grant", error.reason)
   }
 }
 

@@ -15,12 +15,18 @@ import { createMemoryStore } from "./stores/memory.js"
 import { background, type TokenStore } from "./stores/types.js"
 import { createUpstream, type UpstreamConfig } from "./upstream.js"
 
-/** Lifetimes in seconds. */
+/** Lifetimes in seconds. One left unset, or set to zero or less, takes its default. */
 export type Lifetimes = {
   /** For upstream access tokens that came without an `expires_in`. Defaults to an hour. */
   accessToken?: number
   /** Defaults to 5 minutes. */
   authorizationCode?: number
+  /**
+   * How long a registered client is kept after its last sign-in or refresh. Defaults to 90
+   * days. Keep it longer than `refreshToken`, or a client can lapse while its refresh tokens
+   * still work, and its next sign-in fails with `invalid_client`.
+   */
+  client?: number
   /** For upstream refresh tokens that came without a lifetime. Defaults to 30 days. */
   refreshToken?: number
   /** How long a sign-in may take, from /oauth/authorize to the callback. Defaults to 10 minutes. */
@@ -30,7 +36,9 @@ export type Lifetimes = {
 /**
  * - `acceptSignIn` — given the id token's claims, the reason to refuse a sign-in, or
  *   `undefined` to accept it. When `scopes` include `openid`, every request asks for it, and a
- *   sign-in that still comes back without an id token is refused.
+ *   sign-in that still comes back without an id token is refused. It runs again on every
+ *   refresh, so a rule tightened later ends sessions it now refuses. A session signed in
+ *   without an id token (before `openid` was added) has nothing to check, and keeps refreshing.
  * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
  *   match. Unset allows loopback URIs only; `[]` allows none.
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
@@ -70,13 +78,25 @@ export type OAuthProxyConfig = {
 const DEFAULTS = {
   accessToken: 3600,
   authorizationCode: 300,
+  client: 7_776_000,
   refreshToken: 2_592_000,
   transaction: 600,
 } as const
 
 export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const logger = config.logger ?? console
-  const lifetimes = { ...DEFAULTS, ...config.lifetimes }
+  // An unset, zero or negative lifetime takes the default: to a store, a ttl of 0 means "never expires".
+  const lifetime = (name: keyof typeof DEFAULTS): number =>
+    Option(config.lifetimes?.[name])
+      .filter((seconds) => seconds > 0)
+      .orElse(DEFAULTS[name])
+  const lifetimes = {
+    accessToken: lifetime("accessToken"),
+    authorizationCode: lifetime("authorizationCode"),
+    client: lifetime("client"),
+    refreshToken: lifetime("refreshToken"),
+    transaction: lifetime("transaction"),
+  }
   const allowPlainPkce = config.allowPlainPkce ?? true
   const sendIssuer = config.authorizationResponseIss ?? true
 
@@ -88,6 +108,10 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const plainStore = ownStore.orElse(config.store as TokenStore)
   if (config.store !== undefined && config.encryptionKey === undefined && !isEncryptedStore(plainStore))
     logger.warn("[somamcp/oauth] no encryptionKey: stored tokens will not survive a restart.")
+  if (lifetimes.client < lifetimes.refreshToken)
+    logger.warn(
+      "[somamcp/oauth] lifetimes.client is shorter than lifetimes.refreshToken: clients can lapse while signed in.",
+    )
   if (config.jwtSigningKey === undefined)
     logger.warn("[somamcp/oauth] no jwtSigningKey: issued tokens will stop working on restart.")
   const store =
@@ -96,7 +120,10 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       : createEncryptedStore(plainStore, config.encryptionKey ?? randomHex(), logger)
 
   const records = createRecords(store)
-  const clients = createClientRegistry(records, Option(config.allowedRedirectUriPatterns))
+  const clients = createClientRegistry(records, Option(config.allowedRedirectUriPatterns), lifetimes.client)
+  const acceptSignIn = Option(config.acceptSignIn).map(
+    (accept) => (claims: Readonly<Record<string, unknown>>) => Option(accept(claims)),
+  )
   const upstream = createUpstream(config.upstream, {
     defaultAccessTokenLifetime: lifetimes.accessToken,
     fetch: config.fetch ?? ((url, init) => fetch(url, init)),
@@ -105,7 +132,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const signer = createJwtSigner(config.baseUrl, config.jwtSigningKey ?? randomHex())
   const authorization = createAuthorization(
     {
-      acceptSignIn: Option(config.acceptSignIn).map((accept) => (claims) => Option(accept(claims))),
+      acceptSignIn,
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
       callbackUrl: `${config.baseUrl}/oauth/callback`,
@@ -122,6 +149,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   )
   const grants = createGrants(
     {
+      acceptSignIn,
       allowPlainPkce,
       defaultAccessTokenLifetime: lifetimes.accessToken,
       refreshTokenLifetime: lifetimes.refreshToken,
@@ -160,7 +188,6 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     close: (): void => {
       stopCleanup()
       ownStore.forEach((s) => s.close?.())
-      records.clients.forget()
     },
     decide: authorization.decide,
     issuer: config.baseUrl,
