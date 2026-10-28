@@ -209,11 +209,11 @@ importers:
         specifier: ~2.4.0
         version: 2.4.0
       functype:
-        specifier: ^1.19.0
-        version: 1.19.0
+        specifier: ^1.21.1
+        version: 1.21.1
       functype-log:
-        specifier: ^1.19.0
-        version: 1.19.0(functype@1.19.0)
+        specifier: ^1.21.1
+        version: 1.21.1(functype@1.21.1)
       hono:
         specifier: ^4.13.13
         version: 4.13.13
@@ -240,8 +240,8 @@ importers:
         specifier: ^4.20260730.0
         version: 4.20260730.0(@types/node@24.19.2)
       ts-builds:
-        specifier: ^4.0.1
-        version: 4.0.1(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.2(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+        specifier: ^4.0.2
+        version: 4.0.2(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.2(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
       tsdown:
         specifier: ^0.23.2
         version: 0.23.2(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13))
@@ -1661,8 +1661,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  functype-log@1.19.0:
-    resolution: {integrity: sha512-VuwbTNoMppquqm8bn5nf8b+OUAh785wU4LC+uRAHgXD5Obzg2JVwbR8T627GjlawJVLDpufKrk/HIxNdYJxBcg==}
+  functype-log@1.21.1:
+    resolution: {integrity: sha512-BWv/lap2QL49Alk92ZIZSZy5uwRo0duyqp1IwG7Gh06CUCTK3rXS50o95e/U4v1Cwnz5s7jHeTIR/c4O+M+p/g==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
       functype: '>=0.60.0'
@@ -1673,8 +1673,8 @@ packages:
     peerDependencies:
       functype: '>=0.60.0'
 
-  functype@1.19.0:
-    resolution: {integrity: sha512-m/m+2kzjnq1q7/ZTlfzvLRLAF3lZuMbTvd/uk0EsVsue7xRtbNfEHzKO9ReFGnNjVLdQ/3Hc7WSPWukHbg9XWA==}
+  functype@1.21.1:
+    resolution: {integrity: sha512-7msJFdDcIebV1YEhnI8sUNHXbA2R0/NfB4QjFK3WB0026+60cO/HV28Y6BtCfIABoBLx7Fbsnru0HQPLQc7z5Q==}
     hasBin: true
 
   get-intrinsic@1.3.0:
@@ -2254,8 +2254,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
-  ts-builds@4.0.1:
-    resolution: {integrity: sha512-6jpmT3SKGNhQTV4MlrQ9Z0ulyttRW5eHfNhKx2R2P1X2+/sk8kaxeufpIZHkQTZom2QD6/oiVdq/OQI69cY48w==}
+  ts-builds@4.0.2:
+    resolution: {integrity: sha512-5mC9JJ0buLFjdj4YpLduKdZqj1vHMRLzHjoY02VujIu3RYb/7mWWAEvoPIMHYItxKe76FK7xw1eOXYC71eoZlA==}
     engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -3702,16 +3702,16 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-log@1.19.0(functype@1.19.0):
+  functype-log@1.21.1(functype@1.21.1):
     dependencies:
-      functype: 1.19.0
+      functype: 1.21.1
       loglayer: 9.4.0
 
-  functype-os@1.16.1(functype@1.19.0):
+  functype-os@1.16.1(functype@1.21.1):
     dependencies:
-      functype: 1.19.0
+      functype: 1.21.1
 
-  functype@1.19.0: {}
+  functype@1.21.1: {}
 
   get-intrinsic@1.3.0:
     dependencies:
@@ -4283,7 +4283,7 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  ts-builds@4.0.1(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.2(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)):
+  ts-builds@4.0.2(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.2(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)):
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.13.0(supports-color@10.2.2))
       '@vitest/coverage-v8': 5.0.5(vitest@5.0.5)
@@ -4294,8 +4294,8 @@ snapshots:
       eslint-plugin-functype: 2.118.0(eslint@10.13.0(supports-color@10.2.2))
       eslint-plugin-prettier: 5.5.7(eslint-config-prettier@10.1.8(eslint@10.13.0(supports-color@10.2.2)))(eslint@10.13.0(supports-color@10.2.2))(prettier@3.9.10)
       eslint-plugin-simple-import-sort: 14.0.0(eslint@10.13.0(supports-color@10.2.2))
-      functype: 1.19.0
-      functype-os: 1.16.1(functype@1.19.0)
+      functype: 1.21.1
+      functype-os: 1.16.1(functype@1.21.1)
       globals: 17.13.0
       prettier: 3.9.10
       ts-node: 10.9.2(@types/node@24.19.2)(typescript@6.0.3)
