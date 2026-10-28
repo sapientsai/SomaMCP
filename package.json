@@ -68,8 +68,8 @@
     "@hono/node-server": "^2.1.5",
     "@modelcontextprotocol/client": "~2.4.0",
     "@modelcontextprotocol/server": "~2.4.0",
-    "functype": "^1.19.0",
-    "functype-log": "^1.19.0",
+    "functype": "^1.21.1",
+    "functype-log": "^1.21.1",
     "hono": "^4.13.13",
     "zod": "^4.6.7"
   },
@@ -81,7 +81,7 @@
     "esbuild": "^0.28.2",
     "get-port-please": "^3.2.0",
     "miniflare": "^4.20260730.0",
-    "ts-builds": "^4.0.1",
+    "ts-builds": "^4.0.2",
     "tsdown": "^0.23.2"
   },
   "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61"
