@@ -87,7 +87,7 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `grants.ts` is the token endpoint, and runs `acceptSignIn` again on every refresh; `jwt.ts` marks each token `access` or `refresh` (`token_use`)
 - `scopes.ts` caps what a client can ask the provider for at the server's `scopes`
 - `upstream.ts` talks to the provider
-- `clients.ts` is registration. A client is kept for `lifetimes.client` (90 days) after its last authorize, code redemption or refresh
+- `clients.ts` is registration. A client is kept for `lifetimes.client` (90 days) after it registered, or last completed a sign-in or a refresh
 - `http.ts` holds the routes and the MCP 401
 - `pages.ts` is the HTML: no scripts (the CSP forbids them), so the long scope list folds with `<details>`
 - `provider.ts` builds the session tools see: `claims` from the id token (never the access token, which Microsoft calls opaque), and for Azure `oid`, `tid` and `upn`, plus the tenant check when `tenantId` is a GUID
