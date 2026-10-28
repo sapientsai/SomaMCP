@@ -9,3 +9,10 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    ignore:
+      # somamcp stays on TypeScript 5.x for now.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # .nvmrc pins Node 24, so the Node types stay on the 24.x line.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
