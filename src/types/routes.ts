@@ -8,8 +8,9 @@ export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
  * Config for a custom HTTP route registered on the server's Hono app via
  * `SomaServerInstance.addRoute`.
  *
- * When `protected: true`, the server's `authenticate` callback runs first — a
- * throw or rejection short-circuits to `onUnauthorized` (default `401`).
+ * When `protected: true`, the server's `authenticate` callback runs first. A
+ * `Response` it throws or rejects with is served as-is; any other throw or
+ * rejection, or a nullish result, short-circuits to `onUnauthorized` (default `401`).
  *
  * ### Route ordering
  *
