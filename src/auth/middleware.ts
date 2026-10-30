@@ -1,10 +1,14 @@
-import { Option, Try } from "functype"
 import type { Context, MiddlewareHandler } from "hono"
+
+import { rejectedResponse, runAuthenticate } from "./resolve.js"
 
 /** Callback invoked to authenticate an incoming request, as the web `Request`. */
 export type Authenticate = (request: Request) => Promise<unknown>
 
-/** Response builder invoked when auth is missing or fails. Defaults to `401 { error: "Unauthorized" }`. */
+/**
+ * Response builder invoked when auth is missing or fails. Defaults to `401 { error: "Unauthorized" }`.
+ * A `Response` that `authenticate` rejects with is served as-is instead, as on the MCP endpoint.
+ */
 export type OnUnauthorized = (c: Context) => Response | Promise<Response>
 
 export type AuthMiddlewareConfig = {
@@ -22,14 +26,15 @@ export const createAuthMiddleware = ({ authenticate, onUnauthorized }: AuthMiddl
       return reject(c)
     }
     // Sync throws and nullish results fail too, matching the MCP endpoint.
-    const result = await Try.fromPromise(
-      Promise.resolve()
-        .then(() => authenticate(c.req.raw))
-        .then((auth) => Option(auth).orThrow(new Error("Authentication required"))),
+    return (await runAuthenticate(() => authenticate(c.req.raw))).fold<Promise<Response | void>>(
+      (failure) =>
+        Promise.resolve(
+          rejectedResponse(failure).fold(
+            () => reject(c),
+            (response) => response,
+          ),
+        ),
+      () => next(),
     )
-    if (result.isFailure()) {
-      return reject(c)
-    }
-    await next()
   }
 }

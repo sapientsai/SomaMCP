@@ -74,6 +74,26 @@ describe("ArtifactManager", () => {
     expect(await res.text()).toBe("secret")
   })
 
+  it("protected artifact serves a Response that authenticate rejects with, as-is", async () => {
+    const app = new Hono()
+    const artifact: ArtifactConfig = {
+      content: "secret",
+      contentType: "text/plain",
+      path: "/secret",
+      protected: true,
+      type: "static",
+    }
+
+    registerArtifacts(app, [artifact], () =>
+      Promise.reject(new Response("go away", { headers: { "x-reason": "banned" }, status: 403 })),
+    )
+
+    const res = await app.request("/secret")
+    expect(res.status).toBe(403)
+    expect(res.headers.get("x-reason")).toBe("banned")
+    expect(await res.text()).toBe("go away")
+  })
+
   it("protected artifact returns 401 when authenticate rejects", async () => {
     const app = new Hono()
     const artifact: ArtifactConfig = {

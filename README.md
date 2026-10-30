@@ -124,7 +124,7 @@ createServer({
 
 ## Protected Artifacts
 
-Any artifact can opt into auth with `protected: true`. The route runs the server's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. Rejecting, throwing, or resolving to `undefined`/`null` returns 401. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
+Any artifact can opt into auth with `protected: true`. The route runs the server's `authenticate` callback via Hono middleware — same auth model as MCP protocol calls. Rejecting or throwing with a `Response` serves that response as-is, as on the MCP endpoint. Any other rejection or throw, or resolving to `undefined`/`null`, returns 401. If `protected: true` is set but no `authenticate` is configured, the route returns 401 unconditionally.
 
 ```typescript
 import { createServer, getRequestHeader } from "somamcp/node"
@@ -153,7 +153,7 @@ createServer({
 
 ## Protected Routes
 
-For write endpoints, or anything the GET-only artifact shape doesn't cover, use `addRoute`. Same `authenticate` gate, method-aware, with optional `onUnauthorized` for custom 401 responses.
+For write endpoints, or anything the GET-only artifact shape doesn't cover, use `addRoute`. Same `authenticate` gate, method-aware, with optional `onUnauthorized` for custom 401 responses. A `Response` that `authenticate` rejects with is still served as-is, ahead of `onUnauthorized`.
 
 ```typescript
 server.addRoute({
@@ -534,7 +534,7 @@ export default { fetch: (request: Request) => server.fetch(request) }
 How it behaves:
 
 - **Stateless.** Every request gets a fresh SDK server built from somamcp's registry. There are no sessions, `connect`/`disconnect` events never fire, and a 2025 client's `GET` or `DELETE` is answered `405`. `httpStream.stateless: false` is ignored, with a warning through `logger`.
-- **`authenticate` receives the web `Request`**, for MCP calls and for protected artifacts and routes. Read headers with `getRequestHeader`. On the MCP endpoint, rejecting with a `Response` serves that response as-is; protected artifacts and routes answer with their `onUnauthorized`, or 401. Any other rejection, a synchronous throw, or a nullish result is a `401`. On stdio there is no request: `authenticate` is called once with `undefined`, and a failure serves without a session. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise.
+- **`authenticate` receives the web `Request`**, for MCP calls and for protected artifacts and routes. Read headers with `getRequestHeader`. Rejecting or throwing with a `Response` serves that response as-is, on the MCP endpoint and on protected artifacts and routes alike, so one wrong token gets one answer everywhere. Any other rejection or synchronous throw, or a nullish result, is a `401`: the auth provider's `challenge` on the MCP endpoint, and `onUnauthorized` (routes) or a plain 401 on protected artifacts and routes. On stdio there is no request: `authenticate` is called once with `undefined`, and a failure serves without a session. `canAccess` is only ever called with a real session: with none, gated tools are hidden when `authenticate` is configured and shown otherwise.
 - **Errors follow SDK 2.x and the current spec.** Calling an unknown tool, or one hidden by `canAccess`, is a JSON-RPC `InvalidParams` error. Invalid arguments and thrown errors (including `UserError`) are `isError` tool results, so the model can read the message and retry.
 - **Schemas must describe themselves as JSON Schema** (`~standard.jsonSchema`): zod 4, ArkType, or Valibot via `@valibot/to-json-schema`. Other schemas still validate, but clients see an empty argument list; `addTool` warns through `logger`.
 - **`context.client.version`** is filled in for `2026-07-28` clients, which send their client info on every request. It is `undefined` for 2025 clients, which send it only during `initialize`.
