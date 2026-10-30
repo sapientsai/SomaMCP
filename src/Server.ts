@@ -26,7 +26,7 @@ import type {
   SomaServerOptions,
   ToolOptions,
 } from "./types.js"
-import type { ResourceTemplate, SchemaParams, SessionAuth, Tool } from "./types/core.js"
+import type { ResourceTemplate, SchemaParams, SessionAuth } from "./types/core.js"
 import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
@@ -198,9 +198,8 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     })
   })
 
-  const addTool = <P extends SchemaParams>(tool: Tool<T, P> | ToolOptions<T, P>): void => {
-    const captureConfig = "captureConfig" in tool ? tool.captureConfig : undefined
-    const wrapped = wrapTool(tool, telemetry, captureConfig)
+  const addTool = <P extends SchemaParams>(tool: ToolOptions<T, P>): void => {
+    const wrapped = wrapTool(tool, telemetry, tool.captureConfig)
     backend.addTool(wrapped)
     trackTool(tool)
   }
@@ -267,7 +266,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     addRoute,
 
     addTool,
-    addTools: <P extends SchemaParams>(tools: Tool<T, P>[]): void => {
+    addTools: <P extends SchemaParams>(tools: ToolOptions<T, P>[]): void => {
       tools.forEach((tool) => addTool(tool))
     },
 
