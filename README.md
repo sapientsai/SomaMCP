@@ -581,7 +581,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 **Core**
 
 - `createServer(options)` → `SomaServerInstance`
-- Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerInfo`, `ServerCapabilities`, `CapabilitiesSummary`, `ToolOptions`
+- Types: `SomaServerOptions`, `SomaServerInstance`, `ServerHealth`, `ServerInfo`, `ServerCapabilities`, `CapabilitiesSummary`, `ToolOptions`, `ToolOptionsList`
 
 **Primitives** (somamcp-owned, no SDK types leak through)
 
