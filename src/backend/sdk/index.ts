@@ -1,9 +1,9 @@
 import { createMcpHandler, type McpHttpHandler, type Transport } from "@modelcontextprotocol/server"
-import { type Either, Left, Map, Option, Ref, Right, Try, Tuple } from "functype"
+import { type Either, Map, Option, Ref, Try, Tuple } from "functype"
 import { type Context as HonoContext, Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 
-import { resolveAuthenticate } from "../../auth/resolve.js"
+import { rejectedResponse, resolveAuthenticate, runAuthenticate } from "../../auth/resolve.js"
 import type { AuthChallenge } from "../../types/auth.js"
 import type { Resource, ResourceTemplate, ServerStatus, SessionAuth } from "../../types/core.js"
 import type { HttpStreamConfig, ServerConfig, TransportConfig } from "../../types/server.js"
@@ -128,26 +128,11 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   // but fetch() keeps answering; serving through fetch has nothing to shut.
   const state = Ref<ServerStatus>("running")
 
-  /**
-   * `authenticate`, with somamcp 1.x's failure semantics: a synchronous throw
-   * counts as a rejection, and a nullish result counts as a failed authentication
-   * (the idiomatic way to signal one). Left(None) means no session; Left(Some)
-   * carries what it threw or rejected with.
-   */
+  /** `authenticate` for one request, or for stdio's none; see `runAuthenticate`. */
   const authenticateRequest = (
     check: NonNullable<ServerConfig<T>["authenticate"]>,
     request: Option<Request>,
-  ): Promise<Either<Option<unknown>, T>> =>
-    Promise.resolve()
-      .then(() => check(request.orUndefined()))
-      .then(
-        (auth) =>
-          Option(auth).fold(
-            () => Left<Option<unknown>, T>(Option.none()),
-            (session) => Right<Option<unknown>, T>(session),
-          ),
-        (reason: unknown) => Left<Option<unknown>, T>(Option(reason)),
-      )
+  ): Promise<Either<Option<unknown>, T>> => runAuthenticate<T>(() => check(request.orUndefined()))
 
   /** The JSON-RPC `id` of a rejected request, for its 401 body, or null. */
   const readRequestId = async (request: Request): Promise<AuthChallenge["requestId"]> => {
@@ -170,27 +155,25 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
    * else a plain 401.
    */
   const rejectMcp = (c: HonoContext, request: Request, failure: Option<unknown>): Promise<Response> =>
-    failure
-      .filter((reason) => reason instanceof Response)
-      .fold<Promise<Response>>(
-        () =>
-          Option(config.auth)
-            .flatMap((auth) => Option(auth.challenge))
-            .fold(
-              () => Promise.resolve(c.json({ error: "Unauthorized" }, 401)),
-              async (challenge) =>
-                challenge({
-                  endpoint: mcpPath.get(),
-                  request,
-                  ...failure.fold(
-                    () => ({}),
-                    (error) => ({ error }),
-                  ),
-                  requestId: await readRequestId(request),
-                }),
-            ),
-        (response) => Promise.resolve(response as Response),
-      )
+    rejectedResponse(failure).fold<Promise<Response>>(
+      () =>
+        Option(config.auth)
+          .flatMap((auth) => Option(auth.challenge))
+          .fold(
+            () => Promise.resolve(c.json({ error: "Unauthorized" }, 401)),
+            async (challenge) =>
+              challenge({
+                endpoint: mcpPath.get(),
+                request,
+                ...failure.fold(
+                  () => ({}),
+                  (error) => ({ error }),
+                ),
+                requestId: await readRequestId(request),
+              }),
+          ),
+      (response) => Promise.resolve(response),
+    )
 
   const serveMcp = async (c: HonoContext): Promise<Response> => {
     const request = c.req.raw

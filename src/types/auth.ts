@@ -28,8 +28,8 @@ export type AuthRoute = Omit<RouteConfig, "onUnauthorized" | "protected">
  *   precedence, as in FastMCP.
  * - `challenge` — the response to an MCP request that failed authentication, such as a 401
  *   with a `WWW-Authenticate` header. Only the MCP endpoint uses it; protected artifacts and
- *   routes still answer with their `onUnauthorized`, or 401. Without it, the endpoint answers
- *   a plain 401.
+ *   routes answer with their `onUnauthorized`, or 401. Without it, the endpoint answers a plain
+ *   401. A `Response` that `authenticate` rejects with is served as-is everywhere, ahead of both.
  * - `routes` — unprotected HTTP routes the provider serves, such as OAuth metadata and
  *   endpoints. They are mounted once, when the server is created, so a path must not embed
  *   the MCP endpoint: `start({ httpStream: { endpoint } })` can move it later. Mount a
