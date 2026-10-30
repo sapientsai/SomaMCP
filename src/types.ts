@@ -89,8 +89,9 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   addResources: (resources: Resource<T>[]) => void
   addResourceTemplate: (template: ResourceTemplate<T>) => void
   addRoute: (route: RouteConfig) => void
-  addTool: <P extends SchemaParams>(tool: Tool<T, P>) => void
-  addTools: <P extends SchemaParams>(tools: Tool<T, P>[]) => void
+  /** Register a tool. `captureConfig` sets its telemetry capture level and redaction. */
+  addTool: <P extends SchemaParams>(tool: ToolOptions<T, P>) => void
+  addTools: <P extends SchemaParams>(tools: ToolOptions<T, P>[]) => void
   /**
    * Web-standard request handler covering both MCP calls and registered
    * artifacts/routes. This is the entry point on Workers and other fetch runtimes:

@@ -1,8 +1,11 @@
 import { directSilentLogger } from "functype-log"
 import { describe, expect, it } from "vitest"
 
+import { z } from "zod"
+
 import { createServer } from "../src/index.js"
 import type { TelemetryCollector, TelemetryEvent } from "../src/telemetry/TelemetryCollector.js"
+import { rawRequest } from "./backend/sdk-clients.js"
 
 const createCollector = (): TelemetryCollector & {
   events: TelemetryEvent[]
@@ -36,6 +39,52 @@ describe("Server", () => {
     const capabilities = server.getCapabilities()
     expect(capabilities.tools).toHaveLength(1)
     expect(capabilities.tools[0]?.name).toBe("greet")
+  })
+
+  describe("per-tool captureConfig", () => {
+    const makeServer = (telemetry: TelemetryCollector) =>
+      createServer({ enableDashboard: false, enableIntrospection: false, name: "capture", telemetry, version: "1.0.0" })
+    const call = (server: ReturnType<typeof makeServer>, name: string) =>
+      server.fetch(rawRequest("tools/call", { arguments: { card: "4242", amount: 5 }, name }, { modern: true }))
+    const toolEvent = (telemetry: { events: TelemetryEvent[] }, name: string) =>
+      telemetry.events.find((e) => e.type === "tool.execute" && e.name === name)
+
+    // An object literal is the documented shape (README "Per-tool capture configuration"),
+    // so this also fails to compile if addTool's type stops accepting captureConfig.
+    it("addTool honors captureConfig passed in the tool literal", async () => {
+      const telemetry = createCollector()
+      const server = makeServer(telemetry)
+      server.addTool({
+        captureConfig: { captureLevel: "full", redactInputFields: ["card"] },
+        execute: async () => "paid",
+        name: "pay",
+        parameters: z.object({ amount: z.number(), card: z.string() }),
+      })
+
+      await call(server, "pay")
+
+      expect(toolEvent(telemetry, "pay")?.input).toEqual({ amount: 5, card: "[REDACTED]" })
+    })
+
+    it("addTools honors captureConfig on each tool", async () => {
+      const telemetry = createCollector()
+      const server = makeServer(telemetry)
+      server.addTools([
+        {
+          captureConfig: { captureLevel: "metadata" },
+          execute: async () => "quiet",
+          name: "quiet",
+          parameters: z.object({ amount: z.number(), card: z.string() }),
+        },
+      ])
+
+      await call(server, "quiet")
+
+      const event = toolEvent(telemetry, "quiet")
+      expect(event).toBeDefined()
+      expect(event?.input).toBeUndefined()
+      expect(event?.output).toBeUndefined()
+    })
   })
 
   it("registers resources with telemetry wrapping", () => {
