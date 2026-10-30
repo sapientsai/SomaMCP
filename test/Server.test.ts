@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest"
 
 import { z } from "zod"
 
-import { createServer } from "../src/index.js"
+import { createServer, type SessionAuth, type Tool, type ToolOptions } from "../src/index.js"
 import type { TelemetryCollector, TelemetryEvent } from "../src/telemetry/TelemetryCollector.js"
-import { rawRequest } from "./backend/sdk-clients.js"
+import { connectModern, rawRequest } from "./backend/sdk-clients.js"
 
 const createCollector = (): TelemetryCollector & {
   events: TelemetryEvent[]
@@ -84,6 +84,70 @@ describe("Server", () => {
       expect(event).toBeDefined()
       expect(event?.input).toBeUndefined()
       expect(event?.output).toBeUndefined()
+    })
+  })
+
+  // Each call below also fails to compile if addTools goes back to one schema for the whole array.
+  describe("addTools with different parameter schemas", () => {
+    const makeServer = () =>
+      createServer({ enableDashboard: false, enableIntrospection: false, name: "mixed", version: "1.0.0" })
+    const textOf = (result: Awaited<ReturnType<Awaited<ReturnType<typeof connectModern>>["callTool"]>>) =>
+      JSON.stringify(result.content)
+
+    it("takes tools with different schemas in one literal array, and each execute keeps its own args", async () => {
+      const server = makeServer()
+      server.addTools([
+        { execute: async (args) => args.word.toUpperCase(), name: "shout", parameters: z.object({ word: z.string() }) },
+        { execute: async (args) => String(args.n * 2), name: "double", parameters: z.object({ n: z.number() }) },
+        { execute: async () => "pong", name: "ping" },
+      ])
+
+      const client = await connectModern(server)
+      expect((await client.listTools()).tools.map((t) => t.name)).toEqual(["shout", "double", "ping"])
+      expect(textOf(await client.callTool({ arguments: { word: "hi" }, name: "shout" }))).toContain("HI")
+      expect(textOf(await client.callTool({ arguments: { n: 21 }, name: "double" }))).toContain("42")
+    })
+
+    it("takes typed tool values with different schemas, and Tool[] and readonly lists as before", () => {
+      const word = z.object({ word: z.string() })
+      const count = z.object({ n: z.number() })
+      const shout: Tool<SessionAuth, typeof word> = {
+        execute: async (args) => args.word,
+        name: "shout",
+        parameters: word,
+      }
+      const double: ToolOptions<SessionAuth, typeof count> = {
+        captureConfig: { captureLevel: "metadata" },
+        execute: async (args) => String(args.n),
+        name: "double",
+        parameters: count,
+      }
+      const listed: Tool[] = [{ execute: async () => "a", name: "a" }]
+      const frozen: ReadonlyArray<ToolOptions> = [{ execute: async () => "b", name: "b" }]
+
+      const server = makeServer()
+      server.addTools([shout, double])
+      server.addTools(listed)
+      server.addTools(frozen)
+      server.addTools([])
+
+      expect(server.getCapabilities().tools.map((t) => t.name)).toEqual(["shout", "double", "a", "b"])
+    })
+
+    it("still checks each tool's args against its own schema, and refuses what is not a tool", () => {
+      // Checked by the typecheck only: never called, since these tools are wrong on purpose.
+      const refused = (server: ReturnType<typeof makeServer>) => {
+        server.addTools([
+          // @ts-expect-error `n` belongs to the other tool's schema
+          { execute: async (args) => String(args.n), name: "shout", parameters: z.object({ word: z.string() }) },
+          { execute: async (args) => String(args.n), name: "double", parameters: z.object({ n: z.number() }) },
+        ])
+        // @ts-expect-error `parameters` must be a Standard Schema
+        server.addTools([{ execute: async () => "x", name: "bad", parameters: { word: "string" } }])
+        // @ts-expect-error a tool needs a name
+        server.addTools([{ execute: async () => "x" }])
+      }
+      expect(refused).toBeTypeOf("function")
     })
   })
 

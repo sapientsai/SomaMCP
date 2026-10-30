@@ -33,6 +33,7 @@ export type {
   SomaServerInstance,
   SomaServerOptions,
   ToolOptions,
+  ToolOptionsList,
 } from "./types.js"
 
 // Build info

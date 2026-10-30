@@ -25,6 +25,7 @@ import type {
   SomaServerInstance,
   SomaServerOptions,
   ToolOptions,
+  ToolOptionsList,
 } from "./types.js"
 import type { ResourceTemplate, SchemaParams, SessionAuth } from "./types/core.js"
 import type { RouteConfig } from "./types/routes.js"
@@ -266,7 +267,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     addRoute,
 
     addTool,
-    addTools: <P extends SchemaParams>(tools: ToolOptions<T, P>[]): void => {
+    addTools: <Ps extends readonly unknown[]>(tools: ToolOptionsList<T, Ps>): void => {
       tools.forEach((tool) => addTool(tool))
     },
 

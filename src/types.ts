@@ -79,6 +79,19 @@ export type ToolOptions<T extends SessionAuth = SessionAuth, P extends SchemaPar
   captureConfig?: ToolCaptureConfig
 }
 
+/**
+ * A list of tools, each with its own parameter schema. Mapping over the tuple keeps one
+ * schema per element, so tools with different schemas share an array and each `execute`
+ * still has its own typed `args`. A `Tool[]` or `ReadonlyArray<Tool>` fits it too.
+ *
+ * `Ps` is `unknown[]`, and each element is narrowed to `SchemaParams` on its own: a tool
+ * without `parameters` infers `unknown`, which under a `SchemaParams[]` constraint would
+ * fail inference for the whole array and leave every tool's `args` untyped.
+ */
+export type ToolOptionsList<T extends SessionAuth, Ps extends readonly unknown[]> = {
+  [K in keyof Ps]: ToolOptions<T, Ps[K] & SchemaParams>
+}
+
 export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   readonly name: string
   readonly serverState: ServerStatus
@@ -91,7 +104,8 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   addRoute: (route: RouteConfig) => void
   /** Register a tool. `captureConfig` sets its telemetry capture level and redaction. */
   addTool: <P extends SchemaParams>(tool: ToolOptions<T, P>) => void
-  addTools: <P extends SchemaParams>(tools: ToolOptions<T, P>[]) => void
+  /** Register several tools; each keeps its own parameter schema. */
+  addTools: <Ps extends readonly unknown[]>(tools: ToolOptionsList<T, Ps>) => void
   /**
    * Web-standard request handler covering both MCP calls and registered
    * artifacts/routes. This is the entry point on Workers and other fetch runtimes:
