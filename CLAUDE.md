@@ -84,7 +84,7 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 
 - `server.ts` puts the pieces together
 - `authorization.ts` is the browser flow (authorize, consent, callback)
-- `grants.ts` is the token endpoint, and runs `acceptSignIn` again on every refresh; `jwt.ts` marks each token `access` or `refresh` (`token_use`)
+- `grants.ts` is the token endpoint, and runs `acceptSignIn` again on every refresh. With `widenScopesOnRefresh` a refresh asks for the server's whole list when the grant lacks some, and falls back to the grant if the provider refuses; `jwt.ts` marks each token `access` or `refresh` (`token_use`)
 - `scopes.ts` caps what a client can ask the provider for at the server's `scopes`
 - `upstream.ts` talks to the provider
 - `clients.ts` is registration. A client is kept for `lifetimes.client` (90 days) after it registered, or last completed a sign-in or a refresh

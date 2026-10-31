@@ -1,5 +1,6 @@
 // Which scopes the server asks the provider for. At sign-in its configured list is the cap, and on
-// a refresh the grant is (grants.ts): a client can narrow but never add. RFC 6749 §3.3 lets the
+// a refresh the grant is (grants.ts): a client can narrow but never add. Only the server widens
+// a grant, with `widenScopesOnRefresh`. RFC 6749 §3.3 lets the
 // server "fully or partially ignore" the scope a client asks for, and the token response reports
 // what was granted.
 import { List, Option } from "functype"
