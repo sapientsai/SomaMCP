@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
+import { z } from "zod"
 
 import { classifyError, createEnrichedError } from "../../src/telemetry/EnrichedError.js"
+import { UserError } from "../../src/types/core.js"
 
 describe("EnrichedError", () => {
   describe("classifyError", () => {
@@ -29,9 +31,44 @@ describe("EnrichedError", () => {
       expect(classifyError(new Error("404"))).toBe("not_found")
     })
 
-    it("classifies UserError as validation", () => {
-      const error = { message: "bad input", name: "UserError" }
-      expect(classifyError(error)).toBe("validation")
+    it("labels a UserError with no category execution, whatever its message says", () => {
+      // A tool passing on a remote command's output: the words are not the tool's own.
+      expect(classifyError(new UserError("bash: chezmoi: command not found"))).toBe("execution")
+      expect(classifyError(new UserError("invalid option -- 'z'"))).toBe("execution")
+      expect(classifyError(new UserError("Permission denied (publickey)"))).toBe("execution")
+      expect(classifyError({ message: "bad input", name: "UserError" })).toBe("execution")
+    })
+
+    it("labels a UserError with the category it carries", () => {
+      expect(classifyError(new UserError("no such list", { category: "not_found" }))).toBe("not_found")
+      expect(classifyError(new UserError("listId is required", { category: "validation" }))).toBe("validation")
+      // From another copy of somamcp, or built by hand: read by name and shape.
+      expect(classifyError({ category: "timeout", message: "slow", name: "UserError" })).toBe("timeout")
+      expect(classifyError({ category: "bogus", message: "x", name: "UserError" })).toBe("execution")
+    })
+
+    it("reads the category a UserError subclass carries, whatever name the subclass gives itself", () => {
+      class NotFoundError extends UserError {
+        constructor(message: string) {
+          super(message, { category: "not_found" })
+          this.name = "NotFoundError"
+        }
+      }
+      expect(classifyError(new NotFoundError("no such list"))).toBe("not_found")
+      expect(createEnrichedError(new NotFoundError("no such list"))).toEqual({
+        errorCategory: "not_found",
+        message: "no such list",
+        suggestions: ["The requested resource was not found. Verify the identifier"],
+      })
+    })
+
+    it("labels a schema library's error validation, by its issues rather than its words", () => {
+      const parsed = z.object({ n: z.number() }).safeParse({ n: "x" })
+      expect(parsed.success).toBe(false)
+      expect(classifyError(parsed.error)).toBe("validation")
+      expect(classifyError({ issues: [{ message: "Expected number" }], message: "Oops", name: "ValiError" })).toBe(
+        "validation",
+      )
     })
 
     it("defaults to internal for unknown errors", () => {
@@ -63,6 +100,31 @@ describe("EnrichedError", () => {
     it("omits relatedState when no context provided", () => {
       const result = createEnrichedError(new Error("boom"))
       expect(result.relatedState).toBeUndefined()
+    })
+
+    it("gives a UserError with no category no suggestions", () => {
+      const result = createEnrichedError(new UserError("remote command failed: exit 2"))
+      expect(result).toEqual({ errorCategory: "execution", message: "remote command failed: exit 2" })
+    })
+
+    it("gives a UserError's own suggestions, or the category's when it brings none, or none for []", () => {
+      expect(createEnrichedError(new UserError("x", { suggestions: ["Run `login` first"] })).suggestions).toEqual([
+        "Run `login` first",
+      ])
+      expect(createEnrichedError(new UserError("x", { category: "not_found" })).suggestions).toEqual([
+        "The requested resource was not found. Verify the identifier",
+      ])
+      expect(createEnrichedError(new UserError("x", { category: "not_found", suggestions: [] }))).toEqual({
+        errorCategory: "not_found",
+        message: "x",
+      })
+    })
+
+    it("takes the message of a hand-built UserError object", () => {
+      expect(createEnrichedError({ category: "not_found", message: "m", name: "UserError" })).toMatchObject({
+        errorCategory: "not_found",
+        message: "m",
+      })
     })
 
     it("handles non-Error values", () => {

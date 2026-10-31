@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 
 import type { TelemetryCollector, TelemetryEvent } from "../../src/telemetry/TelemetryCollector.js"
 import { wrapPrompt, wrapResource, wrapTool } from "../../src/telemetry/telemetryWrapper.js"
+import { UserError } from "../../src/types/core.js"
 
 const createMockTelemetry = (): TelemetryCollector & { events: TelemetryEvent[] } => {
   const events: TelemetryEvent[] = []
@@ -137,6 +138,27 @@ describe("telemetryWrapper", () => {
       const parsed = JSON.parse(result.content[0].text) as { errorCategory: string; message: string }
       expect(parsed.errorCategory).toBe("gateway")
       expect(parsed.message).toBe("connection refused")
+    })
+
+    it("returns a UserError as the tool reported it: execution, with no schema hint", async () => {
+      const telemetry = createMockTelemetry()
+      const tool = {
+        execute: vi.fn().mockRejectedValue(new UserError("bash: chezmoi: command not found")),
+        name: "ssh-exec",
+      }
+
+      const result = (await wrapTool(tool, telemetry).execute({}, createMockContext())) as {
+        content: Array<{ text: string; type: string }>
+        isError: boolean
+      }
+
+      expect(result.isError).toBe(true)
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        errorCategory: "execution",
+        message: "bash: chezmoi: command not found",
+        relatedState: { toolName: "ssh-exec" },
+      })
+      expect(telemetry.events[0]).toMatchObject({ errorCategory: "execution", type: "tool.error" })
     })
 
     it("records error details in telemetry event", async () => {

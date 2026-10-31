@@ -66,6 +66,7 @@ export type {
   TextContent,
   Tool,
   ToolAnnotations,
+  UserErrorOptions,
 } from "./types/index.js"
 export type {
   AuthChallenge,
