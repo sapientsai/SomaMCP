@@ -559,9 +559,12 @@ describe("widenScopesOnRefresh", () => {
     expect(warnings).toHaveLength(1)
     expect(String(warnings[0]?.[0])).toContain("(invalid_grant: AADSTS65001: consent required)")
     expect(String(warnings[0]?.[0])).toContain("will not widen this sign-in again for a day")
+    vi.setSystemTime(1_800_000_000_000 + 86_399 * 1000)
+    const fourth = right(await refreshWith(server, clientId, third.refresh_token ?? ""))
+    expect(scopesSent(provider)[3]).toBeNull()
     vi.setSystemTime(1_800_000_000_000 + 86_401 * 1000)
-    right(await refreshWith(server, clientId, third.refresh_token ?? ""))
-    expect(scopesSent(provider)[3]).toBe(after.join(" "))
+    right(await refreshWith(server, clientId, fourth.refresh_token ?? ""))
+    expect(scopesSent(provider)[4]).toBe(after.join(" "))
   })
 
   it("asks again within the day when the list has changed since the refusal", async () => {
@@ -609,7 +612,7 @@ describe("widenScopesOnRefresh", () => {
       [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
     // Signed in without openid, so with no id token and nothing to check until the list grows.
     const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew(
-      { acceptSignIn: () => "Not on the list.", scopes: ["openid", ...after], widenScopesOnRefresh: true },
+      { acceptSignIn: () => "Not on the list.", widenScopesOnRefresh: true },
       ["offline_access", "User.Read"],
     )
     provider.queue(json({ access_token: "a2", id_token: idToken({ email: "x@example.com" }), refresh_token: "r2" }))

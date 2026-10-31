@@ -201,7 +201,8 @@ export const createRecords = (store: TokenStore) => {
   const declinedWidenings = {
     find: async (key: string): Promise<Option<string>> =>
       decode(z.string(), await store.get(`${KEY.widenDeclined}${key}`)),
-    save: (key: string, scope: string, ttl: number): Promise<void> =>
+    // async, so a store that throws instead of rejecting still reaches the caller's catch.
+    save: async (key: string, scope: string, ttl: number): Promise<void> =>
       store.save(`${KEY.widenDeclined}${key}`, scope, ttl),
   }
 
