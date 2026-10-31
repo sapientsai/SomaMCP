@@ -13,7 +13,11 @@ export type TelemetryEventType =
   | "session.connect"
   | "session.disconnect"
 
-export type ErrorCategory = "validation" | "timeout" | "gateway" | "internal" | "auth" | "not_found"
+/**
+ * How a failure is labelled. `execution` is a tool reporting that the operation it ran failed
+ * (a `UserError` with no category of its own); `validation` is input the tool's schema refused.
+ */
+export type ErrorCategory = "validation" | "execution" | "timeout" | "gateway" | "internal" | "auth" | "not_found"
 
 export type CaptureLevel = "full" | "metadata" | "none"
 

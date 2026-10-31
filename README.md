@@ -370,11 +370,11 @@ Capture levels:
 
 ### Error enrichment
 
-Errors thrown from tools are automatically classified and returned as structured `ContentResult` responses with `isError: true`, including suggestions to help calling LLMs self-correct.
+Errors thrown from tools are classified and returned as structured `ContentResult` responses with `isError: true`, with suggestions where they help the calling model correct itself.
 
 ```typescript
 // Thrown: new Error("Request timed out after 30s")
-// Returned to LLM:
+// Returned to the model:
 {
   isError: true,
   content: [{
@@ -382,14 +382,26 @@ Errors thrown from tools are automatically classified and returned as structured
     text: JSON.stringify({
       errorCategory: "timeout",
       message: "Request timed out after 30s",
-      suggestions: [
-        "The operation took too long. Try reducing the scope of the request.",
-        "Check if the upstream service is responsive.",
-      ],
+      relatedState: { toolName: "search" },
+      suggestions: ["The operation timed out. Try again or reduce the scope of the request"],
     }),
   }],
 }
 ```
+
+How the category is chosen:
+
+- **A `UserError` is labelled as it says.** `new UserError(message, { category, suggestions })` sets both. With no `category` it's `execution`: the tool ran, and what it ran failed. That category has no generic suggestion, so the model reads the message as it is. Its words are never guessed from, because a tool that passes on a remote command's output (`bash: chezmoi: command not found`) didn't write them.
+- **A schema library's error is `validation`**, recognized by its `issues` array (zod, valibot), not by its words.
+- **Anything else is guessed from its message**, which is the library's own: `timeout`, `gateway`, `auth`, `not_found` or `validation` by keyword, and `internal` otherwise.
+
+`suggestions` replaces the category's generic ones, and `suggestions: []` sends none.
+
+```typescript
+throw new UserError(`No list named "${name}"`, { category: "not_found", suggestions: ["Call list-lists first"] })
+```
+
+In 2.3 and earlier, a `UserError` with no category was labelled `validation` and came with "Check the tool's parameter schema and provide valid input".
 
 ## Gateways
 
@@ -586,7 +598,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 **Primitives** (somamcp-owned, no SDK types leak through)
 
-- `Tool`, `Resource`, `Prompt`, `Context`, `Content`, `ContentResult`, `SessionAuth`, `UserError`
+- `Tool`, `Resource`, `Prompt`, `Context`, `Content`, `ContentResult`, `SessionAuth`, `UserError` (and `UserErrorOptions`)
 
 **Build info**
 

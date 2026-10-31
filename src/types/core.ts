@@ -9,6 +9,8 @@
 // Internal mutable state uses `Option<T>`; these public protocol types do not.
 /* eslint-disable functype/prefer-option */
 
+import type { ErrorCategory } from "../telemetry/TelemetryCollector.js"
+
 // ── Auth ──────────────────────────────────────────────────────────────
 
 export type SessionAuth = Record<string, unknown> | undefined
@@ -177,9 +179,23 @@ export type ServerStatus = "error" | "running" | "stopped"
 
 // ── UserError ─────────────────────────────────────────────────────────
 
+/** What a tool can add to a failure it reports with `UserError`. */
+export type UserErrorOptions = {
+  /** The label the client and telemetry see. Defaults to `"execution"`: the tool ran, and what it ran failed. */
+  readonly category?: ErrorCategory
+  /** Hints for the caller. Defaults to the category's own (`"execution"` has none); `[]` sends none. */
+  readonly suggestions?: ReadonlyArray<string>
+}
+
+/** A failure the tool reports to the client, with its message shown as is. */
 export class UserError extends Error {
-  constructor(message: string) {
+  readonly category: ErrorCategory | undefined
+  readonly suggestions: ReadonlyArray<string> | undefined
+
+  constructor(message: string, options: UserErrorOptions = {}) {
     super(message)
     this.name = "UserError"
+    this.category = options.category
+    this.suggestions = options.suggestions
   }
 }

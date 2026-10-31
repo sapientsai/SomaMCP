@@ -24,6 +24,7 @@ export type {
   TextContent,
   Tool,
   ToolAnnotations,
+  UserErrorOptions,
 } from "./core.js"
 export { UserError } from "./core.js"
 export type { RouteConfig, RouteMethod } from "./routes.js"
