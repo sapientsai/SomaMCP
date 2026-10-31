@@ -482,24 +482,33 @@ describe("widenScopesOnRefresh", () => {
   const after = [...before, "Contacts.ReadWrite"]
 
   /** Signed in while the list was `before`, then refreshed on a server whose list is `after`. */
-  const signedInBeforeTheListGrew = async (overrides: Parameters<typeof createTestServer>[1] = {}) => {
+  const signedInBeforeTheListGrew = async (
+    overrides: Parameters<typeof createTestServer>[1] = {},
+    firstScopes: ReadonlyArray<string> = before,
+  ) => {
     const provider = createFakeProvider()
-    const store = createMemoryStore()
+    const store = overrides.store ?? createMemoryStore()
     const warnings: unknown[][] = []
-    const first = make(provider, { encryptionKey: false, scopes: before, store })
+    const errors: unknown[][] = []
+    const first = make(provider, { encryptionKey: false, scopes: firstScopes, store })
     const { client_id } = await register(first)
     provider.queue(json({ access_token: "a1", expires_in: 3600, refresh_token: "r1", scope: "User.Read" }))
     const tokens = await issueTokens(first, client_id)
     first.close()
-    const server = make(provider, {
-      encryptionKey: false,
-      logger: { error: () => {}, warn: (...a) => warnings.push(a) },
+    const settings = {
+      encryptionKey: false as const,
+      logger: { error: (...a: unknown[]) => errors.push(a), warn: (...a: unknown[]) => warnings.push(a) },
       scopes: after,
       store,
       ...overrides,
-    })
-    return { clientId: client_id, provider, server, tokens, warnings }
+    }
+    const server = make(provider, settings)
+    /** The same store and keys again, with other settings: a restart. */
+    const restart = (more: Parameters<typeof createTestServer>[1]) => make(provider, { ...settings, ...more })
+    return { clientId: client_id, errors, provider, restart, server, store, tokens, warnings }
   }
+  const consentMissing = () => json({ error: "invalid_grant", error_description: "AADSTS65001: consent required" }, 400)
+  const scopesSent = (provider: FakeProvider) => provider.requests.slice(1).map((r) => r.body.get("scope"))
 
   it("is off by default: a refresh asks for the grant, as before", async () => {
     const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew()
@@ -536,6 +545,82 @@ describe("widenScopesOnRefresh", () => {
     expect(provider.requests[2]?.body.get("refresh_token")).toBe("r1")
     expect(next.scope).toBe("User.Read")
     expect(String(warnings[0]?.[0])).toContain("refused the server's scopes")
+  })
+
+  it("does not ask that sign-in for the same list again for a day once refused", async () => {
+    vi.useFakeTimers({ now: 1_800_000_000_000, toFake: ["Date"] })
+    const { clientId, provider, server, tokens, warnings } = await signedInBeforeTheListGrew({
+      widenScopesOnRefresh: true,
+    })
+    provider.queue(consentMissing())
+    const second = right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    const third = right(await refreshWith(server, clientId, second.refresh_token ?? ""))
+    expect(scopesSent(provider)).toEqual([after.join(" "), null, null])
+    expect(warnings).toHaveLength(1)
+    expect(String(warnings[0]?.[0])).toContain("(invalid_grant: AADSTS65001: consent required)")
+    expect(String(warnings[0]?.[0])).toContain("will not widen this sign-in again for a day")
+    vi.setSystemTime(1_800_000_000_000 + 86_401 * 1000)
+    right(await refreshWith(server, clientId, third.refresh_token ?? ""))
+    expect(scopesSent(provider)[3]).toBe(after.join(" "))
+  })
+
+  it("asks again within the day when the list has changed since the refusal", async () => {
+    const { clientId, provider, restart, server, tokens } = await signedInBeforeTheListGrew({
+      widenScopesOnRefresh: true,
+    })
+    provider.queue(consentMissing())
+    const second = right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    const grown = [...after, "Tasks.ReadWrite"]
+    right(await refreshWith(restart({ scopes: grown }), clientId, second.refresh_token ?? ""))
+    expect(scopesSent(provider)).toEqual([after.join(" "), null, grown.join(" ")])
+  })
+
+  it("does not remember a refusal that says nothing about consent", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({ widenScopesOnRefresh: true })
+    provider.queue(json({ error: "temporarily_unavailable" }, 503))
+    const second = right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    right(await refreshWith(server, clientId, second.refresh_token ?? ""))
+    expect(scopesSent(provider)).toEqual([after.join(" "), null, after.join(" ")])
+  })
+
+  it("never fails a refresh because a refusal could not be saved or read", async () => {
+    const inner = createMemoryStore()
+    const failing: TokenStore = {
+      ...inner,
+      get: (key) => (key.startsWith("widen-declined:") ? Promise.reject(new Error("store down")) : inner.get(key)),
+      save: (key, value, ttl) =>
+        key.startsWith("widen-declined:") ? Promise.reject(new Error("store down")) : inner.save(key, value, ttl),
+    }
+    const { clientId, errors, provider, server, tokens } = await signedInBeforeTheListGrew({
+      store: failing,
+      widenScopesOnRefresh: true,
+    })
+    provider.queue(consentMissing())
+    expect((await refreshWith(server, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+    expect(errors.map((e) => String(e[0]))).toEqual([
+      "[somamcp/oauth] could not read a refused widening; asking anyway:",
+      "[somamcp/oauth] could not save a refused widening:",
+    ])
+    inner.close?.()
+  })
+
+  it("checks acceptSignIn on the id token a widened refresh brings, and ends a session it refuses", async () => {
+    const idToken = (claims: Record<string, unknown>) =>
+      [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
+    // Signed in without openid, so with no id token and nothing to check until the list grows.
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew(
+      { acceptSignIn: () => "Not on the list.", scopes: ["openid", ...after], widenScopesOnRefresh: true },
+      ["offline_access", "User.Read"],
+    )
+    provider.queue(json({ access_token: "a2", id_token: idToken({ email: "x@example.com" }), refresh_token: "r2" }))
+    expect(wire(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toEqual({
+      code: "invalid_grant",
+      description: "Not on the list.",
+      status: 400,
+    })
+    expect(left(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toMatchObject({
+      reason: "The refresh token was already used or has expired.",
+    })
   })
 
   it("relays the provider's refusal when it refuses the grant too", async () => {

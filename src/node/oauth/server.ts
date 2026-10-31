@@ -58,9 +58,9 @@ export type Lifetimes = {
  * - `widenScopesOnRefresh` — when `scopes` gain one a signed-in user's grant lacks, ask the
  *   provider for the whole list on their next refresh, so they get it without signing in again.
  *   A provider that refuses (Microsoft, before consent: AADSTS65001) is asked again for the
- *   grant, so the refresh still works. Only a refresh that names no scope is widened; a client
- *   never adds to its grant. A user who narrowed `scope` at sign-in is widened to the whole list.
- *   Off by default.
+ *   grant, so the refresh still works, and that sign-in isn't widened to the same list again
+ *   for a day. Only a refresh that names no scope is widened; a client never adds to its
+ *   grant. A user who narrowed `scope` at sign-in is widened to the whole list. Off by default.
  */
 export type OAuthProxyConfig = {
   // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain

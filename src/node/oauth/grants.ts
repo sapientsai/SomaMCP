@@ -47,11 +47,19 @@ export type GrantSettings = {
   defaultAccessTokenLifetime: number
   /** For upstream refresh tokens that came without a `refresh_expires_in`. */
   refreshTokenLifetime: number
-  /** The server's scopes, for the openid and offline_access a refresh may ask for again. */
+  /** The server's scopes: the openid and offline_access a refresh may ask for again, and the list it widens to. */
   scopes: ReadonlyArray<string>
   /** Ask for all of `scopes` on a refresh whose grant lacks some, and fall back to the grant if refused. */
   widenScopesOnRefresh: boolean
 }
+
+/** How long a refused widening is not asked again: a day, so consent given later still lands. */
+const DECLINED_WIDENING_TTL = 86_400
+
+/** Provider errors that say nothing about consent, so a refusal with one is not remembered. */
+const TRANSIENT = ["server_error", "temporarily_unavailable"]
+
+type ProviderRejected = Extract<OAuthError, { _tag: "ProviderRejected" }>
 
 export const createGrants = (
   settings: GrantSettings,
@@ -166,26 +174,48 @@ export const createGrants = (
     await records.grants.save(grant, secondsUntil(grant.expiresAt))
   }
 
+  /** `widened`, unless the provider refused this sign-in that same list within the last day. */
+  const worthAsking = async (key: string, widened: Option<string>): Promise<Option<string>> => {
+    if (widened.isNone()) return widened
+    const declined = await records.declinedWidenings.find(key).catch((error: unknown) => {
+      logger.error("[somamcp/oauth] could not read a refused widening; asking anyway:", error)
+      return Option.none<string>()
+    })
+    return widened.filter((wide) => declined.filter((list) => list === wide).isNone())
+  }
+
+  /** Saving it never fails the refresh: at worst the provider is asked again next time. */
+  const rememberDeclined = (key: string, scope: string): Promise<void> =>
+    records.declinedWidenings.save(key, scope, DECLINED_WIDENING_TTL).catch((error: unknown) => {
+      logger.error("[somamcp/oauth] could not save a refused widening:", error)
+    })
+
   /**
    * The provider's refresh, asking for `widened` first when there is one. A provider that refuses
-   * it (Microsoft: AADSTS65001, no consent yet) is asked again with `scope`, as without widening.
+   * it (Microsoft: AADSTS65001, no consent yet) is asked again with `scope`, as without widening,
+   * and is not asked for that list again for this sign-in for a day.
    */
   const refreshUpstream = async (
+    key: string,
     refreshToken: string,
     scope: Option<string>,
     widened: Option<string>,
   ): Promise<Either<OAuthError, UpstreamTokens>> => {
-    if (widened.isNone()) return upstream.refresh(refreshToken, scope)
-    const wide = await upstream.refresh(refreshToken, widened)
+    const asked = await worthAsking(key, widened)
+    if (asked.isNone()) return upstream.refresh(refreshToken, scope)
+    const wide = await upstream.refresh(refreshToken, asked)
     const declined = wide.fold(
-      (error) => Option(error).filter((e) => e._tag === "ProviderRejected"),
-      () => Option.none<OAuthError>(),
+      (error) =>
+        error._tag === "ProviderRejected" ? Option<ProviderRejected>(error) : Option.none<ProviderRejected>(),
+      () => Option.none<ProviderRejected>(),
     )
     if (declined.isNone()) return wide
+    const refusal = declined.orThrow()
+    const transient = TRANSIENT.includes(refusal.code)
     logger.warn(
-      "[somamcp/oauth] the provider refused the server's scopes on a refresh; asked for the grant's:",
-      declined.orUndefined(),
+      `[somamcp/oauth] the provider refused the server's scopes on a refresh (${refusal.code}: ${refusal.description.orElse("no description")}); asked for the grant's${transient ? "" : ", and will not widen this sign-in again for a day"}.`,
     )
+    if (!transient) await rememberDeclined(key, asked.orElse(""))
     return upstream.refresh(refreshToken, scope)
   }
 
@@ -199,7 +229,7 @@ export const createGrants = (
     const current = stored.orThrow()
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
-    const refreshed = await refreshUpstream(upstreamRefresh.orElse(""), scope, widened)
+    const refreshed = await refreshUpstream(grant.upstreamTokenKey, upstreamRefresh.orElse(""), scope, widened)
     return refreshed.fold(
       (error) => Promise.resolve(Left<OAuthError, TokenResponse>(error)),
       async (fresh) => {
