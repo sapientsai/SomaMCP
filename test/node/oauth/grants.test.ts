@@ -477,6 +477,104 @@ describe("refreshing", () => {
   })
 })
 
+describe("widenScopesOnRefresh", () => {
+  const before = ["openid", "offline_access", "User.Read"]
+  const after = [...before, "Contacts.ReadWrite"]
+
+  /** Signed in while the list was `before`, then refreshed on a server whose list is `after`. */
+  const signedInBeforeTheListGrew = async (overrides: Parameters<typeof createTestServer>[1] = {}) => {
+    const provider = createFakeProvider()
+    const store = createMemoryStore()
+    const warnings: unknown[][] = []
+    const first = make(provider, { encryptionKey: false, scopes: before, store })
+    const { client_id } = await register(first)
+    provider.queue(json({ access_token: "a1", expires_in: 3600, refresh_token: "r1", scope: "User.Read" }))
+    const tokens = await issueTokens(first, client_id)
+    first.close()
+    const server = make(provider, {
+      encryptionKey: false,
+      logger: { error: () => {}, warn: (...a) => warnings.push(a) },
+      scopes: after,
+      store,
+      ...overrides,
+    })
+    return { clientId: client_id, provider, server, tokens, warnings }
+  }
+
+  it("is off by default: a refresh asks for the grant, as before", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew()
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    expect(provider.requests).toHaveLength(2)
+    expect(provider.requests[1]?.body.has("scope")).toBe(false)
+  })
+
+  it("asks for the whole list when the grant lacks some, and keeps what the provider reports", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({ widenScopesOnRefresh: true })
+    provider.queue(
+      json({ access_token: "a2", expires_in: 3600, refresh_token: "r2", scope: "User.Read Contacts.ReadWrite" }),
+    )
+    const next = right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    expect(provider.requests[1]?.body.get("scope")).toBe("openid offline_access User.Read Contacts.ReadWrite")
+    expect(next.scope).toBe("User.Read Contacts.ReadWrite")
+    expect(readClaims(next.access_token).orThrow().scope).toEqual(["User.Read", "Contacts.ReadWrite"])
+    // The grant now has the whole list, so the refresh after asks for it as before.
+    provider.queue(
+      json({ access_token: "a3", expires_in: 3600, refresh_token: "r3", scope: "User.Read Contacts.ReadWrite" }),
+    )
+    right(await refreshWith(server, clientId, next.refresh_token ?? ""))
+    expect(provider.requests[2]?.body.has("scope")).toBe(false)
+  })
+
+  it("asks again for the grant when the provider refuses the whole list, so the refresh still works", async () => {
+    const { clientId, provider, server, tokens, warnings } = await signedInBeforeTheListGrew({
+      widenScopesOnRefresh: true,
+    })
+    provider.queue(json({ error: "invalid_grant", error_description: "AADSTS65001: consent required" }, 400))
+    provider.queue(json({ access_token: "a2", expires_in: 3600, refresh_token: "r2", scope: "User.Read" }))
+    const next = right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    expect(provider.requests.slice(1).map((r) => r.body.get("scope"))).toEqual([after.join(" "), null])
+    expect(provider.requests[2]?.body.get("refresh_token")).toBe("r1")
+    expect(next.scope).toBe("User.Read")
+    expect(String(warnings[0]?.[0])).toContain("refused the server's scopes")
+  })
+
+  it("relays the provider's refusal when it refuses the grant too", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({ widenScopesOnRefresh: true })
+    provider.queue(json({ error: "invalid_grant", error_description: "AADSTS65001: consent required" }, 400))
+    provider.queue(json({ error: "invalid_grant", error_description: "AADSTS70008: expired" }, 400))
+    expect(wire(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toEqual({
+      code: "invalid_grant",
+      description: "AADSTS70008: expired",
+      status: 400,
+    })
+    expect(provider.requests).toHaveLength(3)
+  })
+
+  it("does not ask twice when the provider could not be reached, and leaves the refresh token usable", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({ widenScopesOnRefresh: true })
+    provider.queue(new Response("bad gateway", { status: 502 }))
+    expect(wire(await refreshWith(server, clientId, tokens.refresh_token ?? "")).code).toBe("server_error")
+    expect(provider.requests).toHaveLength(2)
+    expect((await refreshWith(server, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+
+  it("never lets a client add to its grant: a refresh that names a scope is narrowed to the grant", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({ widenScopesOnRefresh: true })
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "User.Read Contacts.ReadWrite"))
+    expect(provider.requests).toHaveLength(2)
+    expect(provider.requests[1]?.body.get("scope")).toBe("User.Read openid offline_access")
+  })
+
+  it("does not widen for openid or offline_access alone, which providers often leave out of the grant", async () => {
+    const { clientId, provider, server, tokens } = await signedInBeforeTheListGrew({
+      scopes: before,
+      widenScopesOnRefresh: true,
+    })
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    expect(provider.requests[1]?.body.has("scope")).toBe(false)
+  })
+})
+
 describe("authenticating to the provider's token endpoint", () => {
   const firstRequest = async (provider: FakeProvider, server: TestServer) => {
     const { client_id } = await register(server)

@@ -5,6 +5,10 @@
 // Authorization codes and refresh tokens are single-use, claimed with the store's atomic
 // `take`; a refresh that fails puts its token back, so the client can retry it, unless it
 // failed because `acceptSignIn` now refuses the account.
+//
+// With `widenScopesOnRefresh`, a refresh asks the provider for the server's whole list when the grant
+// lacks some of it, so scopes added to the list reach people already signed in. Only the server
+// widens: a client that names a scope is still held to its grant.
 import type { Either } from "functype"
 import { Left, Option, Right, Try } from "functype"
 
@@ -45,6 +49,8 @@ export type GrantSettings = {
   refreshTokenLifetime: number
   /** The server's scopes, for the openid and offline_access a refresh may ask for again. */
   scopes: ReadonlyArray<string>
+  /** Ask for all of `scopes` on a refresh whose grant lacks some, and fall back to the grant if refused. */
+  widenScopesOnRefresh: boolean
 }
 
 export const createGrants = (
@@ -54,7 +60,7 @@ export const createGrants = (
   upstream: Upstream,
   signer: JwtSigner,
   copyClaims: ClaimsCopier,
-  logger: { error: (...args: unknown[]) => void },
+  logger: { error: (...args: unknown[]) => void; warn: (...args: unknown[]) => void },
 ) => {
   const accessLifetime = (tokens: UpstreamTokens): number =>
     tokens.expiresIn > 0 ? tokens.expiresIn : settings.defaultAccessTokenLifetime
@@ -160,13 +166,40 @@ export const createGrants = (
     await records.grants.save(grant, secondsUntil(grant.expiresAt))
   }
 
-  const rotate = async (grant: TokenGrant, scope: Option<string>): Promise<Either<OAuthError, TokenResponse>> => {
+  /**
+   * The provider's refresh, asking for `widened` first when there is one. A provider that refuses
+   * it (Microsoft: AADSTS65001, no consent yet) is asked again with `scope`, as without widening.
+   */
+  const refreshUpstream = async (
+    refreshToken: string,
+    scope: Option<string>,
+    widened: Option<string>,
+  ): Promise<Either<OAuthError, UpstreamTokens>> => {
+    if (widened.isNone()) return upstream.refresh(refreshToken, scope)
+    const wide = await upstream.refresh(refreshToken, widened)
+    const declined = wide.fold(
+      (error) => Option(error).filter((e) => e._tag === "ProviderRejected"),
+      () => Option.none<OAuthError>(),
+    )
+    if (declined.isNone()) return wide
+    logger.warn(
+      "[somamcp/oauth] the provider refused the server's scopes on a refresh; asked for the grant's:",
+      declined.orUndefined(),
+    )
+    return upstream.refresh(refreshToken, scope)
+  }
+
+  const rotate = async (
+    grant: TokenGrant,
+    scope: Option<string>,
+    widened: Option<string>,
+  ): Promise<Either<OAuthError, TokenResponse>> => {
     const stored = await records.upstream.find(grant.upstreamTokenKey)
     if (stored.isNone()) return Left(Errors.invalidGrant("The sign-in behind this refresh token has expired."))
     const current = stored.orThrow()
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
-    const refreshed = await upstream.refresh(upstreamRefresh.orElse(""), scope)
+    const refreshed = await refreshUpstream(upstreamRefresh.orElse(""), scope, widened)
     return refreshed.fold(
       (error) => Promise.resolve(Left<OAuthError, TokenResponse>(error)),
       async (fresh) => {
@@ -193,6 +226,16 @@ export const createGrants = (
     ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !granted.includes(scope)),
   ]
 
+  /**
+   * With `widenScopesOnRefresh`, the server's whole list, when the grant lacks any of it other than
+   * openid and offline_access (providers often leave those out of what they report granted).
+   */
+  const widenedScope = (granted: ReadonlyArray<string>): Option<string> =>
+    Option(settings.scopes)
+      .filter(() => settings.widenScopesOnRefresh)
+      .filter((scopes) => scopes.some((scope) => !isAlwaysKept(scope) && !granted.includes(scope)))
+      .map((scopes) => scopes.join(" "))
+
   /** Whether a refresh that failed this way may be tried again with the same token. */
   const retryable = (error: OAuthError): boolean => error._tag !== "SignInRefused"
 
@@ -214,13 +257,19 @@ export const createGrants = (
       await putBack()
       return Left(Errors.invalidGrant("The refresh token was issued to another client."))
     }
+    const requested = Option(request.scope)
+      .map(splitScope)
+      .filter((scope) => scope.length > 0)
     const outcome = await Try.fromPromise(
       rotate(
         grant,
         // RFC 6749 §6: never more than was granted. openid and offline_access may be asked again.
-        Option(request.scope)
-          .flatMap((s) => narrowScope(splitScope(s), refreshCap(grant.scope)))
-          .map((scope) => scope.join(" ")),
+        requested.flatMap((s) => narrowScope(s, refreshCap(grant.scope))).map((scope) => scope.join(" ")),
+        // Only a refresh that names no scope is widened: a client never adds to its grant.
+        requested.fold(
+          () => widenedScope(grant.scope),
+          () => Option.none<string>(),
+        ),
       ),
     )
     if (outcome.isFailure()) {
