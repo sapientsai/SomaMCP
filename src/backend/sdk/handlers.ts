@@ -88,12 +88,19 @@ const withTimeout = <R>(tool: AnyTool<SessionAuth>, run: Promise<R>): Promise<R>
 
 type Validated = { value: unknown } | { issues: ReadonlyArray<SchemaIssue> }
 
+/** A key as it is, or the `key` of a `{ key }` segment; `?` for one that can't be read or written as text. */
+const segmentName = (segment: unknown): string =>
+  Try(() => String(segment !== null && typeof segment === "object" && "key" in segment ? segment.key : segment)).orElse(
+    "?",
+  )
+
 /** `recurrence.pattern.dayOfMonth: <message>`, so a model can tell which argument to fix. An issue about the whole input keeps its message alone. */
 const describeIssue = (issue: SchemaIssue): string => {
-  const path = Option(issue.path)
-    .map((segments) => segments.map((segment) => String(typeof segment === "object" ? segment.key : segment)))
-    .orElse([])
-  return path.length > 0 ? `${path.join(".")}: ${issue.message}` : issue.message
+  // `path` is undeclared on SchemaIssue (see its note), so it is read as whatever it turns out to be.
+  const located: { readonly message: string; readonly path?: unknown } = issue
+  const path: ReadonlyArray<unknown> = Array.isArray(located.path) ? located.path : []
+  const names = path.map(segmentName)
+  return names.length > 0 ? `${names.join(".")}: ${issue.message}` : issue.message
 }
 
 const validate = (tool: AnyTool<SessionAuth>, args: Record<string, unknown>): Promise<Validated> =>

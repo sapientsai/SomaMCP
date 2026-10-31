@@ -15,10 +15,14 @@ export type SessionAuth = Record<string, unknown> | undefined
 
 // ── Schema ────────────────────────────────────────────────────────────
 
-/** One validation failure, as Standard Schema reports it. `path` locates it in the input; absent or empty means the whole input. */
+/**
+ * One validation failure. Only `message` is declared, as in 2.3, so `SchemaParams` fits
+ * `StandardSchemaV1` both ways and any validator that fit before still does. somamcp also reads
+ * Standard Schema's `path` when an issue has one: an array of keys and `{ key }` objects that
+ * locates the failure in the input. Any other `path` is ignored.
+ */
 export type SchemaIssue = {
   readonly message: string
-  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined
 }
 
 /**

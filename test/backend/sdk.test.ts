@@ -5,7 +5,7 @@ import { z } from "zod"
 import { createSdkBackend } from "../../src/backend/index.js"
 import { createToolContext } from "../../src/backend/sdk/mapping.js"
 import { createServer } from "../../src/index.js"
-import { UserError } from "../../src/types/core.js"
+import { type SchemaParams, UserError } from "../../src/types/core.js"
 import {
   connectAuto,
   connectLegacy,
@@ -140,6 +140,50 @@ describe("createSdkBackend", () => {
       server.addTool({ execute: () => Promise.resolve("ran"), name: "either", parameters })
       const result = await (await connectModern(server)).callTool({ arguments: {}, name: "either" })
       expect(firstText(result)).toBe("Invalid arguments for tool 'either': Needs one of a or b.; c.0: c is wrong.")
+    })
+
+    it("still takes a validator whose issues carry a path of another shape, and never throws on one", async () => {
+      const server = makeServer()
+      // Typed as such validators declared themselves before somamcp read `path`; both must still fit SchemaParams.
+      // A null segment, and one that can't be written as text, must not throw either.
+      const asString: SchemaParams = {
+        "~standard": {
+          validate: (): { issues: Array<{ message: string; path: string }> } => ({
+            issues: [{ message: "a is wrong.", path: "a" }],
+          }),
+          vendor: "test",
+          version: 1,
+        },
+      }
+      const keyedUnknown: SchemaParams = {
+        "~standard": {
+          validate: (): { issues: Array<{ message: string; path: Array<{ key: unknown }> }> } => ({
+            issues: [{ message: "b is wrong.", path: [{ key: "b" }, { key: 1 }] }],
+          }),
+          vendor: "test",
+          version: 1,
+        },
+      }
+      const awkward: SchemaParams = {
+        "~standard": {
+          validate: () => ({ issues: [{ message: "c is wrong.", path: [null, Object.create(null), "c"] }] }),
+          vendor: "test",
+          version: 1,
+        },
+      }
+      server.addTool({ execute: () => Promise.resolve("ran"), name: "awkward-path", parameters: awkward })
+      server.addTool({ execute: () => Promise.resolve("ran"), name: "string-path", parameters: asString })
+      server.addTool({ execute: () => Promise.resolve("ran"), name: "keyed-path", parameters: keyedUnknown })
+      const client = await connectModern(server)
+      expect(firstText(await client.callTool({ arguments: {}, name: "string-path" }))).toBe(
+        "Invalid arguments for tool 'string-path': a is wrong.",
+      )
+      expect(firstText(await client.callTool({ arguments: {}, name: "keyed-path" }))).toBe(
+        "Invalid arguments for tool 'keyed-path': b.1: b is wrong.",
+      )
+      expect(firstText(await client.callTool({ arguments: {}, name: "awkward-path" }))).toBe(
+        "Invalid arguments for tool 'awkward-path': null.?.c: c is wrong.",
+      )
     })
 
     it("enforces timeoutMs", async () => {
