@@ -16,14 +16,13 @@ export type SessionAuth = Record<string, unknown> | undefined
 // ── Schema ────────────────────────────────────────────────────────────
 
 /**
- * One validation failure. Standard Schema puts an array of keys and `{ key }` objects in `path`
- * to locate it in the input; absent or empty means the whole input. `path` is `unknown` so a
- * validator written before somamcp read it, with a path of another shape, still fits; somamcp
- * reads only an array, and ignores anything else.
+ * One validation failure. Only `message` is declared, as in 2.3, so `SchemaParams` fits
+ * `StandardSchemaV1` both ways and any validator that fit before still does. somamcp also reads
+ * Standard Schema's `path` when an issue has one: an array of keys and `{ key }` objects that
+ * locates the failure in the input. Any other `path` is ignored.
  */
 export type SchemaIssue = {
   readonly message: string
-  readonly path?: unknown
 }
 
 /**
