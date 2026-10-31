@@ -87,7 +87,8 @@ describe("Server", () => {
     })
   })
 
-  // Each call below also fails to compile if addTools goes back to one schema for the whole array.
+  // The mixed arrays and the ReadonlyArray below fail to compile if addTools goes back to one schema
+  // for the whole array; Tool[] and [] check that the old call shapes still fit.
   describe("addTools with different parameter schemas", () => {
     const makeServer = () =>
       createServer({ enableDashboard: false, enableIntrospection: false, name: "mixed", version: "1.0.0" })
@@ -132,6 +133,15 @@ describe("Server", () => {
       server.addTools([])
 
       expect(server.getCapabilities().tools.map((t) => t.name)).toEqual(["shout", "double", "a", "b"])
+
+      // A list built before the call stays a tuple with `as const` or an annotation; a type argument is a tuple.
+      const prebuilt = [shout, double] as const
+      const annotated: readonly [typeof shout, typeof double] = [shout, double]
+      const later = makeServer()
+      later.addTools(prebuilt)
+      makeServer().addTools(annotated)
+      makeServer().addTools<[typeof word]>([{ execute: async (args) => args.word, name: "typed", parameters: word }])
+      expect(later.getCapabilities().tools.map((t) => t.name)).toEqual(["shout", "double"])
     })
 
     it("still checks each tool's args against its own schema, and refuses what is not a tool", () => {
@@ -146,6 +156,19 @@ describe("Server", () => {
         server.addTools([{ execute: async () => "x", name: "bad", parameters: { word: "string" } }])
         // @ts-expect-error a tool needs a name
         server.addTools([{ execute: async () => "x" }])
+        const shout = {
+          execute: async (args: { word: string }) => args.word,
+          name: "s",
+          parameters: z.object({ word: z.string() }),
+        }
+        const double = {
+          execute: async (args: { n: number }) => String(args.n),
+          name: "d",
+          parameters: z.object({ n: z.number() }),
+        }
+        const untupled = [shout, double]
+        // @ts-expect-error an array of a union: each execute is checked against both schemas (see ToolOptionsList)
+        server.addTools(untupled)
       }
       expect(refused).toBeTypeOf("function")
     })
