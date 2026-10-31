@@ -4,7 +4,7 @@
 // stores, so a store it wrote reads here and the reverse, and a server moved off FastMCP
 // keeps every user signed in. test/node/oauth-compat.test.ts and
 // test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs hold it in place: change a field name or a
-// prefix here and they fail.
+// prefix here and they fail. `widen-declined:` is somamcp's own; FastMCP never wrote one.
 import { Option } from "functype"
 import { z } from "zod"
 
@@ -16,6 +16,7 @@ const KEY = {
   grant: "mapping:",
   pending: "transaction:",
   upstream: "upstream:",
+  widenDeclined: "widen-declined:",
 } as const
 
 /** A `Date` in memory; on disk, the ISO string `JSON.stringify` made of it. */
@@ -196,5 +197,14 @@ export const createRecords = (store: TokenStore) => {
       store.save(`${KEY.upstream}${key}`, tokens, ttl),
   }
 
-  return { clients, codes, grants, pending, upstream }
+  /** The scope list a provider last refused to widen a sign-in to, under that sign-in's upstream key. */
+  const declinedWidenings = {
+    find: async (key: string): Promise<Option<string>> =>
+      decode(z.string(), await store.get(`${KEY.widenDeclined}${key}`)),
+    // async, so a store that throws instead of rejecting still reaches the caller's catch.
+    save: async (key: string, scope: string, ttl: number): Promise<void> =>
+      store.save(`${KEY.widenDeclined}${key}`, scope, ttl),
+  }
+
+  return { clients, codes, declinedWidenings, grants, pending, upstream }
 }
