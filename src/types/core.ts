@@ -9,8 +9,6 @@
 // Internal mutable state uses `Option<T>`; these public protocol types do not.
 /* eslint-disable functype/prefer-option */
 
-import type { ErrorCategory } from "../telemetry/TelemetryCollector.js"
-
 // ── Auth ──────────────────────────────────────────────────────────────
 
 export type SessionAuth = Record<string, unknown> | undefined
@@ -178,6 +176,12 @@ export type Prompt<T extends SessionAuth = SessionAuth, Args extends PromptArgum
 export type ServerStatus = "error" | "running" | "stopped"
 
 // ── UserError ─────────────────────────────────────────────────────────
+
+/**
+ * How a failure is labelled. `execution` is a tool reporting that the operation it ran failed
+ * (a `UserError` with no category of its own); `validation` is input a schema refused.
+ */
+export type ErrorCategory = "validation" | "execution" | "timeout" | "gateway" | "internal" | "auth" | "not_found"
 
 /** What a tool can add to a failure it reports with `UserError`. */
 export type UserErrorOptions = {

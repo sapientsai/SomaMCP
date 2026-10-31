@@ -1,3 +1,5 @@
+import type { ErrorCategory } from "../types/core.js"
+
 export type TelemetryEventType =
   | "server.start"
   | "server.stop"
@@ -13,11 +15,7 @@ export type TelemetryEventType =
   | "session.connect"
   | "session.disconnect"
 
-/**
- * How a failure is labelled. `execution` is a tool reporting that the operation it ran failed
- * (a `UserError` with no category of its own); `validation` is input the tool's schema refused.
- */
-export type ErrorCategory = "validation" | "execution" | "timeout" | "gateway" | "internal" | "auth" | "not_found"
+export type { ErrorCategory } from "../types/core.js"
 
 export type CaptureLevel = "full" | "metadata" | "none"
 

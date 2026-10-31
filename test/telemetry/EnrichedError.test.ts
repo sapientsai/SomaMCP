@@ -47,6 +47,21 @@ describe("EnrichedError", () => {
       expect(classifyError({ category: "bogus", message: "x", name: "UserError" })).toBe("execution")
     })
 
+    it("reads the category a UserError subclass carries, whatever name the subclass gives itself", () => {
+      class NotFoundError extends UserError {
+        constructor(message: string) {
+          super(message, { category: "not_found" })
+          this.name = "NotFoundError"
+        }
+      }
+      expect(classifyError(new NotFoundError("no such list"))).toBe("not_found")
+      expect(createEnrichedError(new NotFoundError("no such list"))).toEqual({
+        errorCategory: "not_found",
+        message: "no such list",
+        suggestions: ["The requested resource was not found. Verify the identifier"],
+      })
+    })
+
     it("labels a schema library's error validation, by its issues rather than its words", () => {
       const parsed = z.object({ n: z.number() }).safeParse({ n: "x" })
       expect(parsed.success).toBe(false)
@@ -102,6 +117,13 @@ describe("EnrichedError", () => {
       expect(createEnrichedError(new UserError("x", { category: "not_found", suggestions: [] }))).toEqual({
         errorCategory: "not_found",
         message: "x",
+      })
+    })
+
+    it("takes the message of a hand-built UserError object", () => {
+      expect(createEnrichedError({ category: "not_found", message: "m", name: "UserError" })).toMatchObject({
+        errorCategory: "not_found",
+        message: "m",
       })
     })
 

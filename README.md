@@ -12,7 +12,7 @@ The main entry, `somamcp`, uses web-standard APIs only, so it runs on Cloudflare
 - **Runs anywhere** — the main entry is WinterTC-only (Workers, Deno, Bun, Node); `somamcp/node` adds a port listener and stdio
 - **Backend abstraction** — framework-agnostic `BackendAdapter` interface; swap the underlying MCP implementation without changing consumer code
 - **Structured telemetry** — pluggable `TelemetryCollector` with console, file (NDJSON), composite, and [functype-log](https://github.com/jordanburke/functype-log) adapters
-- **Error classification & enrichment** — errors are auto-classified (validation / timeout / gateway / auth / not_found / internal) with actionable suggestions for LLMs
+- **Error classification & enrichment** — errors are auto-classified (validation / execution / timeout / gateway / auth / not_found / internal) with actionable suggestions for LLMs
 - **Per-tool capture config** — configure input/output capture levels, field redaction, and output size limits per tool
 - **Gateway system** — connect to remote MCP servers and proxy their tools as local tools
 - **Identity & build info** — `info` MCP tool returns name, version, build commit, runtime, and capability counts; auto-populated from `SOMAMCP_BUILD_*` env vars
@@ -366,7 +366,7 @@ Capture levels:
 
 - `"full"` — input + output + metadata (default)
 - `"metadata"` — timing + name + ids only
-- `"none"` — no telemetry
+- `"none"` — no telemetry, and no error enrichment: a thrown error reaches the client as its bare message, without `errorCategory` or `suggestions` (see below)
 
 ### Error enrichment
 
@@ -391,11 +391,11 @@ Errors thrown from tools are classified and returned as structured `ContentResul
 
 How the category is chosen:
 
-- **A `UserError` is labelled as it says.** `new UserError(message, { category, suggestions })` sets both. With no `category` it's `execution`: the tool ran, and what it ran failed. That category has no generic suggestion, so the model reads the message as it is. Its words are never guessed from, because a tool that passes on a remote command's output (`bash: chezmoi: command not found`) didn't write them.
-- **A schema library's error is `validation`**, recognized by its `issues` array (zod, valibot), not by its words.
+- **A `UserError` is labelled as it says,** subclasses included. `new UserError(message, { category, suggestions })` sets both. With no `category` it's `execution`: the tool ran, and what it ran failed. That category has no generic suggestion, so the model reads the message as it is. Its words are never guessed from, because a tool that passes on a remote command's output (`bash: chezmoi: command not found`) didn't write them.
+- **A schema library's error thrown inside `execute` is `validation`**, recognized by its `issues` array (zod, valibot), not by its words. Arguments that fail the tool's own `parameters` never get this far: the server refuses them before `execute` runs, with the plain `Invalid arguments for tool …` message and no category. A tool that parses a remote response with zod should wrap the failure in a `UserError` with its own category, or the caller is told to check the tool's parameter schema.
 - **Anything else is guessed from its message**, which is the library's own: `timeout`, `gateway`, `auth`, `not_found` or `validation` by keyword, and `internal` otherwise.
 
-`suggestions` replaces the category's generic ones, and `suggestions: []` sends none.
+`suggestions` replaces the category's generic ones, and `suggestions: []` sends none. All of this needs the tool's telemetry wrapper, so a tool with `captureLevel: "none"` sends only the message.
 
 ```typescript
 throw new UserError(`No list named "${name}"`, { category: "not_found", suggestions: ["Call list-lists first"] })

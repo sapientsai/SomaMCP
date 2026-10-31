@@ -1,6 +1,6 @@
-import { List, Option } from "functype"
+import { Option } from "functype"
 
-import type { ErrorCategory } from "./TelemetryCollector.js"
+import { type ErrorCategory, UserError } from "../types/core.js"
 
 export type EnrichedErrorResponse = {
   errorCategory: ErrorCategory
@@ -9,21 +9,22 @@ export type EnrichedErrorResponse = {
   suggestions?: ReadonlyArray<string>
 }
 
-const CATEGORIES = List<ErrorCategory>([
-  "validation",
-  "execution",
-  "timeout",
-  "gateway",
-  "internal",
-  "auth",
-  "not_found",
-])
+/** Every category, keyed so the compiler flags one added to `ErrorCategory` and missing here. */
+const CATEGORIES: Record<ErrorCategory, true> = {
+  auth: true,
+  execution: true,
+  gateway: true,
+  internal: true,
+  not_found: true,
+  timeout: true,
+  validation: true,
+}
 
-/** What a `UserError` says about itself. Read by name, not `instanceof`, so a second copy of somamcp still counts. */
+/** What a `UserError` says about itself. */
 type Reported = { category: Option<ErrorCategory>; suggestions: Option<ReadonlyArray<string>> }
 
 const isCategory = (value: unknown): value is ErrorCategory =>
-  typeof value === "string" && CATEGORIES.contains(value as ErrorCategory)
+  typeof value === "string" && Object.hasOwn(CATEGORIES, value)
 
 const isStrings = (value: unknown): value is ReadonlyArray<string> =>
   Array.isArray(value) && value.every((item) => typeof item === "string")
@@ -32,9 +33,13 @@ const isStrings = (value: unknown): value is ReadonlyArray<string> =>
 const narrowed = <A>(value: unknown, guard: (candidate: unknown) => candidate is A): Option<A> =>
   guard(value) ? Option(value) : Option.none<A>()
 
+/** A `UserError` or a subclass, or one from a second copy of somamcp, where `instanceof` fails: by name then. */
+const isUserError = (error: unknown): boolean =>
+  error instanceof UserError ||
+  (error !== null && typeof error === "object" && "name" in error && error.name === "UserError")
+
 const reportedBy = (error: unknown): Option<Reported> => {
-  if (error === null || typeof error !== "object" || !("name" in error) || error.name !== "UserError")
-    return Option.none()
+  if (!isUserError(error)) return Option.none()
   const fields = error as { category?: unknown; suggestions?: unknown }
   return Option({
     category: narrowed(fields.category, isCategory),
@@ -101,12 +106,20 @@ const getSuggestions = (
   }
 }
 
+/** An error's message, or a plain object's `message` field, or the value as text. */
+const messageOf = (error: unknown): string => {
+  if (error instanceof Error) return error.message
+  if (error !== null && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message
+  return String(error)
+}
+
 export const createEnrichedError = (
   error: unknown,
   context?: { gatewayStatus?: string; toolName?: string },
 ): EnrichedErrorResponse => {
   const errorCategory = classifyError(error)
-  const message = error instanceof Error ? error.message : String(error)
+  const message = messageOf(error)
   const suggestions = reportedBy(error)
     .flatMap((reported) => reported.suggestions)
     .orElse(getSuggestions(errorCategory, context))
