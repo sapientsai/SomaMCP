@@ -14,6 +14,7 @@ import type {
   PromptArgument,
   Resource,
   ResourceTemplate,
+  SchemaIssue,
   SchemaParams,
   SessionAuth,
   Tool,
@@ -85,7 +86,15 @@ const withTimeout = <R>(tool: AnyTool<SessionAuth>, run: Promise<R>): Promise<R>
     },
   )
 
-type Validated = { value: unknown } | { issues: ReadonlyArray<{ message: string }> }
+type Validated = { value: unknown } | { issues: ReadonlyArray<SchemaIssue> }
+
+/** `recurrence.pattern.dayOfMonth: <message>`, so a model can tell which argument to fix. An issue about the whole input keeps its message alone. */
+const describeIssue = (issue: SchemaIssue): string => {
+  const path = Option(issue.path)
+    .map((segments) => segments.map((segment) => String(typeof segment === "object" ? segment.key : segment)))
+    .orElse([])
+  return path.length > 0 ? `${path.join(".")}: ${issue.message}` : issue.message
+}
 
 const validate = (tool: AnyTool<SessionAuth>, args: Record<string, unknown>): Promise<Validated> =>
   Option(tool.parameters).fold(
@@ -152,7 +161,7 @@ export const buildServer = <T extends SessionAuth>(
   ): Promise<CallToolResult> => {
     const parsed = await validate(tool as AnyTool<SessionAuth>, args)
     if ("issues" in parsed) {
-      return errorResult(`Invalid arguments for tool '${tool.name}': ${parsed.issues.map((i) => i.message).join("; ")}`)
+      return errorResult(`Invalid arguments for tool '${tool.name}': ${parsed.issues.map(describeIssue).join("; ")}`)
     }
     const outcome = await Try.fromPromise(
       withTimeout(tool as AnyTool<SessionAuth>, tool.execute(parsed.value as never, context)),
