@@ -84,6 +84,11 @@ export type ToolOptions<T extends SessionAuth = SessionAuth, P extends SchemaPar
  * schema per element, so tools with different schemas share an array and each `execute`
  * still has its own typed `args`. A `Tool[]` or `ReadonlyArray<Tool>` fits it too.
  *
+ * A mixed list built before the call needs to stay a tuple: `const tools = [shout, double]`
+ * is an array of a union, and each `execute` is checked against every schema. Write
+ * `[shout, double] as const`, or annotate it as `readonly [typeof shout, typeof double]`.
+ * An explicit type argument is a tuple too: `addTools<[typeof schema]>([...])`.
+ *
  * `Ps` is `unknown[]`, and each element is narrowed to `SchemaParams` on its own: a tool
  * without `parameters` infers `unknown`, which under a `SchemaParams[]` constraint would
  * fail inference for the whole array and leave every tool's `args` untyped.
