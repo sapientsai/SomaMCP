@@ -15,6 +15,12 @@ export type SessionAuth = Record<string, unknown> | undefined
 
 // ── Schema ────────────────────────────────────────────────────────────
 
+/** One validation failure, as Standard Schema reports it. `path` locates it in the input; absent or empty means the whole input. */
+export type SchemaIssue = {
+  readonly message: string
+  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined
+}
+
 /**
  * Structural type compatible with StandardSchemaV1 (zod, valibot, etc.)
  * We define this structurally to avoid a direct dependency on @standard-schema/spec.
@@ -28,8 +34,8 @@ export type SchemaParams = {
       value: unknown,
     ) =>
       | { value: unknown }
-      | { issues: ReadonlyArray<{ message: string }> }
-      | Promise<{ value: unknown } | { issues: ReadonlyArray<{ message: string }> }>
+      | { issues: ReadonlyArray<SchemaIssue> }
+      | Promise<{ value: unknown } | { issues: ReadonlyArray<SchemaIssue> }>
   }
 }
 

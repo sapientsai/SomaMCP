@@ -59,6 +59,7 @@ export type {
   ResourceResult,
   ResourceTemplate,
   ResourceTemplateArgument,
+  SchemaIssue,
   SchemaParams,
   ServerStatus,
   SessionAuth,

@@ -36,6 +36,8 @@ const makeServer = (options: ServerOptions = {}) => {
 }
 
 const textOf = (result: unknown): string => JSON.stringify(result)
+/** The text of a result's first content part. */
+const firstText = (result: unknown): string => (result as { content: Array<{ text: string }> }).content[0]?.text ?? ""
 
 describe("createSdkBackend", () => {
   describe("protocol eras", () => {
@@ -106,6 +108,38 @@ describe("createSdkBackend", () => {
       }
       expect(result.isError).toBe(true)
       expect(execute).not.toHaveBeenCalled()
+    })
+
+    it("names the argument each invalid-argument issue is about", async () => {
+      const server = makeServer()
+      server.addTool({
+        execute: () => Promise.resolve("ran"),
+        name: "get-tasks",
+        parameters: z.object({
+          listId: z.string(),
+          recurrence: z.object({ pattern: z.object({ dayOfMonth: z.number() }) }).optional(),
+          top: z.number().optional(),
+        }),
+      })
+      const client = await connectModern(server)
+      const missing = await client.callTool({ arguments: {}, name: "get-tasks" })
+      expect(firstText(missing)).toBe(
+        "Invalid arguments for tool 'get-tasks': listId: Invalid input: expected string, received undefined",
+      )
+      const nested = await client.callTool({
+        arguments: { listId: "a", recurrence: { pattern: { dayOfMonth: "1" } }, top: "2" },
+        name: "get-tasks",
+      })
+      expect(firstText(nested)).toMatch(/recurrence\.pattern\.dayOfMonth: .*; top: /)
+    })
+
+    it("keeps an issue about the whole input as its message alone", async () => {
+      const server = makeServer()
+      const issues = [{ message: "Needs one of a or b." }, { message: "c is wrong.", path: [{ key: "c" }, 0] }]
+      const parameters = { "~standard": { validate: () => ({ issues }), vendor: "test", version: 1 as const } }
+      server.addTool({ execute: () => Promise.resolve("ran"), name: "either", parameters })
+      const result = await (await connectModern(server)).callTool({ arguments: {}, name: "either" })
+      expect(firstText(result)).toBe("Invalid arguments for tool 'either': Needs one of a or b.; c.0: c is wrong.")
     })
 
     it("enforces timeoutMs", async () => {
