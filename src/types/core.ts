@@ -84,7 +84,7 @@ export type Context<T extends SessionAuth = SessionAuth> = {
   /**
    * The client's own `clientInfo`. It is self-reported: any client can send any name, so use it
    * for logs and metrics, never for authorization. Both are `undefined` when the server can't
-   * know: a 2025 client over stateless HTTP sent it on an earlier request.
+   * know: a 2025 client over stateless HTTP sends it only during `initialize`, an earlier request.
    */
   client: { name?: string | undefined; version: string | undefined }
   log: {

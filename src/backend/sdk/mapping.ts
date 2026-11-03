@@ -102,6 +102,9 @@ type LogLevel = "debug" | "error" | "info" | "warning"
  * notifications on the request's own response stream, so they work in both
  * protocol eras and in stateless mode.
  */
+const namesItself = (info: { readonly name: unknown; readonly version: unknown }): boolean =>
+  typeof info.name === "string" && typeof info.version === "string"
+
 export const createToolContext = <T extends SessionAuth>(
   ctx: ServerContext,
   session: Option<T>,
@@ -118,8 +121,9 @@ export const createToolContext = <T extends SessionAuth>(
       ctx.mcpReq.log(level, data === undefined ? message : { data, message }).catch(() => {})
     }
   const progressToken = Option(ctx.mcpReq._meta?.progressToken)
-  // A 2026-07-28 request carries it; a 2025 connection sent it once, during `initialize`.
-  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]).or(connectionClient)
+  // A 2026-07-28 request carries it; a 2025 connection sent it once, during `initialize`. The SDK
+  // validates the envelope only on 2026-07-28 requests, so a 2025 request's `_meta` can hold anything.
+  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]).filter(namesItself).or(connectionClient)
 
   return {
     client: {

@@ -228,6 +228,17 @@ describe("createNodeBackend", () => {
         )
       })
 
+      it("keeps what a 2025 client sent during initialize when a request's _meta is malformed", async () => {
+        const client = new LegacyClient({ name: "claude-code", version: "2.1.0" })
+        await client.connect(await startWho())
+        const result = await client.callTool({
+          _meta: { "io.modelcontextprotocol/clientInfo": { name: 123, version: 456 } },
+          arguments: {},
+          name: "who",
+        })
+        expect(JSON.stringify(result)).toContain("client claude-code 2.1.0")
+      })
+
       it("has the name and version an auto-negotiating client sends", async () => {
         const client = new ModernClient(
           { name: "stdio-modern", version: "3.0.0" },

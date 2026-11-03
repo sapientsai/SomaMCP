@@ -345,6 +345,23 @@ describe("createSdkBackend", () => {
         const client = await connectLegacy(whoServer())
         expect(firstText(await client.callTool({ arguments: {}, name: "who" }))).toBe("client undefined undefined")
       })
+
+      // The SDK validates the envelope only on 2026-07-28 requests, so these arrive as sent.
+      it.each([
+        ["numbers", { name: 123, version: 456 }],
+        ["an object", { name: { deep: true }, version: "1" }],
+        ["no version", { name: "x" }],
+        ["not an object", "x"],
+      ])("ignores a 2025 request's _meta clientInfo holding %s", async (_shape, clientInfo) => {
+        const res = await whoServer().fetch(
+          rawRequest("tools/call", {
+            _meta: { "io.modelcontextprotocol/clientInfo": clientInfo },
+            arguments: {},
+            name: "who",
+          }),
+        )
+        expect(await res.text()).toContain("client undefined undefined")
+      })
     })
   })
 
