@@ -190,7 +190,9 @@ export const buildServer = <T extends SessionAuth>(
 
   server.setRequestHandler("tools/call", (request, ctx) => {
     const { arguments: args, name } = request.params
-    return callTool(resolveTool(name), args ?? {}, createToolContext(ctx, session, name))
+    // Read per call: on stdio this server is built before the client's `initialize` arrives.
+    const context = createToolContext(ctx, session, name, Option(server.getClientVersion()))
+    return callTool(resolveTool(name), args ?? {}, context)
   })
 
   server.setRequestHandler("resources/list", () => ({

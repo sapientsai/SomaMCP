@@ -1,6 +1,7 @@
 import type {
   CallToolResult,
   GetPromptResult,
+  Implementation,
   ReadResourceResult,
   ServerContext,
   Tool as SdkTool,
@@ -101,10 +102,14 @@ type LogLevel = "debug" | "error" | "info" | "warning"
  * notifications on the request's own response stream, so they work in both
  * protocol eras and in stateless mode.
  */
+const namesItself = (info: { readonly name: unknown; readonly version: unknown }): boolean =>
+  typeof info.name === "string" && typeof info.version === "string"
+
 export const createToolContext = <T extends SessionAuth>(
   ctx: ServerContext,
   session: Option<T>,
   toolName: string,
+  connectionClient: Option<Implementation> = Option.none(),
 ): Context<T> => {
   // Notifications are best-effort: they reject once the client has hung up, and a
   // rejection nobody awaits would take the process down (FastMCP swallows them too).
@@ -116,10 +121,15 @@ export const createToolContext = <T extends SessionAuth>(
       ctx.mcpReq.log(level, data === undefined ? message : { data, message }).catch(() => {})
     }
   const progressToken = Option(ctx.mcpReq._meta?.progressToken)
-  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY])
+  // A 2026-07-28 request carries it; a 2025 connection sent it once, during `initialize`. The SDK
+  // validates the envelope only on 2026-07-28 requests, so a 2025 request's `_meta` can hold anything.
+  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]).filter(namesItself).or(connectionClient)
 
   return {
-    client: { version: clientInfo.map((info) => info.version).orUndefined() },
+    client: {
+      name: clientInfo.map((info) => info.name).orUndefined(),
+      version: clientInfo.map((info) => info.version).orUndefined(),
+    },
     log: { debug: log("debug"), error: log("error"), info: log("info"), warn: log("warning") },
     reportProgress: async ({ progress, total }) => {
       await progressToken.fold(

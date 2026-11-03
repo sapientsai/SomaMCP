@@ -325,16 +325,43 @@ describe("createSdkBackend", () => {
       })
     })
 
-    it("passes the client's version to the tool context", async () => {
-      const server = makeServer()
-      server.addTool({
-        execute: (_args, context) => Promise.resolve(`client ${String(context.client.version)}`),
-        name: "who",
-        parameters: z.object({}),
+    describe("the client in the tool context", () => {
+      const whoServer = () => {
+        const server = makeServer()
+        server.addTool({
+          execute: (_args, { client }) => Promise.resolve(`client ${String(client.name)} ${String(client.version)}`),
+          name: "who",
+          parameters: z.object({}),
+        })
+        return server
+      }
+
+      it("has the name and version a 2026-07-28 client sends on each request", async () => {
+        const client = await connectModern(whoServer())
+        expect(firstText(await client.callTool({ arguments: {}, name: "who" }))).toBe("client modern 1.0.0")
       })
-      expect(textOf(await (await connectModern(server)).callTool({ arguments: {}, name: "who" }))).toContain(
-        "client 1.0.0",
-      )
+
+      it("has neither for a 2025 client over HTTP: this request's server never saw its initialize", async () => {
+        const client = await connectLegacy(whoServer())
+        expect(firstText(await client.callTool({ arguments: {}, name: "who" }))).toBe("client undefined undefined")
+      })
+
+      // The SDK validates the envelope only on 2026-07-28 requests, so these arrive as sent.
+      it.each([
+        ["numbers", { name: 123, version: 456 }],
+        ["an object", { name: { deep: true }, version: "1" }],
+        ["no version", { name: "x" }],
+        ["not an object", "x"],
+      ])("ignores a 2025 request's _meta clientInfo holding %s", async (_shape, clientInfo) => {
+        const res = await whoServer().fetch(
+          rawRequest("tools/call", {
+            _meta: { "io.modelcontextprotocol/clientInfo": clientInfo },
+            arguments: {},
+            name: "who",
+          }),
+        )
+        expect(await res.text()).toContain("client undefined undefined")
+      })
     })
   })
 
