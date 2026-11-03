@@ -325,16 +325,26 @@ describe("createSdkBackend", () => {
       })
     })
 
-    it("passes the client's version to the tool context", async () => {
-      const server = makeServer()
-      server.addTool({
-        execute: (_args, context) => Promise.resolve(`client ${String(context.client.version)}`),
-        name: "who",
-        parameters: z.object({}),
+    describe("the client in the tool context", () => {
+      const whoServer = () => {
+        const server = makeServer()
+        server.addTool({
+          execute: (_args, { client }) => Promise.resolve(`client ${String(client.name)} ${String(client.version)}`),
+          name: "who",
+          parameters: z.object({}),
+        })
+        return server
+      }
+
+      it("has the name and version a 2026-07-28 client sends on each request", async () => {
+        const client = await connectModern(whoServer())
+        expect(firstText(await client.callTool({ arguments: {}, name: "who" }))).toBe("client modern 1.0.0")
       })
-      expect(textOf(await (await connectModern(server)).callTool({ arguments: {}, name: "who" }))).toContain(
-        "client 1.0.0",
-      )
+
+      it("has neither for a 2025 client over HTTP: this request's server never saw its initialize", async () => {
+        const client = await connectLegacy(whoServer())
+        expect(firstText(await client.callTool({ arguments: {}, name: "who" }))).toBe("client undefined undefined")
+      })
     })
   })
 

@@ -81,7 +81,12 @@ export type Progress = { progress: number; total?: number }
 // ── Context ───────────────────────────────────────────────────────────
 
 export type Context<T extends SessionAuth = SessionAuth> = {
-  client: { version: unknown }
+  /**
+   * The client's own `clientInfo`. It is self-reported: any client can send any name, so use it
+   * for logs and metrics, never for authorization. Both are `undefined` when the server can't
+   * know: a 2025 client over stateless HTTP sent it on an earlier request.
+   */
+  client: { name?: string | undefined; version: string | undefined }
   log: {
     debug: (message: string, data?: unknown) => void
     error: (message: string, data?: unknown) => void

@@ -206,6 +206,40 @@ describe("createNodeBackend", () => {
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
     })
 
+    describe("the client in the tool context", () => {
+      const startWho = async () => {
+        const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+        const server = makeServer({ stdioTransport: serverEnd })
+        server.addTool({
+          execute: (_args, { client }) => Promise.resolve(`client ${String(client.name)} ${String(client.version)}`),
+          name: "who",
+          parameters: z.object({}),
+        })
+        await server.start({ transportType: "stdio" })
+        running.push(server)
+        return clientEnd
+      }
+
+      it("has the name and version a 2025 client sent during initialize", async () => {
+        const client = new LegacyClient({ name: "claude-code", version: "2.1.0" })
+        await client.connect(await startWho())
+        expect(JSON.stringify(await client.callTool({ arguments: {}, name: "who" }))).toContain(
+          "client claude-code 2.1.0",
+        )
+      })
+
+      it("has the name and version an auto-negotiating client sends", async () => {
+        const client = new ModernClient(
+          { name: "stdio-modern", version: "3.0.0" },
+          { versionNegotiation: { mode: "auto" } },
+        )
+        await client.connect(await startWho())
+        expect(JSON.stringify(await client.callTool({ arguments: {}, name: "who" }))).toContain(
+          "client stdio-modern 3.0.0",
+        )
+      })
+    })
+
     it("serves stdio on a bare start(), as somamcp 1.x did", async () => {
       const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
       const server = makeServer({ stdioTransport: serverEnd })
