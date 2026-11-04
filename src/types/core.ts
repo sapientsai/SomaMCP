@@ -120,6 +120,13 @@ export type Tool<T extends SessionAuth = SessionAuth, P extends SchemaParams = S
   name: string
   outputSchema?: SchemaParams
   parameters?: P
+  /**
+   * The scopes a call needs. Unlike `canAccess`, which hides a tool, this keeps it listed: a
+   * signed-in session without them gets a 403 with `error="insufficient_scope"`, which tells the
+   * client to sign in again with more. On stdio, with no HTTP status to send, it gets a tool error.
+   * Compare with `session.scopes` as they arrive: the provider's spelling, and case-sensitive.
+   */
+  requiredScopes?: ReadonlyArray<string>
   timeoutMs?: number
 }
 

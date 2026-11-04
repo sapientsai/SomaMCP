@@ -200,6 +200,16 @@ server.addTool({ canAccess: requireScopes("Mail.Send"), name: "send-mail" /* …
 
 `requireScopes` needs every scope it names in `session.scopes`, an array or a Set. With the OAuth providers below, those are the scopes Microsoft granted.
 
+`canAccess` hides a tool from a session that fails it, so a user with an older grant never learns the tool exists. `requiredScopes` keeps it listed, and asks for the scope when it's called (step-up):
+
+```typescript
+server.addTool({ name: "send-mail", requiredScopes: ["Mail.Send"] /* … */ })
+```
+
+A signed-in session without them gets a `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`, instead of the tool running. `scope` holds what the session has as well as what's missing, so signing in again keeps both. The MCP SDK's client answers it by sending the user through sign-in with those scopes. Other clients may just show the error; a client that ignores it can't call the tool until its user reconnects. On stdio, a session without them gets a tool error. A server with no `authenticate` has no session, so nothing is checked.
+
+Write each scope exactly as it appears in the OAuth server's `scopes` and in what the provider reports in `session.scopes`. The comparison is case-sensitive. A scope not on `scopes` can never be granted, because a sign-in is capped at that list, and the server logs an error when a tool requires one. A scope the provider reports in another spelling never matches, so a user is asked to sign in again every time. Check `session.scopes` once before you rely on it. A refused call doesn't reach the tool, so telemetry records no `tool.error` for it.
+
 ### OAuth server (`somamcp/node`)
 
 `createAzureProvider` makes the server its own OAuth 2.1 authorization server in front of Microsoft Entra ID. It handles dynamic client registration (RFC 7591), PKCE (RFC 7636), a consent page and token swap. Clients get the server's own JWTs, while Microsoft's tokens stay in encrypted storage, and tools see Microsoft's access token as `context.session.accessToken`.
@@ -246,6 +256,18 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 `acceptSignIn(claims)` adds a rule of your own: it gets the id token's claims and returns the reason to refuse a sign-in, or `undefined` to accept it. On the Azure provider it runs after the tenant check, so it only sees accounts from your tenant.
 
 Both run again on every refresh, on the newest id token. A rule tightened later, or a `tenantId` changed to a GUID, ends the sessions it now refuses: their next refresh gets `invalid_grant`, which makes the client sign in again. Access tokens already issued work until they expire, an hour by default. A session signed in without an id token, because `openid` was added later, has nothing to check. Its refreshes ask Microsoft only for what the sign-in granted, so no id token ever comes (unless `widenScopesOnRefresh` widens it for some other new scope, which brings one, and then the check runs and can end it), and it keeps refreshing, unchecked, for as long as it's in use. If those sessions must end, change `jwtSigningKey`, which signs everyone out.
+
+`provider.revokeUser(subject)` ends every sign-in a user holds now. Their access tokens stop working at once, so their next call gets the 401, and their next refresh gets `invalid_grant`. They can sign in again straight away; to keep them out, add `acceptSignIn` as well. `subject` is the id token claim `subjectClaim` names: `sub` by default, and `oid` on the Azure provider, which tools read as `context.session.oid`. A sign-in made without that claim, such as one without `openid`, can't be matched. Microsoft's own tokens stay valid until they expire, because this server only stops using them. somamcp ships no admin endpoint. The safest way to call it is an operator's script, built with the server's `tokenStorage` (a `createDiskStore` or your own shared store) and `encryptionKey`, because every instance reads the same store:
+
+```ts
+const provider = createAzureProvider(sameConfigAsTheServer)
+await provider.revokeUser(process.argv[2])
+provider.close()
+```
+
+Run it on a server host, or on a machine with a synced clock. The cutoff is that machine's time: if its clock runs behind the server's, a user who signed in or refreshed within the gap isn't revoked. If it runs ahead, the user's new sign-ins are refused until the gap passes. The call returns nothing either way, and a mistyped `subject` or the wrong `encryptionKey` does nothing without saying so, so check that the user's next call gets the 401.
+
+If you expose it as a route, check an admin credential of your own. `protected: true` isn't enough, because it lets any signed-in user through.
 
 `createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
 

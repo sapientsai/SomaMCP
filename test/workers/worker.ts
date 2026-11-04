@@ -40,6 +40,13 @@ server.addTool({
   name: "whoami",
 })
 
+server.addTool({
+  description: "Needs a scope this session lacks, so every POST reads a clone of the body first",
+  execute: async () => "sent",
+  name: "send-mail",
+  requiredScopes: ["Mail.Send"],
+})
+
 server.addResource({
   load: async () => ({ text: "hello from workerd" }),
   mimeType: "text/plain",

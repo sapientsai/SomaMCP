@@ -27,3 +27,16 @@ export const requireScopes =
   <T extends SessionAuth>(...required: ReadonlyArray<string>) =>
   (auth: T): boolean =>
     scopesOf(auth).exists((held) => required.every((scope) => held.has(scope)))
+
+/** The scopes a session holds, as strings. */
+export const heldScopes = (auth: SessionAuth): ReadonlyArray<string> =>
+  scopesOf(auth).fold(
+    () => [],
+    (held) => [...held].filter((scope): scope is string => typeof scope === "string"),
+  )
+
+/** The scopes on `required` that a session doesn't hold. */
+export const missingScopes = (required: ReadonlyArray<string>, auth: SessionAuth): ReadonlyArray<string> => {
+  const held = heldScopes(auth)
+  return required.filter((scope) => !held.includes(scope))
+}
