@@ -105,6 +105,12 @@ describe("main entry in workerd (no nodejs_compat)", () => {
     },
   )
 
+  it("answers a call to a tool whose requiredScopes the session lacks with a 403", async () => {
+    const res = await authed.fetch(rawRequest("tools/call", { arguments: {}, name: "send-mail" }, { modern: true }))
+    expect(res.status).toBe(403)
+    expect(res.headers.get("www-authenticate")).toBe('Bearer error="insufficient_scope", scope="Mail.Send"')
+  })
+
   describe("2026-07-28 client", () => {
     it("lists and calls tools, with the session from authenticate", async () => {
       const client = await connectModern(authed, MCP_URL)

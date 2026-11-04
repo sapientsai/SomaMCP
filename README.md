@@ -208,7 +208,7 @@ server.addTool({ name: "send-mail", requiredScopes: ["Mail.Send"] /* … */ })
 
 A signed-in session without them gets a `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`, instead of the tool running. `scope` holds what the session has as well as what's missing, so signing in again keeps both. The MCP SDK's client answers it by sending the user through sign-in with those scopes. Other clients may just show the error; a client that ignores it can't call the tool until its user reconnects. On stdio, a session without them gets a tool error. A server with no `authenticate` has no session, so nothing is checked.
 
-Every scope in `requiredScopes` must be on the OAuth server's `scopes`, because a sign-in is capped at that list. The server logs an error when one isn't. Write each scope as the provider reports it in `session.scopes`, which can differ from how you configured it. The comparison is case-sensitive, and a tool whose scope never matches keeps asking.
+Write each scope exactly as it appears in the OAuth server's `scopes` and in what the provider reports in `session.scopes`. The comparison is case-sensitive. A scope not on `scopes` can never be granted, because a sign-in is capped at that list, and the server logs an error when a tool requires one. A scope the provider reports in another spelling never matches, so a user is asked to sign in again every time. Check `session.scopes` once before you rely on it. A refused call doesn't reach the tool, so telemetry records no `tool.error` for it.
 
 ### OAuth server (`somamcp/node`)
 

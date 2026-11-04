@@ -202,7 +202,8 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
             .get()
             .get(name)
             // A tool `canAccess` hides stays hidden: the SDK answers that it's unknown.
-            .filter((tool) => !tool.canAccess || tool.canAccess(session))
+            // One that throws isn't refused here: the SDK runs it again, and reports the error.
+            .filter((tool) => Try(() => !tool.canAccess || tool.canAccess(session)).orElse(false))
             .fold<ReadonlyArray<string>>(
               () => [],
               (tool) => missingScopes(tool.requiredScopes ?? [], session),

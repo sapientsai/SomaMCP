@@ -89,6 +89,51 @@ describe("a tool's requiredScopes", () => {
     expect(await response.text()).toContain("Unknown tool")
   })
 
+  it(
+    "doesn't hang on a body over the limit with no Content-Length: the SDK answers 413",
+    { timeout: 2000 },
+    async () => {
+      const server = createServer<Record<string, unknown>>({
+        authenticate: () => Promise.resolve({ scopes: [] }),
+        enableDashboard: false,
+        enableInfoEndpoint: false,
+        maxRequestBodySize: 200,
+        name: "s",
+        version: "1.0.0",
+      })
+      server.addTool({ execute: async () => "x", name: "send-mail", requiredScopes: ["A"] })
+      const single = call("send-mail")
+      const oversized = new Request(single.url, {
+        body: JSON.stringify({ padding: "x".repeat(1000) }),
+        headers: single.headers,
+        method: "POST",
+      })
+      expect(oversized.headers.get("content-length")).toBeNull()
+      expect((await server.fetch(oversized)).status).toBe(413)
+    },
+  )
+
+  it("reports a canAccess that throws as the SDK does, not as a bare 500", async () => {
+    const server = createServer<Record<string, unknown>>({
+      authenticate: () => Promise.resolve({ scopes: [] }),
+      enableDashboard: false,
+      enableInfoEndpoint: false,
+      name: "s",
+      version: "1.0.0",
+    })
+    server.addTool({ execute: async () => "x", name: "gated", requiredScopes: ["A"] })
+    server.addTool({
+      canAccess: () => {
+        throw new TypeError("no roles")
+      },
+      execute: async () => "x",
+      name: "other",
+    })
+    const response = await server.fetch(call("other"))
+    expect(response.status).toBe(200)
+    expect(await response.text()).toContain("no roles")
+  })
+
   it("uses the provider's scopeChallenge when it has one", async () => {
     const scopeChallenge = vi.fn(() => new Response("custom", { status: 403 }))
     const { fetch } = serverWith({}, { authenticate: () => Promise.resolve({ scopes: ["User.Read"] }), scopeChallenge })
