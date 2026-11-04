@@ -24,7 +24,6 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    * every runtime. On stdio there is no request: it is called once with `undefined`, and
    * a failure serves without a session. Read headers with `getRequestHeader`.
    */
-  // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
   authenticate?: (request: Request | undefined) => Promise<T>
   /**
    * Authentication that brings its own routes and 401 challenge, such as an OAuth server.
