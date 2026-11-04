@@ -18,6 +18,9 @@ overrides:
   # miniflare (dev only) pins these exactly, below their advisories' fixes.
   "undici@>=7.0.0 <7.29.1": "^7.29.1"
   "sharp@<0.35.5": "^0.35.5"
+  # eslint and its helpers (dev only) cap minimatch below the advisory's fix. minimatch 11 has no default
+  # export, so @eslint/eslintrc's ESM entry won't import; nothing in this tree imports it.
+  "minimatch@<11.0.1": "^11.0.1"
 
 minimumReleaseAgeExclude:
   - "*functype*"
@@ -27,6 +30,7 @@ minimumReleaseAgeExclude:
   - "@modelcontextprotocol/core@2.4.0"
   - "@modelcontextprotocol/server@2.4.0"
   - "@modelcontextprotocol/sdk@1.32.2"
+  - rimraf@6.1.4
 
 allowBuilds:
   workerd: true
