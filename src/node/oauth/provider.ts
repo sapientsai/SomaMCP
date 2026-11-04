@@ -33,6 +33,14 @@ export type OAuthAuthProvider<S extends OAuthSession = OAuthSession> = AuthProvi
   /** Stop the server's timers, and close the store if the server made it. */
   close: () => void
   /**
+   * End every sign-in `subject` holds now: their access tokens stop working at once, their next
+   * refresh gets `invalid_grant`, and they can sign in again. `subject` is the id token's
+   * `subjectClaim`: `sub`, or `oid` on the Azure provider. A sign-in made without that claim, such
+   * as one without `openid`, can't be matched. To keep someone out, use `acceptSignIn` as well.
+   * The provider's own tokens aren't revoked with the provider; this server just stops using them.
+   */
+  revokeUser: (subject: string) => Promise<void>
+  /**
    * The upstream tokens behind a bearer token this server issued, or `undefined` when it is
    * not valid. For routes that check tokens themselves.
    */
@@ -73,6 +81,7 @@ const buildProvider = <S extends OAuthSession>(
       ),
     challenge: mcpChallenge(server.issuer, config.logger ?? console),
     close: server.close,
+    revokeUser: server.revokeUser,
     routes: createOAuthRoutes(server, config.logger ?? console),
     upstreamTokens: async (bearer) => (await resolve(bearer)).orUndefined(),
   }
@@ -165,6 +174,7 @@ export const createAzureProvider = (config: AzureProviderConfig): OAuthAuthProvi
       acceptSignIn: anyRule ? (claims) => refusal(claims).orUndefined() : undefined,
       scopes,
       store: tokenStorage,
+      subjectClaim: shared.subjectClaim ?? "oid",
       upstream: {
         authorizationEndpoint: `${authority}/authorize`,
         clientId,

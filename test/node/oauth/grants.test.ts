@@ -946,3 +946,119 @@ describe("how long a registered client is kept", () => {
     expect((await refreshWith(env.server, client_id, tokens.refresh_token ?? "")).isRight()).toBe(true)
   })
 })
+
+describe("revokeUser", () => {
+  const idToken = (claims: Record<string, unknown>) =>
+    [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
+
+  const answer = (subject: Record<string, unknown>, n = 1) =>
+    json({ access_token: `a${n}`, expires_in: 3600, id_token: idToken(subject), refresh_token: `r${n}` })
+
+  const signedIn = async (
+    overrides: Parameters<typeof createTestServer>[1] = {},
+    claims: Record<string, unknown> = { sub: "user-1" },
+  ) => {
+    const provider = createFakeProvider()
+    const server = make(provider, overrides)
+    const { client_id: clientId } = await register(server)
+    provider.queue(answer(claims))
+    const tokens = await issueTokens(server, clientId)
+    return { clientId, provider, server, tokens }
+  }
+
+  const refreshWith = (server: TestServer, clientId: string, refreshToken: string) =>
+    server.token({ clientId, grantType: "refresh_token", refreshToken })
+
+  it("stops the access token at once, and the refresh token without asking the provider", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    expect((await server.resolve(tokens.access_token)).isSome()).toBe(true)
+    await server.revokeUser("user-1")
+    expect((await server.resolve(tokens.access_token)).isNone()).toBe(true)
+    const calls = provider.requests.length
+    expect(wire(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toEqual({
+      code: "invalid_grant",
+      description: "This sign-in was revoked. Sign in again.",
+      status: 400,
+    })
+    expect(provider.requests).toHaveLength(calls)
+  })
+
+  it("spends the refresh token, so a retry is told it was used", async () => {
+    const { clientId, server, tokens } = await signedIn()
+    await server.revokeUser("user-1")
+    await refreshWith(server, clientId, tokens.refresh_token ?? "")
+    expect(left(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toMatchObject({
+      reason: "The refresh token was already used or has expired.",
+    })
+  })
+
+  it("lets the user sign in again", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-01T00:00:00Z"), toFake: ["Date"] })
+    const { clientId, provider, server, tokens } = await signedIn()
+    await server.revokeUser("user-1")
+    vi.setSystemTime(new Date("2026-11-01T00:00:01Z"))
+    provider.queue(answer({ sub: "user-1" }, 2))
+    const again = await issueTokens(server, clientId)
+    expect((await server.resolve(again.access_token)).isSome()).toBe(true)
+    expect((await server.resolve(tokens.access_token)).isNone()).toBe(true)
+    provider.queue(answer({ sub: "user-1" }, 3))
+    expect((await refreshWith(server, clientId, again.refresh_token ?? "")).isRight()).toBe(true)
+  })
+
+  it("leaves other users alone", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    await server.revokeUser("user-2")
+    expect((await server.resolve(tokens.access_token)).isSome()).toBe(true)
+    provider.queue(answer({ sub: "user-1" }, 2))
+    expect((await refreshWith(server, clientId, tokens.refresh_token ?? "")).isRight()).toBe(true)
+  })
+
+  it("isn't outrun by a refresh already at the provider", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    provider.queue(async () => {
+      await server.revokeUser("user-1")
+      return answer({ sub: "user-1" }, 2)
+    })
+    expect(left(await refreshWith(server, clientId, tokens.refresh_token ?? ""))).toMatchObject({
+      _tag: "SignInRefused",
+    })
+    expect((await server.resolve(tokens.access_token)).isNone()).toBe(true)
+  })
+
+  it("names the user by subjectClaim", async () => {
+    const { server, tokens } = await signedIn({ subjectClaim: "oid" }, { oid: "object-1", sub: "user-1" })
+    await server.revokeUser("user-1")
+    expect((await server.resolve(tokens.access_token)).isSome()).toBe(true)
+    await server.revokeUser("object-1")
+    expect((await server.resolve(tokens.access_token)).isNone()).toBe(true)
+  })
+
+  it("can't match a sign-in without the claim, and leaves it working", async () => {
+    const { server, tokens } = await signedIn({}, { email: "x@example.com" })
+    await server.revokeUser("x@example.com")
+    expect((await server.resolve(tokens.access_token)).isSome()).toBe(true)
+  })
+
+  it("hashes the subject in its key, so a disk store can't confuse two users", async () => {
+    const spy = spyStore()
+    const { server } = await signedIn({ store: spy.store })
+    await server.revokeUser("auth0|1")
+    const saved = spy.saves.filter((entry) => entry.key.startsWith("revoked:"))
+    expect(saved).toHaveLength(1)
+    expect(saved[0]?.key).toMatch(/^revoked:[0-9a-f]{64}$/)
+    expect(saved[0]?.ttl).toBeUndefined()
+  })
+
+  it("fails the request when the store can't say", async () => {
+    const inner = createMemoryStore()
+    const failing = { ...inner, fail: false }
+    const store: TokenStore = {
+      ...inner,
+      get: (key) => (failing.fail && key.startsWith("revoked:") ? Promise.reject(new Error("down")) : inner.get(key)),
+    }
+    const { server, tokens } = await signedIn({ store })
+    failing.fail = true
+    await expect(server.resolve(tokens.access_token)).rejects.toThrow("down")
+    inner.close?.()
+  })
+})

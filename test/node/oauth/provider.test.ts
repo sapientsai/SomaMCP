@@ -8,6 +8,8 @@ import {
   createServer,
 } from "../../../src/node/index.js"
 import type { OAuthAuthProvider } from "../../../src/node/oauth/provider.js"
+import { createJwtSigner } from "../../../src/node/oauth/jwt.js"
+import { createEncryptedStore } from "../../../src/node/oauth/stores/encrypted.js"
 import { consentPage, errorPage, escapeHtml, VISIBLE_SCOPES } from "../../../src/node/oauth/pages.js"
 import { CALLBACK, createFakeProvider, quiet } from "./harness.js"
 
@@ -216,5 +218,43 @@ describe("the pages", () => {
     expect(html).toContain("max-width: 452px")
     // On the card itself, so every line in it breaks, the warning's return host included.
     expect(html).toMatch(/\nmain \{[^}]*overflow-wrap: anywhere;/)
+  })
+})
+
+describe("revokeUser through the provider", () => {
+  it("defaults to oid on Azure, and the next MCP request gets the 401", async () => {
+    const claims = { iss: "https://login.microsoftonline.com/t/v2.0", oid: "object-1", sub: "pairwise-1", tid: "t" }
+    const idToken =
+      [{ alg: "none" }, claims].map((part) => Buffer.from(JSON.stringify(part)).toString("base64url")).join(".") + ".x"
+    const store = createMemoryStore()
+    const provider = azure({ tokenStorage: store })
+    // The grant and its upstream tokens as the token endpoint would have saved them.
+    const jwt = createJwtSigner(BASE, "j").issue({ clientId: "c", lifetime: 3600, scope: ["openid"], use: "access" })
+    const now = new Date()
+    const expiresAt = new Date(now.getTime() + 3_600_000)
+    const encrypted = createEncryptedStore(store, "k", quiet)
+    await encrypted.save(`mapping:${jwt.jti}`, {
+      clientId: "c",
+      createdAt: now,
+      expiresAt,
+      jti: jwt.jti,
+      scope: ["openid"],
+      upstreamTokenKey: "u",
+    })
+    await encrypted.save("upstream:u", {
+      accessToken: "ms",
+      expiresIn: 3600,
+      idToken,
+      issuedAt: now,
+      scope: ["openid"],
+      tokenType: "Bearer",
+    })
+    const request = () => new Request(`${BASE}/mcp`, { headers: { authorization: `Bearer ${jwt.token}` } })
+    expect((await provider.authenticate(request()))?.oid).toBe("object-1")
+    await provider.revokeUser("pairwise-1")
+    expect(await provider.authenticate(request())).toBeDefined()
+    await provider.revokeUser("object-1")
+    expect(await provider.authenticate(request())).toBeUndefined()
+    store.close?.()
   })
 })

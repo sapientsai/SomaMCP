@@ -247,6 +247,16 @@ await server.start({ httpStream: { host: "0.0.0.0", port: 3000 }, transportType:
 
 Both run again on every refresh, on the newest id token. A rule tightened later, or a `tenantId` changed to a GUID, ends the sessions it now refuses: their next refresh gets `invalid_grant`, which makes the client sign in again. Access tokens already issued work until they expire, an hour by default. A session signed in without an id token, because `openid` was added later, has nothing to check. Its refreshes ask Microsoft only for what the sign-in granted, so no id token ever comes (unless `widenScopesOnRefresh` widens it for some other new scope, which brings one, and then the check runs and can end it), and it keeps refreshing, unchecked, for as long as it's in use. If those sessions must end, change `jwtSigningKey`, which signs everyone out.
 
+`provider.revokeUser(subject)` ends every sign-in a user holds now. Their access tokens stop working at once, so their next call gets the 401, and their next refresh gets `invalid_grant`. They can sign in again straight away; to keep them out, add `acceptSignIn` as well. `subject` is the id token claim `subjectClaim` names: `sub` by default, and `oid` on the Azure provider, which tools read as `context.session.oid`. A sign-in made without that claim, such as one without `openid`, can't be matched. Microsoft's own tokens stay valid until they expire, because this server only stops using them. somamcp ships no admin endpoint. The safest way to call it is an operator's script, built with the server's `tokenStorage` (a `createDiskStore` or your own shared store) and `encryptionKey`, because every instance reads the same store:
+
+```ts
+const provider = createAzureProvider(sameConfigAsTheServer)
+await provider.revokeUser(process.argv[2])
+provider.close()
+```
+
+If you expose it as a route, check an admin credential of your own. `protected: true` isn't enough, because it lets any signed-in user through.
+
 `createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
 
 For another upstream provider, `createOAuthProxyProvider` takes its endpoints under `upstream` (`authorizationEndpoint`, `tokenEndpoint`, `clientId`, `clientSecret`, `name`).

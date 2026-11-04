@@ -4,7 +4,10 @@
 // stores, so a store it wrote reads here and the reverse, and a server moved off FastMCP
 // keeps every user signed in. test/node/oauth-compat.test.ts and
 // test/fixtures/fastmcp-4.22.10-oauth/xcheck.mjs hold it in place: change a field name or a
-// prefix here and they fail. `widen-declined:` is somamcp's own; FastMCP never wrote one.
+// prefix here and they fail. `widen-declined:` and `revoked:` are somamcp's own; FastMCP never
+// wrote either.
+import { createHash } from "node:crypto"
+
 import { Option } from "functype"
 import { z } from "zod"
 
@@ -15,6 +18,7 @@ const KEY = {
   code: "code:",
   grant: "mapping:",
   pending: "transaction:",
+  revoked: "revoked:",
   upstream: "upstream:",
   widenDeclined: "widen-declined:",
 } as const
@@ -206,5 +210,15 @@ export const createRecords = (store: TokenStore) => {
       store.save(`${KEY.widenDeclined}${key}`, scope, ttl),
   }
 
-  return { clients, codes, declinedWidenings, grants, pending, upstream }
+  // Hashed, because a subject is free text and the disk store maps every unusual character to
+  // `_`: `auth0|1` and `auth0_1` would share a file, and revoking one would revoke the other.
+  const revokedKey = (subject: string): string => `${KEY.revoked}${createHash("sha256").update(subject).digest("hex")}`
+
+  /** The moment a user's earlier sign-ins were revoked. Kept with no expiry, so no older token outlives it. */
+  const revocations = {
+    find: async (subject: string): Promise<Option<Date>> => decode(date, await store.get(revokedKey(subject))),
+    save: (subject: string, at: Date): Promise<void> => store.save(revokedKey(subject), at.toISOString()),
+  }
+
+  return { clients, codes, declinedWidenings, grants, pending, revocations, upstream }
 }
