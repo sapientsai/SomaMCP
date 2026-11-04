@@ -255,6 +255,8 @@ await provider.revokeUser(process.argv[2])
 provider.close()
 ```
 
+Run it on a server host, or on a machine with a synced clock. The cutoff is that machine's time: if its clock runs behind the server's, a user who signed in or refreshed within the gap isn't revoked. If it runs ahead, the user's new sign-ins are refused until the gap passes. The call returns nothing either way, and a mistyped `subject` or the wrong `encryptionKey` does nothing without saying so, so check that the user's next call gets the 401.
+
 If you expose it as a route, check an admin credential of your own. `protected: true` isn't enough, because it lets any signed-in user through.
 
 `createAzureProvider` takes every option of the generic provider, such as `claims`, `lifetimes` and `acceptSignIn`, except `upstream` and `store`, which it fills in itself (`tokenStorage` is its name for the store).
