@@ -9,6 +9,10 @@
 // With `widenScopesOnRefresh`, a refresh asks the provider for the server's whole list when the grant
 // lacks some of it, so scopes added to the list reach people already signed in. Only the server
 // widens: a client that names a scope is still held to its grant.
+//
+// `revokeUser` records when a user's sign-ins were revoked, by the id token claim that names them.
+// No index of a user's grants is needed: every use of a token compares when its upstream tokens
+// were issued with that moment. A new sign-in is issued later, so it passes.
 import type { Either } from "functype"
 import { Left, Option, Right, Try } from "functype"
 
@@ -49,12 +53,16 @@ export type GrantSettings = {
   refreshTokenLifetime: number
   /** The server's scopes: the openid and offline_access a refresh may ask for again, and the list it widens to. */
   scopes: ReadonlyArray<string>
+  /** The id token claim that names a user to `revokeUser`. */
+  subjectClaim: string
   /** Ask for all of `scopes` on a refresh whose grant lacks some, and fall back to the grant if refused. */
   widenScopesOnRefresh: boolean
 }
 
 /** How long a refused widening is not asked again: a day, so consent given later still lands. */
 const DECLINED_WIDENING_TTL = 86_400
+
+const REVOKED = "This sign-in was revoked. Sign in again."
 
 /** Provider errors that say nothing about consent, so a refusal with one is not remembered. */
 const TRANSIENT = ["server_error", "temporarily_unavailable"]
@@ -168,6 +176,22 @@ export const createGrants = (
       Option(tokens.idToken).flatMap((idToken) => accept(idTokenClaims(idToken))),
     )
 
+  const subjectOf = (tokens: UpstreamTokens): Option<string> =>
+    Option(tokens.idToken)
+      .map((idToken) => idTokenClaims(idToken)[settings.subjectClaim])
+      .filter((subject): boolean => typeof subject === "string" && subject !== "")
+      .map((subject) => subject as string)
+
+  /** Whether these tokens were issued no later than a revocation of their user. A failing store fails the request. */
+  const isRevoked = async (tokens: UpstreamTokens): Promise<boolean> =>
+    subjectOf(tokens).fold(
+      () => Promise.resolve(false),
+      async (subject) =>
+        (await records.revocations.find(subject)).exists((at) => tokens.issuedAt.getTime() <= at.getTime()),
+    )
+
+  const revokeUser = (subject: string): Promise<void> => records.revocations.save(subject, new Date())
+
   /** After a failed refresh: save the grant again under its original expiry, so retrying never extends it. */
   const restore = async (grant: TokenGrant): Promise<void> => {
     if (grant.expiresAt.getTime() <= Date.now()) return
@@ -227,12 +251,16 @@ export const createGrants = (
     const stored = await records.upstream.find(grant.upstreamTokenKey)
     if (stored.isNone()) return Left(Errors.invalidGrant("The sign-in behind this refresh token has expired."))
     const current = stored.orThrow()
+    if (await isRevoked(current)) return Left(Errors.signInRefused(REVOKED))
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
     const refreshed = await refreshUpstream(grant.upstreamTokenKey, upstreamRefresh.orElse(""), scope, widened)
     return refreshed.fold(
       (error) => Promise.resolve(Left<OAuthError, TokenResponse>(error)),
       async (fresh) => {
+        // Again, on the tokens this refresh started from: a revocation while the provider
+        // answered must not be outrun by the newer issue time of what it answered with.
+        if (await isRevoked(current)) return Left<OAuthError, TokenResponse>(Errors.signInRefused(REVOKED))
         // A provider that leaves scope or the id token out of a refresh keeps what it granted.
         const tokens = {
           ...fresh,
@@ -329,11 +357,13 @@ export const createGrants = (
       .map((claims) => claims.jti)
     if (jti.isNone()) return Option.none()
     const grant = await records.grants.find(jti.orElse(""))
-    return grant.fold(
+    const tokens = await grant.fold(
       () => Promise.resolve(Option.none<UpstreamTokens>()),
       (g) => records.upstream.find(g.upstreamTokenKey),
     )
+    if (tokens.isNone()) return tokens
+    return (await isRevoked(tokens.orThrow())) ? Option.none() : tokens
   }
 
-  return { resolve, token }
+  return { resolve, revokeUser, token }
 }

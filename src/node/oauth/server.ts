@@ -55,6 +55,8 @@ export type Lifetimes = {
  * - `scopes` — the most the server asks the provider for. A client's `scope` narrows the list
  *   and never adds to it; `openid` and `offline_access` stay whenever the list has them.
  * - `store` — where clients, codes and tokens live. Defaults to memory.
+ * - `subjectClaim` — the id token claim that names a user to `revokeUser`. Defaults to `sub`, and
+ *   to `oid` on the Azure provider.
  * - `widenScopesOnRefresh` — when `scopes` gain one a signed-in user's grant lacks, ask the
  *   provider for the whole list on their next refresh, so they get it without signing in again.
  *   A provider that refuses (Microsoft, before consent: AADSTS65001) is asked again for the
@@ -78,6 +80,7 @@ export type OAuthProxyConfig = {
   logger?: Pick<Logger, "error" | "warn">
   scopes: ReadonlyArray<string>
   store?: TokenStore
+  subjectClaim?: string
   upstream: UpstreamConfig
   widenScopesOnRefresh?: boolean
 }
@@ -161,6 +164,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       defaultAccessTokenLifetime: lifetimes.accessToken,
       refreshTokenLifetime: lifetimes.refreshToken,
       scopes: config.scopes,
+      subjectClaim: config.subjectClaim ?? "sub",
       widenScopesOnRefresh: config.widenScopesOnRefresh ?? false,
     },
     records,
@@ -203,6 +207,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     providerName: config.upstream.name,
     register: clients.register,
     resolve: grants.resolve,
+    revokeUser: grants.revokeUser,
     scopes: config.scopes,
     token: grants.token,
   }
