@@ -76,6 +76,7 @@ export type {
   Logger,
   RouteConfig,
   RouteMethod,
+  ScopeChallenge,
   ServerConfig,
   TransportConfig,
 } from "./types/index.js"

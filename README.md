@@ -200,6 +200,16 @@ server.addTool({ canAccess: requireScopes("Mail.Send"), name: "send-mail" /* …
 
 `requireScopes` needs every scope it names in `session.scopes`, an array or a Set. With the OAuth providers below, those are the scopes Microsoft granted.
 
+`canAccess` hides a tool from a session that fails it, so a user with an older grant never learns the tool exists. `requiredScopes` keeps it listed, and asks for the scope when it's called (step-up):
+
+```typescript
+server.addTool({ name: "send-mail", requiredScopes: ["Mail.Send"] /* … */ })
+```
+
+A signed-in session without them gets a `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`, instead of the tool running. `scope` holds what the session has as well as what's missing, so signing in again keeps both. The MCP SDK's client answers it by sending the user through sign-in with those scopes. Other clients may just show the error; a client that ignores it can't call the tool until its user reconnects. On stdio, a session without them gets a tool error. A server with no `authenticate` has no session, so nothing is checked.
+
+Every scope in `requiredScopes` must be on the OAuth server's `scopes`, because a sign-in is capped at that list. The server logs an error when one isn't. Write each scope as the provider reports it in `session.scopes`, which can differ from how you configured it. The comparison is case-sensitive, and a tool whose scope never matches keeps asking.
+
 ### OAuth server (`somamcp/node`)
 
 `createAzureProvider` makes the server its own OAuth 2.1 authorization server in front of Microsoft Entra ID. It handles dynamic client registration (RFC 7591), PKCE (RFC 7636), a consent page and token swap. Clients get the server's own JWTs, while Microsoft's tokens stay in encrypted storage, and tools see Microsoft's access token as `context.session.accessToken`.

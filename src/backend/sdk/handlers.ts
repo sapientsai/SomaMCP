@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/server"
 import { List, type Map, Option, Ref, Try } from "functype"
 
+import { missingScopes } from "../../auth/access.js"
 import type {
   Completion,
   Prompt,
@@ -136,6 +137,14 @@ export const buildServer = <T extends SessionAuth>(
       () => !(identity.authRequired && tool.canAccess),
       (s) => !tool.canAccess || tool.canAccess(s),
     )
+  /** The tool's `requiredScopes` this caller lacks. With no session, as `canUse`: all of them when authentication is configured. */
+  const scopesLacking = (tool: AnyTool<T>): ReadonlyArray<string> => {
+    const required = tool.requiredScopes ?? []
+    return session.fold(
+      () => (identity.authRequired ? required : []),
+      (s) => missingScopes(required, s),
+    )
+  }
   const findTool = (name: string): Option<AnyTool<T>> => registry.tools().get(name).filter(canUse)
 
   const server = new Server(
@@ -192,7 +201,12 @@ export const buildServer = <T extends SessionAuth>(
     const { arguments: args, name } = request.params
     // Read per call: on stdio this server is built before the client's `initialize` arrives.
     const context = createToolContext(ctx, session, name, Option(server.getClientVersion()))
-    return callTool(resolveTool(name), args ?? {}, context)
+    const tool = resolveTool(name)
+    // Over HTTP, serveMcp has already answered this with a 403. stdio has no status to send.
+    const lacking = scopesLacking(tool)
+    if (lacking.length > 0)
+      return errorResult(`This tool needs more permission: ${lacking.join(", ")}. Sign in again to grant it.`)
+    return callTool(tool, args ?? {}, context)
   })
 
   server.setRequestHandler("resources/list", () => ({

@@ -17,6 +17,23 @@ export type AuthChallenge = {
   requestId: string | number | null
 }
 
+/**
+ * A signed-in call to a tool whose `requiredScopes` the session lacks.
+ *
+ * - `endpoint` — the MCP path, e.g. `/mcp`.
+ * - `granted` — the scopes the session holds.
+ * - `request` — the request itself.
+ * - `requestId` — the JSON-RPC `id`, or `null` for a batch or a notification.
+ * - `required` — the scopes it lacks.
+ */
+export type ScopeChallenge = {
+  endpoint: string
+  granted: ReadonlyArray<string>
+  request: Request
+  requestId: string | number | null
+  required: ReadonlyArray<string>
+}
+
 /** A route an auth provider serves. Always unprotected: it is what a client signs in through. */
 export type AuthRoute = Omit<RouteConfig, "onUnauthorized" | "protected">
 
@@ -30,6 +47,8 @@ export type AuthRoute = Omit<RouteConfig, "onUnauthorized" | "protected">
  *   with a `WWW-Authenticate` header. Only the MCP endpoint uses it; protected artifacts and
  *   routes answer with their `onUnauthorized`, or 401. Without it, the endpoint answers a plain
  *   401. A `Response` that `authenticate` rejects with is served as-is everywhere, ahead of both.
+ * - `scopeChallenge` — the response to a signed-in call to a tool whose `requiredScopes` the
+ *   session lacks. Without it, the endpoint answers a plain 403 with `error="insufficient_scope"`.
  * - `routes` — unprotected HTTP routes the provider serves, such as OAuth metadata and
  *   endpoints. They are mounted once, when the server is created, so a path must not embed
  *   the MCP endpoint: `start({ httpStream: { endpoint } })` can move it later. Mount a
@@ -40,4 +59,5 @@ export type AuthProvider<T extends SessionAuth = SessionAuth> = {
   authenticate: (request: Request | undefined) => Promise<T | undefined>
   challenge?: (challenge: AuthChallenge) => Response | Promise<Response>
   routes?: (endpoint: () => string) => ReadonlyArray<AuthRoute>
+  scopeChallenge?: (challenge: ScopeChallenge) => Response | Promise<Response>
 }

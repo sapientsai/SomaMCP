@@ -5,7 +5,7 @@ import { Option } from "functype"
 import { getRequestHeader } from "../../auth/request.js"
 import type { AuthProvider } from "../../types/auth.js"
 import { idTokenClaims } from "./claims.js"
-import { createOAuthRoutes, mcpChallenge } from "./http.js"
+import { createOAuthRoutes, mcpChallenge, mcpScopeChallenge } from "./http.js"
 import type { UpstreamTokens } from "./records.js"
 import { createAuthorizationServer, type OAuthProxyConfig } from "./server.js"
 import type { TokenStore } from "./stores/types.js"
@@ -74,6 +74,7 @@ const buildProvider = <S extends OAuthSession>(
     challenge: mcpChallenge(server.issuer, config.logger ?? console),
     close: server.close,
     routes: createOAuthRoutes(server, config.logger ?? console),
+    scopeChallenge: mcpScopeChallenge(server.issuer, server.scopes, config.logger ?? console),
     upstreamTokens: async (bearer) => (await resolve(bearer)).orUndefined(),
   }
 }
