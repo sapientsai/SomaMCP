@@ -200,6 +200,16 @@ server.addTool({ canAccess: requireScopes("Mail.Send"), name: "send-mail" /* …
 
 `requireScopes` needs every scope it names in `session.scopes`, an array or a Set. With the OAuth providers below, those are the scopes Microsoft granted.
 
+`canAccess` hides a tool from a session that fails it, so a user with an older grant never learns the tool exists. `requiredScopes` keeps it listed, and asks for the scope when it's called (step-up):
+
+```typescript
+server.addTool({ name: "send-mail", requiredScopes: ["Mail.Send"] /* … */ })
+```
+
+A signed-in session without them gets a `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`, instead of the tool running. `scope` holds what the session has as well as what's missing, so signing in again keeps both. The MCP SDK's client answers it by sending the user through sign-in with those scopes. Other clients may just show the error; a client that ignores it can't call the tool until its user reconnects. On stdio, a session without them gets a tool error. A server with no `authenticate` has no session, so nothing is checked.
+
+Write each scope exactly as it appears in the OAuth server's `scopes` and in what the provider reports in `session.scopes`. The comparison is case-sensitive. A scope not on `scopes` can never be granted, because a sign-in is capped at that list, and the server logs an error when a tool requires one. A scope the provider reports in another spelling never matches, so a user is asked to sign in again every time. Check `session.scopes` once before you rely on it. A refused call doesn't reach the tool, so telemetry records no `tool.error` for it.
+
 ### OAuth server (`somamcp/node`)
 
 `createAzureProvider` makes the server its own OAuth 2.1 authorization server in front of Microsoft Entra ID. It handles dynamic client registration (RFC 7591), PKCE (RFC 7636), a consent page and token swap. Clients get the server's own JWTs, while Microsoft's tokens stay in encrypted storage, and tools see Microsoft's access token as `context.session.accessToken`.

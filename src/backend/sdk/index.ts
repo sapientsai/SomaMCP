@@ -3,6 +3,8 @@ import { type Either, Map, Option, Ref, Try, Tuple } from "functype"
 import { type Context as HonoContext, Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 
+import { heldScopes, missingScopes } from "../../auth/access.js"
+import { insufficientScope } from "../../auth/challenge.js"
 import { rejectedResponse, resolveAuthenticate, runAuthenticate } from "../../auth/resolve.js"
 import type { AuthChallenge } from "../../types/auth.js"
 import type { Resource, ResourceTemplate, ServerStatus, SessionAuth } from "../../types/core.js"
@@ -34,6 +36,13 @@ const MAX_REJECTED_BODY_SIZE = 64 * 1024
 /** somamcp 1.x's default keepalive interval, kept so `streamKeepalive` means what it did. */
 const DEFAULT_KEEPALIVE_MS = 20_000
 const SESSION_KEY = "somamcp/session"
+
+/** The tools a request calls: one message, or each message of a batch. */
+const calledTools = (message: unknown): ReadonlyArray<string> =>
+  (Array.isArray(message) ? (message as unknown[]) : [message]).flatMap((entry) => {
+    const call = entry as { method?: unknown; params?: { name?: unknown } | null } | null
+    return call?.method === "tools/call" && typeof call.params?.name === "string" ? [call.params.name] : []
+  })
 
 const parseJson = (text: string): Option<unknown> => Try(() => JSON.parse(text) as unknown).toOption()
 
@@ -175,6 +184,52 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
       (response) => Promise.resolve(response),
     )
 
+  /**
+   * The 403 for a call to a tool whose `requiredScopes` the session lacks. It's read here, ahead
+   * of the SDK, because the SDK answers a tool's failure with a 200. Only a server with such a
+   * tool reads the body twice. A body too big to read here is one the SDK refuses too.
+   */
+  const scopeRefusal = async (request: Request, session: T): Promise<Option<Response>> => {
+    const gated = [...tools.get()].some(([, tool]) => (tool.requiredScopes ?? []).length > 0)
+    if (request.method !== "POST" || !gated) return Option.none()
+    const limit = config.maxRequestBodySize ?? DEFAULT_MAX_REQUEST_BODY_SIZE
+    const message = (await readBoundedText(request.clone(), limit)).flatMap(parseJson)
+    const required = message.fold<ReadonlyArray<string>>(
+      () => [],
+      (body) =>
+        calledTools(body).flatMap((name) =>
+          tools
+            .get()
+            .get(name)
+            // A tool `canAccess` hides stays hidden: the SDK answers that it's unknown.
+            // One that throws isn't refused here: the SDK runs it again, and reports the error.
+            .filter((tool) => Try(() => !tool.canAccess || tool.canAccess(session)).orElse(false))
+            .fold<ReadonlyArray<string>>(
+              () => [],
+              (tool) => missingScopes(tool.requiredScopes ?? [], session),
+            ),
+        ),
+    )
+    if (required.length === 0) return Option.none()
+    const requestId = message
+      .flatMap((body) => Option((body as { id?: unknown } | null)?.id))
+      .filter((id) => typeof id === "string" || typeof id === "number")
+      .fold<AuthChallenge["requestId"]>(
+        () => null,
+        (id) => id as string | number,
+      )
+    const granted = heldScopes(session)
+    const distinct = required.filter((scope, at) => required.indexOf(scope) === at)
+    return Option(
+      await Option(config.auth)
+        .flatMap((auth) => Option(auth.scopeChallenge))
+        .fold<Response | Promise<Response>>(
+          () => insufficientScope({ granted, requestId, required: distinct }),
+          (challenge) => challenge({ endpoint: mcpPath.get(), granted, request, requestId, required: distinct }),
+        ),
+    )
+  }
+
   const serveMcp = async (c: HonoContext): Promise<Response> => {
     const request = c.req.raw
     return authenticate.fold(
@@ -182,10 +237,14 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
       async (auth) =>
         (await authenticateRequest(auth, Option(request))).fold(
           (failure) => rejectMcp(c, request, failure),
-          (session) =>
-            handler.get().fetch(request, {
-              authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
-            }),
+          async (session) =>
+            (await scopeRefusal(request, session)).fold(
+              () =>
+                handler.get().fetch(request, {
+                  authInfo: { clientId: "", extra: { [SESSION_KEY]: session }, scopes: [], token: "" },
+                }),
+              (refusal) => Promise.resolve(refusal),
+            ),
         ),
     )
   }

@@ -16,7 +16,9 @@ const readAll = async (
   if (done) return Option(concat(chunks, total))
   const size = total + value.byteLength
   if (size > limit) {
-    await reader.cancel().catch(() => {})
+    // Not awaited: on a clone, the cancel settles only once the other branch is done too, and
+    // whoever holds that branch may be waiting on this read.
+    void reader.cancel().catch(() => {})
     return Option.none()
   }
   return readAll(reader, limit, chunks.add(value), size)

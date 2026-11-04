@@ -4,7 +4,8 @@ import type { Either } from "functype"
 import { Option, Try } from "functype"
 import type { Context } from "hono"
 
-import type { AuthChallenge, AuthRoute } from "../../types/auth.js"
+import { insufficientScope } from "../../auth/challenge.js"
+import type { AuthChallenge, AuthRoute, ScopeChallenge } from "../../types/auth.js"
 import { UserError } from "../../types/core.js"
 import type { Logger } from "../../types/server.js"
 import { readBoundedText } from "../../utils/body.js"
@@ -67,6 +68,26 @@ export const mcpChallenge =
     ]
     return json({ error: { code: -32000, message }, id: requestId, jsonrpc: "2.0" }, 401, {
       "WWW-Authenticate": `Bearer ${parameters.join(", ")}`,
+    })
+  }
+
+/**
+ * The 403 for a tool's `requiredScopes`, pointing at the protected resource metadata as the 401
+ * does. A scope not on the server's list can never be granted: a sign-in is capped at the list.
+ */
+export const mcpScopeChallenge =
+  (issuer: string, scopes: ReadonlyArray<string>, logger: Pick<Logger, "error">) =>
+  ({ endpoint, granted, requestId, required }: ScopeChallenge): Response => {
+    const unreachable = required.filter((scope) => !scopes.includes(scope))
+    if (unreachable.length > 0)
+      logger.error(
+        `[somamcp/oauth] a tool requires ${unreachable.join(", ")}, not on the server's scopes, so no sign-in can grant it.`,
+      )
+    return insufficientScope({
+      granted,
+      requestId,
+      required,
+      resourceMetadata: protectedResourceMetadataUrl(resourceFor(issuer, endpoint)),
     })
   }
 

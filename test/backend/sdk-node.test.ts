@@ -206,6 +206,43 @@ describe("createNodeBackend", () => {
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
     })
 
+    describe("a tool's requiredScopes", () => {
+      const callWith = async (authenticate?: () => Promise<Record<string, unknown>>) => {
+        const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+        const server = createServer<Record<string, unknown>>({
+          ...(authenticate ? { authenticate } : {}),
+          backendOptions: { stdioTransport: serverEnd },
+          name: "node",
+          version: "1.0.0",
+        })
+        server.addTool({ execute: () => Promise.resolve("ran"), name: "send-mail", requiredScopes: ["Mail.Send"] })
+        await server.start({ transportType: "stdio" })
+        running.push(server)
+        const client = new LegacyClient({ name: "c", version: "1" })
+        await client.connect(clientEnd)
+        return client.callTool({ arguments: {}, name: "send-mail" })
+      }
+
+      it("answers a session without them with a tool error", async () => {
+        const result = await callWith(() => Promise.resolve({ scopes: ["User.Read"] }))
+        expect(result.isError).toBe(true)
+        expect(JSON.stringify(result)).toContain("Mail.Send")
+      })
+
+      it("runs the tool for a session with them", async () => {
+        expect(JSON.stringify(await callWith(() => Promise.resolve({ scopes: ["Mail.Send"] })))).toContain("ran")
+      })
+
+      it("runs the tool when the server has no authenticate", async () => {
+        expect(JSON.stringify(await callWith())).toContain("ran")
+      })
+
+      it("refuses when authenticate failed, so there is no session", async () => {
+        const result = await callWith(() => Promise.reject(new Error("no")))
+        expect(result.isError).toBe(true)
+      })
+    })
+
     describe("the client in the tool context", () => {
       const startWho = async () => {
         const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
