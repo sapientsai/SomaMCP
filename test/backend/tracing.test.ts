@@ -144,7 +144,7 @@ describe("the tracer hook", () => {
     await client.close()
   })
 
-  it("sees the rejection for an unknown tool, and the client still gets its error", async () => {
+  it("gets no name for an unknown tool, sees the rejection, and the client still gets its error", async () => {
     const calls: ToolCallInfo[] = []
     const seen: unknown[] = []
     const tracer: ToolTracer = {
@@ -158,7 +158,8 @@ describe("the tracer hook", () => {
     }
     const client = await ERAS[0][1](traceServer({ tracer }))
     await expect(client.callTool({ arguments: {}, name: "missing" })).rejects.toThrow(/missing/)
-    expect(calls.map((c) => c.name)).toEqual(["missing"])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.name).toBeUndefined()
     expect(seen).toHaveLength(1)
     await client.close()
   })

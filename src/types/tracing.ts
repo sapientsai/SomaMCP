@@ -9,7 +9,11 @@ export type TraceContext = {
 }
 
 export type ToolCallInfo = {
-  name: string
+  /**
+   * The tool's name. Absent when the call names no tool this caller can use: the name is then
+   * whatever the client made up, and a span name built from it could grow without limit.
+   */
+  name?: string
   requestId?: string
   sessionId?: string
   /** The caller's trace context, when it sent a valid one. */

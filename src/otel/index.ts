@@ -20,6 +20,8 @@ import { parseTraceparent } from "../telemetry/traceContext.js"
 import type { ToolCallInfo, ToolTracer, TraceContext } from "../types/tracing.js"
 
 const TOOL_CALL_METHOD = "tools/call"
+// What an unknown tool gets. The conventions say the caller's mistake isn't the server's error.
+const INVALID_PARAMS = "-32602"
 
 const toRemoteSpanContext = (trace: TraceContext): Option<SpanContext> =>
   parseTraceparent(trace.traceparent).map(({ flags, spanId, traceId }): SpanContext => ({
@@ -60,8 +62,8 @@ export const otelContextFrom = (
 /** The span's attributes, from OpenTelemetry's semantic conventions for MCP. */
 const callAttributes = (call: ToolCallInfo): Attributes => ({
   "gen_ai.operation.name": "execute_tool",
-  "gen_ai.tool.name": call.name,
   "mcp.method.name": TOOL_CALL_METHOD,
+  ...(call.name === undefined ? {} : { "gen_ai.tool.name": call.name }),
   ...(call.requestId === undefined ? {} : { "jsonrpc.request.id": call.requestId }),
   ...(call.sessionId === undefined ? {} : { "mcp.session.id": call.sessionId }),
 })
@@ -82,8 +84,10 @@ const codeOf = (error: Error): Option<string> =>
     : Option.none()
 
 const recordFailure = (span: Span, error: Error): void => {
+  const type = codeOf(error).orElse(error.name)
+  span.setAttribute("error.type", type)
+  if (type === INVALID_PARAMS) return
   span.recordException(error)
-  span.setAttribute("error.type", codeOf(error).orElse(error.name))
   span.setStatus({ code: SpanStatusCode.ERROR, message: error.message })
 }
 
@@ -107,7 +111,7 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
   traceToolCall: async (call, run) => {
     const ambient = otelContext.active()
     const span = tracer.startSpan(
-      `${TOOL_CALL_METHOD} ${call.name}`,
+      call.name === undefined ? TOOL_CALL_METHOD : `${TOOL_CALL_METHOD} ${call.name}`,
       { attributes: callAttributes(call), kind: SpanKind.SERVER, links: linksToAmbient(call, ambient) },
       otelContextFrom(call.trace, ambient),
     )

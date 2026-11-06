@@ -113,16 +113,34 @@ describe.each(ERAS)("createOtelTracer over %s", (_era, connect) => {
     expect(JSON.stringify([span.status, span.events, span.attributes])).not.toContain("secret argument value")
   })
 
-  it("records an unknown tool's rejection with its JSON-RPC code, and rethrows it", async () => {
+  it("keeps a client's made-up tool name out of the span, and doesn't call it an error", async () => {
     const client = await connect(tracedServer())
-    await expect(client.callTool({ arguments: {}, name: "missing" })).rejects.toThrow(/missing/)
+    await expect(client.callTool({ arguments: {}, name: "guess-123" })).rejects.toMatchObject({ code: -32602 })
     await client.close()
 
-    const span = spanNamed("tools/call missing")
+    const span = spanNamed("tools/call")
     expect(span.attributes["error.type"]).toBe("-32602")
-    expect(span.status.code).toBe(SpanStatusCode.ERROR)
-    expect(span.status.message).toContain("missing")
-    expect(span.events.map((e) => e.name)).toEqual(["exception"])
+    expect(span.attributes["gen_ai.tool.name"]).toBeUndefined()
+    expect(span.status.code).toBe(SpanStatusCode.UNSET)
+    expect(span.events).toEqual([])
+    expect(JSON.stringify([span.name, span.status, span.attributes])).not.toContain("guess-123")
+  })
+
+  it("treats a tool hidden from this caller like an unknown one", async () => {
+    const server = createServerCore<{ user: string }>({
+      authenticate: () => Promise.resolve({ user: "u" }),
+      backend: createSdkBackend,
+      enableIntrospection: false,
+      name: "hidden",
+      tracer: createOtelTracer({ tracer }),
+      version: "1.0.0",
+    })
+    server.addTool({ canAccess: () => false, description: "Hidden", execute: async () => "x", name: "secret" })
+    const client = await connect(server)
+    await expect(client.callTool({ arguments: {}, name: "secret" })).rejects.toMatchObject({ code: -32602 })
+    await client.close()
+
+    expect(spanNamed("tools/call").attributes["gen_ai.tool.name"]).toBeUndefined()
   })
 })
 

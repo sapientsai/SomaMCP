@@ -215,7 +215,14 @@ export const buildServer = <T extends SessionAuth>(
       () => run(context.trace),
       (t) =>
         t.traceToolCall(
-          { name, requestId: context.requestId, sessionId: context.sessionId, trace: context.trace },
+          {
+            name: findTool(name)
+              .map((tool) => tool.name)
+              .orUndefined(),
+            requestId: context.requestId,
+            sessionId: context.sessionId,
+            trace: context.trace,
+          },
           run,
         ),
     )
