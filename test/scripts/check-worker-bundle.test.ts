@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest"
 const SCRIPT = fileURLToPath(new URL("../../scripts/check-worker-bundle.mjs", import.meta.url))
 const run = promisify(execFile)
 
-/** A minimal dist: three worker entries and somamcp/node over one shared core chunk. */
+/** A minimal dist: four worker entries and somamcp/node over one shared core chunk. */
 const CLEAN: Record<string, string> = {
   "backend/index.js": 'export { b } from "../core.js"\n',
   "core.js":
@@ -21,6 +21,7 @@ const CLEAN: Record<string, string> = {
   "edge.js": 'export * from "./index.js"\n',
   "index.js": 'import { b } from "./core.js"\nexport { b }\n',
   "node/index.js": 'import { readFile } from "node:fs/promises"\nexport * from "../index.js"\nexport { readFile }\n',
+  "otel/index.js": 'import { trace } from "@opentelemetry/api"\nimport { b } from "../core.js"\nexport { b, trace }\n',
 }
 
 const dirs: string[] = []
@@ -63,6 +64,22 @@ describe("check-worker-bundle", () => {
     const { code, output } = await check({ "core.js": CLEAN["core.js"] + leak })
     expect(code).toBe(1)
     expect(output).toContain(message)
+  })
+
+  it.each([
+    ["the main entry", "index.js"],
+    ["somamcp/node", "node/index.js"],
+    ["a chunk they share", "core.js"],
+  ])("fails an optional peer reaching %s", async (_label, file) => {
+    const { code, output } = await check({ [file]: `import "@opentelemetry/api"\n${CLEAN[file]}` })
+    expect(code).toBe(1)
+    expect(output).toContain('imports the optional peer "@opentelemetry/api"')
+  })
+
+  it("fails Node-only code reaching somamcp/otel", async () => {
+    const { code, output } = await check({ "otel/index.js": `${CLEAN["otel/index.js"]}import "node:fs"\n` })
+    expect(code).toBe(1)
+    expect(output).toContain('imports Node-only "node:fs"')
   })
 
   it("ignores guarded and commented uses", async () => {

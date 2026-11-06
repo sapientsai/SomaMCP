@@ -6,8 +6,10 @@ import type {
   ServerContext,
   Tool as SdkTool,
 } from "@modelcontextprotocol/server"
+import { TRACEPARENT_META_KEY, TRACESTATE_META_KEY } from "@modelcontextprotocol/server"
 import { Option } from "functype"
 
+import { readTraceContext } from "../../telemetry/traceContext.js"
 import type {
   Completion,
   Content,
@@ -124,6 +126,8 @@ export const createToolContext = <T extends SessionAuth>(
   // A 2026-07-28 request carries it; a 2025 connection sent it once, during `initialize`. The SDK
   // validates the envelope only on 2026-07-28 requests, so a 2025 request's `_meta` can hold anything.
   const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]).filter(namesItself).or(connectionClient)
+  const meta = ctx.mcpReq._meta
+  const trace = readTraceContext(meta?.[TRACEPARENT_META_KEY], meta?.[TRACESTATE_META_KEY])
 
   return {
     client: {
@@ -147,5 +151,6 @@ export const createToolContext = <T extends SessionAuth>(
         params: { content: Array.isArray(content) ? content : [content], toolName },
       })
     },
+    trace: trace.orUndefined(),
   }
 }

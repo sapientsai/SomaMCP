@@ -12,6 +12,7 @@ The main entry, `somamcp`, uses web-standard APIs only, so it runs on Cloudflare
 - **Runs anywhere** — the main entry is WinterTC-only (Workers, Deno, Bun, Node); `somamcp/node` adds a port listener and stdio
 - **Backend abstraction** — framework-agnostic `BackendAdapter` interface; swap the underlying MCP implementation without changing consumer code
 - **Structured telemetry** — pluggable `TelemetryCollector` with console, file (NDJSON), composite, and [functype-log](https://github.com/jordanburke/functype-log) adapters
+- **OpenTelemetry tracing** — `somamcp/otel` opens a span around each tool call, and a trace crosses gateways to the servers behind them
 - **Error classification & enrichment** — errors are auto-classified (validation / execution / timeout / gateway / auth / not_found / internal) with actionable suggestions for LLMs
 - **Per-tool capture config** — configure input/output capture levels, field redaction, and output size limits per tool
 - **Gateway system** — connect to remote MCP servers and proxy their tools as local tools
@@ -390,6 +391,54 @@ Capture levels:
 - `"metadata"` — timing + name + ids only
 - `"none"` — no telemetry, and no error enrichment: a thrown error reaches the client as its bare message, without `errorCategory` or `suggestions` (see below)
 
+### Tracing
+
+A client can send W3C Trace Context in a request's `_meta`. somamcp checks it and hands it to the tool as `context.trace`, puts it on the tool's telemetry events, and forwards it on gateway calls. An invalid `traceparent` is dropped, and the call goes on. None of this needs a tracing library.
+
+To record spans, add the optional peer dependency and pass a tracer:
+
+```bash
+pnpm add @opentelemetry/api
+```
+
+```typescript
+import { createServer } from "somamcp"
+import { createOtelTracer } from "somamcp/otel"
+
+const server = createServer({
+  name: "my-server",
+  version: "1.0.0",
+  tracer: createOtelTracer(),
+})
+```
+
+Set up the OpenTelemetry SDK and its exporter the usual way. `createOtelTracer` uses the global provider's tracer, or the one you pass as `{ tracer }`. With no SDK it records nothing and still passes `context.trace` along.
+
+Each tool call gets one `SERVER` span named `tools/call <tool>`, following OpenTelemetry's [semantic conventions for MCP](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md), whose status is still Development:
+
+- **Parent:** the client's `_meta` trace context. The span that is current on the server, such as an HTTP span, becomes a link. With nothing in `_meta`, that current span is the parent.
+- **Attributes:** `mcp.method.name`, `gen_ai.tool.name`, `gen_ai.operation.name`, `jsonrpc.request.id`, and `mcp.session.id` when there is one.
+- **Errors:** a tool's failure, including invalid arguments, sets `error.type` to `tool_error` and the status to `ERROR`. An unknown tool sets `error.type` to its JSON-RPC code.
+- **Privacy:** spans hold no arguments, results or tool error messages.
+
+Inside a span, `context.trace` is that span's context, so gateways nest under it. On Node with a context manager, which the OpenTelemetry Node SDK sets up, a span a tool opens nests by itself. On Workers without `nodejs_compat` there is no context manager, so pass the parent yourself:
+
+```typescript
+import { otelContextFrom } from "somamcp/otel"
+
+server.addTool({
+  name: "lookup",
+  execute: async (_args, context) => {
+    const span = tracer.startSpan("query", {}, otelContextFrom(context.trace))
+    // ...
+    span.end()
+    return "done"
+  },
+})
+```
+
+Limits: only tool calls get spans, not resources or prompts. A call refused with a 401 or 403 gets none. Gateway calls don't open a `CLIENT` span, so a remote server's span sits directly under the tool's. `baggage` isn't read or forwarded, because it can hold user data that a remote server shouldn't get by default. To plug in another tracing library, implement `ToolTracer`.
+
 ### Error enrichment
 
 Errors thrown from tools are classified and returned as structured `ContentResult` responses with `isError: true`, with suggestions where they help the calling model correct itself.
@@ -528,6 +577,7 @@ await server.start({
 | `somamcp`         | Workers, Deno, Bun, Node | `createSdkBackend`         | —                                                                                          |
 | `somamcp/node`    | Node (and Bun)           | `createNodeBackend`        | `start()` on a port or stdio, `createJsonFileTelemetry`, `{ path }` in the content helpers |
 | `somamcp/backend` | anywhere                 | —                          | `createSdkBackend` and the backend types, for writing or wrapping a backend                |
+| `somamcp/otel`    | anywhere                 | —                          | `createOtelTracer` and `otelContextFrom`. Needs the optional peer `@opentelemetry/api`.    |
 | `somamcp/edge`    | anywhere                 | `createSdkBackend`         | Nothing: an alias of `somamcp` kept through 2.x so 1.x imports resolve. Removed in 3.0.    |
 
 `somamcp/node` re-exports everything in `somamcp` and shares its modules rather than copying them, so values such as `UserError` are the same whichever entry you import them from. `pnpm validate` fails if Node-only code reaches anything `somamcp` loads, or if the core is emitted twice. It also runs the main entry inside `workerd`, Cloudflare's Workers runtime, without `nodejs_compat`, with both protocol eras, auth, content helpers, errors and resources (`test/workers/`).

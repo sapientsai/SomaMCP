@@ -35,6 +35,12 @@ server.addTool({
 })
 
 server.addTool({
+  description: "The trace context the client sent",
+  execute: async (_args, context) => JSON.stringify(context.trace ?? null),
+  name: "trace",
+})
+
+server.addTool({
   description: "Who am I",
   execute: async (_args, context) => `user: ${context.session?.user ?? "none"}`,
   name: "whoami",

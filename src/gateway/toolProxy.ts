@@ -22,10 +22,12 @@ export const createProxiedTools = <T extends SessionAuth>(
       readOnlyHint: true,
     },
     description: `[${gateway.name}] ${remoteTool.description ?? "Remote tool"}`,
-    execute: async (args) => {
+    execute: async (args, context) => {
       const start = Date.now()
       const toolName = `${prefix}${remoteTool.name}`
-      const result = await toTry(gateway.callTool(remoteTool.name, args as Record<string, unknown>))
+      const result = await toTry(
+        gateway.callTool(remoteTool.name, args as Record<string, unknown>, { trace: context.trace }),
+      )
 
       return result.fold<string | ContentResult>(
         (error) => {
@@ -41,7 +43,10 @@ export const createProxiedTools = <T extends SessionAuth>(
             errorStack: error.stack,
             input: args as Record<string, unknown>,
             name: toolName,
+            requestId: context.requestId,
+            sessionId: context.sessionId,
             timestamp: start,
+            trace: context.trace,
             type: "tool.error",
           })
           return {
@@ -55,8 +60,11 @@ export const createProxiedTools = <T extends SessionAuth>(
             durationMs: Date.now() - start,
             input: args as Record<string, unknown>,
             name: toolName,
+            requestId: context.requestId,
+            sessionId: context.sessionId,
             output: value,
             timestamp: start,
+            trace: context.trace,
             type: "tool.execute",
           })
           return JSON.stringify(value, null, 2)

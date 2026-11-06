@@ -19,7 +19,10 @@ import { init, parse } from "es-module-lexer"
 
 // The directory to check; defaults to the build output. Tests pass a fixture.
 const DIST = process.argv[2] ?? "dist"
-const WORKER_ENTRIES = ["index.js", "edge.js", "backend/index.js"]
+const WORKER_ENTRIES = ["index.js", "edge.js", "backend/index.js", "otel/index.js"]
+// Optional peers: only somamcp/otel may load them, or a server without one fails on import.
+const OPTIONAL_PEER = "@opentelemetry/"
+const OPTIONAL_PEER_ENTRY = "otel/index.js"
 
 // Node-only packages, as whole specifiers or prefixes.
 const NODE_ONLY_PACKAGES = [
@@ -144,6 +147,14 @@ for (const entry of WORKER_ENTRIES) {
     nodeGlobalsIn(await read(path)).forEach((use) =>
       problems.push(`${path} (loaded by ${entry}) uses the Node global or CommonJS call "${use}"`),
     )
+  }
+}
+
+for (const entry of [...WORKER_ENTRIES, "node/index.js"].filter((e) => e !== OPTIONAL_PEER_ENTRY)) {
+  for (const [path, specifiers] of await closure(entry)) {
+    specifiers
+      .filter((s) => s.startsWith(OPTIONAL_PEER))
+      .forEach((s) => problems.push(`${path} (loaded by ${entry}) imports the optional peer "${s}"`))
   }
 }
 

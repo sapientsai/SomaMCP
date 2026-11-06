@@ -71,6 +71,9 @@ Pluggable via `TelemetryCollector` interface (`recordEvent` + optional `flush`).
 
 - **`telemetryWrapper.ts`** — `wrapTool`, `wrapResource`, `wrapPrompt` decorators that record execution time, errors, and input/output with configurable capture levels and field redaction
 - **`EnrichedError.ts`** — `classifyError()` categorizes errors into 6 categories with contextual suggestions
+- **`traceContext.ts`** — validates the W3C `traceparent` and `tracestate` a client sends in `_meta`; `createToolContext` puts them on `context.trace`, and the gateway forwards them
+
+The `tracer` option (`ToolTracer`, `src/types/tracing.ts`) wraps the `tools/call` handler in `src/backend/sdk/handlers.ts`, not `wrapTool`, because `info` and proxied tools skip `wrapTool`. `src/otel/index.ts` (`somamcp/otel`) implements it on `@opentelemetry/api`, an optional peer. `scripts/check-worker-bundle.mjs` fails the build if that peer reaches any other entry. `test/otel/otel.test.ts` runs it against the real SDK, and `test/workers/otel.test.ts` runs it in workerd.
 
 Telemetry event types: `server.start`, `server.stop`, `tool.execute`, `tool.error`, `resource.load`, `resource.error`, `prompt.load`, `prompt.error`, `gateway.*`, `session.*`.
 
@@ -119,6 +122,7 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `"somamcp"` — main public API, WinterTC-only (createServer → SDK backend, types, telemetry, gateway, artifacts, introspection)
 - `"somamcp/node"` — re-exports `somamcp`, plus `createServer` → `createNodeBackend` (port + stdio), `createJsonFileTelemetry`, and content helpers that read `{ path }`
 - `"somamcp/backend"` — backend adapter types and `createSdkBackend` for advanced use
+- `"somamcp/otel"` — `createOtelTracer` and `otelContextFrom`; WinterTC-safe, and the only entry that imports the optional peer `@opentelemetry/api`
 - `"somamcp/edge"` — alias of `somamcp`, kept through 2.x; removed in 3.0
 
 All entries build in one tsdown pass so they share chunks; see `tsdown.config.ts`.

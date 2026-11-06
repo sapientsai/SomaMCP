@@ -47,7 +47,7 @@ export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
     if (level === "none") return tool.execute(args, context)
 
     const start = Date.now()
-    const { requestId, sessionId } = context
+    const { requestId, sessionId, trace } = context
     const inputData =
       level === "full" ? redactFields(args as Record<string, unknown>, captureConfig?.redactInputFields) : undefined
 
@@ -67,6 +67,7 @@ export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
           requestId,
           sessionId,
           timestamp: start,
+          trace,
           type: "tool.error",
         })
         return {
@@ -84,6 +85,7 @@ export const wrapTool = <T extends SessionAuth, P extends SchemaParams>(
           requestId,
           sessionId,
           timestamp: start,
+          trace,
           type: "tool.execute",
         })
         return value
