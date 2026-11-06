@@ -1,7 +1,7 @@
 // somamcp/otel against the real OpenTelemetry SDK: what a span backend would receive.
 import { context as otelContext, SpanKind, SpanStatusCode, trace as otelTrace } from "@opentelemetry/api"
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks"
-import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
+import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { createSdkBackend } from "../../src/backend/sdk/index.js"
@@ -17,7 +17,7 @@ const TRACEPARENT = `00-${TRACE_ID}-${CLIENT_SPAN}-01`
 const textOf = (result: unknown): string => (result as { content: Array<{ text: string }> }).content[0]?.text ?? ""
 
 const exporter = new InMemorySpanExporter()
-const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] })
+const provider = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] })
 const tracer = provider.getTracer("test")
 
 const spanNamed = (name: string) => {
@@ -119,7 +119,8 @@ describe.each(ERAS)("createOtelTracer over %s", (_era, connect) => {
     await client.close()
 
     const span = spanNamed("tools/call")
-    expect(span.attributes["error.type"]).toBe("-32602")
+    expect(span.attributes["rpc.status_code"]).toBe("-32602")
+    expect(span.attributes["error.type"]).toBeUndefined()
     expect(span.attributes["gen_ai.tool.name"]).toBeUndefined()
     expect(span.status.code).toBe(SpanStatusCode.UNSET)
     expect(span.events).toEqual([])
@@ -141,6 +142,32 @@ describe.each(ERAS)("createOtelTracer over %s", (_era, connect) => {
     await client.close()
 
     expect(spanNamed("tools/call").attributes["gen_ai.tool.name"]).toBeUndefined()
+  })
+})
+
+describe("a call the tracer sees rejected", () => {
+  const reject = async (error: Error): Promise<void> => {
+    const call = createOtelTracer({ tracer }).traceToolCall({ name: "t" }, () => Promise.reject(error))
+    await expect(call).rejects.toBe(error)
+  }
+
+  it("fails the span on another JSON-RPC code, recording it both ways", async () => {
+    await reject(Object.assign(new Error("internal"), { code: -32603 }))
+
+    const span = spanNamed("tools/call t")
+    expect(span.attributes["rpc.status_code"]).toBe("-32603")
+    expect(span.attributes["error.type"]).toBe("-32603")
+    expect(span.status).toMatchObject({ code: SpanStatusCode.ERROR, message: "internal" })
+    expect(span.events.map((e) => e.name)).toEqual(["exception"])
+  })
+
+  it("fails the span on an error with no code, typed by its name", async () => {
+    await reject(new TypeError("broken"))
+
+    const span = spanNamed("tools/call t")
+    expect(span.attributes["rpc.status_code"]).toBeUndefined()
+    expect(span.attributes["error.type"]).toBe("TypeError")
+    expect(span.status.code).toBe(SpanStatusCode.ERROR)
   })
 })
 
