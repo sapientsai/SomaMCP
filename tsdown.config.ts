@@ -16,6 +16,7 @@ export default defineConfig({
     edge: "src/edge.ts",
     index: "src/index.ts",
     "node/index": "src/node/index.ts",
+    "otel/index": "src/otel/index.ts",
   },
   deps: {
     neverBundle: [
@@ -27,6 +28,7 @@ export default defineConfig({
       "zod",
       /^functype\//,
       /^@modelcontextprotocol\//,
+      /^@opentelemetry\//,
     ],
   },
   format: ["esm"],

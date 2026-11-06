@@ -4,10 +4,7 @@
 //
 // @cloudflare/vitest-pool-workers would run tests inside workerd, but it supports
 // vitest 4 only, so this bundles a Worker and drives it from Node through Miniflare.
-import { fileURLToPath } from "node:url"
-
-import { build } from "esbuild"
-import { Miniflare } from "miniflare"
+import type { Miniflare } from "miniflare"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import {
@@ -18,57 +15,22 @@ import {
   rawRequest,
   withHeader,
 } from "../backend/sdk-clients.js"
-
-const SRC = fileURLToPath(new URL("../../src", import.meta.url))
-const ENTRY = fileURLToPath(new URL("./worker.ts", import.meta.url))
+import { bundleWorker, startWorkerd, workerFetchable } from "./harness.js"
 
 type CallResult = {
   content: Array<{ data?: string; mimeType?: string; text?: string; type: string }>
   isError?: boolean
 }
 
-const bundleWorker = async (): Promise<string> => {
-  const result = await build({
-    alias: { "@": SRC },
-    bundle: true,
-    // What wrangler resolves for a Worker: the SDK's _shims export picks its workerd stub.
-    conditions: ["workerd", "worker", "browser"],
-    entryPoints: [ENTRY],
-    format: "esm",
-    logLevel: "silent",
-    mainFields: ["module", "main"],
-    // "neutral" knows no Node built-ins, so importing one fails the build outright.
-    platform: "neutral",
-    target: "es2022",
-    write: false,
-  })
-  return result.outputFiles[0]?.text ?? ""
-}
-
 let script = ""
 let mf: Miniflare
 
-/** Route a client's requests into the Worker; Miniflare's Response becomes a global one. */
-const worker: Fetchable = {
-  fetch: async (request) => {
-    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer()
-    const response = await mf.dispatchFetch(request.url, {
-      body,
-      headers: Object.fromEntries(request.headers),
-      method: request.method,
-    })
-    return new Response(response.body as ReadableStream | null, {
-      headers: Object.fromEntries(response.headers),
-      status: response.status,
-    })
-  },
-}
+const worker: Fetchable = { fetch: (request) => workerFetchable(mf).fetch(request) }
 const authed = withHeader(worker, "x-api-key", "k")
 
 beforeAll(async () => {
-  script = await bundleWorker()
-  mf = new Miniflare({ compatibilityDate: "2026-07-01", compatibilityFlags: [], modules: true, script })
-  await mf.ready
+  script = await bundleWorker("./worker.ts")
+  mf = await startWorkerd(script)
 }, 120_000)
 
 afterAll(async () => {
@@ -134,6 +96,13 @@ describe("main entry in workerd (no nodejs_compat)", () => {
       const fail = (await client.callTool({ arguments: {}, name: "fail" })) as CallResult
       expect(fail.isError).toBe(true)
       expect(JSON.stringify(fail.content)).toContain("nope")
+    })
+
+    it("hands a tool the client's trace context from _meta", async () => {
+      const client = await connectModern(authed, MCP_URL)
+      const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+      const result = (await client.callTool({ _meta: { traceparent }, arguments: {}, name: "trace" })) as CallResult
+      expect(JSON.parse(result.content[0]?.text ?? "null")).toEqual({ traceparent })
     })
 
     it("reads a resource", async () => {

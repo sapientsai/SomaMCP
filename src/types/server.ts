@@ -1,5 +1,6 @@
 import type { AuthProvider } from "./auth.js"
 import type { SessionAuth } from "./core.js"
+import type { ToolTracer } from "./tracing.js"
 
 // ── Logger ────────────────────────────────────────────────────────────
 
@@ -41,6 +42,11 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    */
   maxRequestBodySize?: number
   name: string
+  /**
+   * Opens a span around each tool call, such as `createOtelTracer()` from `somamcp/otel`.
+   * A call the server refuses with a 401 or 403 before it reaches the tool handler gets none.
+   */
+  tracer?: ToolTracer
   /**
    * Periodic writes onto an in-flight tool call's own response stream, so a proxy or load
    * balancer does not close the connection as idle while a long-running tool produces no

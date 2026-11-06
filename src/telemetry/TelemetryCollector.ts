@@ -1,4 +1,5 @@
 import type { ErrorCategory } from "../types/core.js"
+import type { TraceContext } from "../types/tracing.js"
 
 export type TelemetryEventType =
   | "server.start"
@@ -37,6 +38,8 @@ export type TelemetryEvent = {
   requestId?: string
   sessionId?: string
   timestamp: number
+  /** The tool call's trace context, so an event can be matched to its span. */
+  trace?: TraceContext
   type: TelemetryEventType
 }
 

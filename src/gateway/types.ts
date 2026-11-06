@@ -1,6 +1,8 @@
 import type { FetchLike, Tool as MCPTool } from "@modelcontextprotocol/client"
 import type { Option } from "functype"
 
+import type { TraceContext } from "../types/tracing.js"
+
 export type GatewayConfig = {
   /**
    * Replaces the global `fetch` for every request to the remote server, e.g. a
@@ -42,7 +44,8 @@ export type GatewayInstance = {
   readonly name: string
   readonly status: GatewayStatus
   readonly tools: ReadonlyArray<MCPTool>
-  callTool: (name: string, args?: Record<string, unknown>) => Promise<unknown>
+  /** With `trace`, the remote server's spans join that trace. */
+  callTool: (name: string, args?: Record<string, unknown>, options?: { trace?: TraceContext }) => Promise<unknown>
   connect: () => Promise<void>
   disconnect: () => Promise<void>
 }

@@ -20,6 +20,7 @@ import type {
   SessionAuth,
   Tool,
 } from "../../types/core.js"
+import type { ToolTracer, TraceContext } from "../../types/tracing.js"
 import {
   completeFromEnum,
   createToolContext,
@@ -127,6 +128,7 @@ export const buildServer = <T extends SessionAuth>(
   registry: Registry<T>,
   identity: ServerIdentity,
   session: Option<T>,
+  tracer: Option<ToolTracer> = Option.none(),
 ): Server => {
   const auth = session.orUndefined()
 
@@ -201,12 +203,29 @@ export const buildServer = <T extends SessionAuth>(
     const { arguments: args, name } = request.params
     // Read per call: on stdio this server is built before the client's `initialize` arrives.
     const context = createToolContext(ctx, session, name, Option(server.getClientVersion()))
-    const tool = resolveTool(name)
-    // Over HTTP, serveMcp has already answered this with a 403. stdio has no status to send.
-    const lacking = scopesLacking(tool)
-    if (lacking.length > 0)
-      return errorResult(`This tool needs more permission: ${lacking.join(", ")}. Sign in again to grant it.`)
-    return callTool(tool, args ?? {}, context)
+    const run = async (trace: TraceContext | undefined): Promise<CallToolResult> => {
+      const tool = resolveTool(name)
+      // Over HTTP, serveMcp has already answered this with a 403. stdio has no status to send.
+      const lacking = scopesLacking(tool)
+      if (lacking.length > 0)
+        return errorResult(`This tool needs more permission: ${lacking.join(", ")}. Sign in again to grant it.`)
+      return callTool(tool, args ?? {}, { ...context, trace })
+    }
+    return tracer.fold(
+      () => run(context.trace),
+      (t) =>
+        t.traceToolCall(
+          {
+            name: findTool(name)
+              .map((tool) => tool.name)
+              .orUndefined(),
+            requestId: context.requestId,
+            sessionId: context.sessionId,
+            trace: context.trace,
+          },
+          run,
+        ),
+    )
   })
 
   server.setRequestHandler("resources/list", () => ({

@@ -84,6 +84,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     store.set(store.get().remove(name))
   }
   const authenticate = resolveAuthenticate(config)
+  const tracer = Option(config.tracer)
   const identity = {
     authRequired: authenticate.isSome(),
     instructions: config.instructions,
@@ -114,6 +115,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
           registry,
           identity,
           Option(authInfo).flatMap((a) => Option(a.extra?.[SESSION_KEY] as T)),
+          tracer,
         ),
       {
         keepAliveMs: keepAliveMs.orUndefined(),
@@ -311,7 +313,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     const transport = Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.stdioTransport))
       .orUndefined()
-    return serve.stdio(() => buildServer(registry, identity, session), transport)
+    return serve.stdio(() => buildServer(registry, identity, session, tracer), transport)
   }
 
   const startHttp = (serve: SdkTransports, http: HttpStreamConfig): Promise<Listener> => {

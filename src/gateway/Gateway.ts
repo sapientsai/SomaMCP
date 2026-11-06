@@ -2,6 +2,7 @@ import { Client, StreamableHTTPClientTransport, type Tool as MCPTool } from "@mo
 import { Option, Ref, Try } from "functype"
 
 import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
+import type { TraceContext } from "../types/tracing.js"
 import type { GatewayConfig, GatewayInstance, GatewayStatus } from "./types.js"
 
 export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollector): GatewayInstance => {
@@ -54,13 +55,21 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
       return remoteTools.get() as ReadonlyArray<MCPTool>
     },
 
-    async callTool(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    async callTool(
+      name: string,
+      args: Record<string, unknown> = {},
+      options?: { trace?: TraceContext },
+    ): Promise<unknown> {
       const c = client.get()
       if (c.isEmpty || currentStatus.get() !== "connected") {
         // eslint-disable-next-line functype/prefer-either -- method returns Promise<unknown>; rejection is the protocol signal
         throw new Error(`Gateway ${config.id} is not connected`)
       }
-      return c.orThrow(new Error(`Gateway ${config.id} is not connected`)).callTool({ arguments: args, name })
+      return c.orThrow(new Error(`Gateway ${config.id} is not connected`)).callTool({
+        ...(options?.trace ? { _meta: { ...options.trace } } : {}),
+        arguments: args,
+        name,
+      })
     },
 
     async connect(): Promise<void> {

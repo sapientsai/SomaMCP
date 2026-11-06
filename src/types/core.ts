@@ -9,6 +9,8 @@
 // Internal mutable state uses `Option<T>`; these public protocol types do not.
 /* eslint-disable functype/prefer-option */
 
+import type { TraceContext } from "./tracing.js"
+
 // ── Auth ──────────────────────────────────────────────────────────────
 
 export type SessionAuth = Record<string, unknown> | undefined
@@ -98,6 +100,11 @@ export type Context<T extends SessionAuth = SessionAuth> = {
   session: T | undefined
   sessionId?: string
   streamContent: (content: Content | Content[]) => Promise<void>
+  /**
+   * W3C Trace Context for this call: the current span's when a `tracer` is set, otherwise
+   * what the client sent in `_meta`, if it was valid. Pass it on when calling another service.
+   */
+  trace?: TraceContext
 }
 
 // ── Tool ──────────────────────────────────────────────────────────────

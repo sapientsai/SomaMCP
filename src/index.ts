@@ -114,6 +114,9 @@ export {
 } from "./telemetry/index.js"
 export { wrapPrompt, wrapResource, wrapTool } from "./telemetry/index.js"
 
+// Tracing
+export type { ToolCallInfo, ToolTracer, TraceContext } from "./types/tracing.js"
+
 // Logging
 export { createDefaultLogger } from "./logging.js"
 export type { DirectLogger } from "functype-log"

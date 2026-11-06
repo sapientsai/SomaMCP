@@ -12,6 +12,7 @@ export const createLogLayerTelemetry = (logger: DirectLogger): TelemetryCollecto
       type: event.type,
       ...(event.sessionId && { sessionId: event.sessionId }),
       ...(event.requestId && { requestId: event.requestId }),
+      ...(event.trace && { traceparent: event.trace.traceparent }),
       ...(event.errorCategory && { errorCategory: event.errorCategory }),
       ...event.data,
     }
