@@ -83,12 +83,22 @@ const codeOf = (error: Error): Option<string> =>
     ? Option(String(error.code))
     : Option.none()
 
-const recordFailure = (span: Span, error: Error): void => {
-  const type = codeOf(error).orElse(error.name)
+const markFailed = (span: Span, error: Error, type: string): void => {
   span.setAttribute("error.type", type)
-  if (type === INVALID_PARAMS) return
   span.recordException(error)
   span.setStatus({ code: SpanStatusCode.ERROR, message: error.message })
+}
+
+/** A rejected call. Its JSON-RPC code is always recorded; only the server's own errors fail the span. */
+const recordRejection = (span: Span, error: Error): void => {
+  const code = codeOf(error)
+  code.forEach((value) => span.setAttribute("rpc.status_code", value))
+  code
+    .filter((value) => value === INVALID_PARAMS)
+    .fold(
+      () => markFailed(span, error, code.orElse(error.name)),
+      () => undefined,
+    )
 }
 
 /** A tool's own failure. Its text goes to the client, not the span, because it can quote the arguments. */
@@ -121,7 +131,7 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
       otelContext.with(otelTrace.setSpan(ambient, span), () => run(trace.orUndefined())),
     )
     result.fold(
-      (error) => recordFailure(span, error),
+      (error) => recordRejection(span, error),
       (value) => {
         if (value.isError) recordToolError(span)
       },

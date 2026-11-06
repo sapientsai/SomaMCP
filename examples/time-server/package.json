@@ -21,7 +21,7 @@
   "devDependencies": {
     "@types/node": "^24.19.2",
     "rimraf": "^6.1.4",
-    "tsdown": "^0.23.2",
+    "tsdown": "^0.23.5",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }

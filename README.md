@@ -418,7 +418,7 @@ Each tool call gets one `SERVER` span named `tools/call <tool>`, following OpenT
 
 - **Parent:** the client's `_meta` trace context. The span that is current on the server, such as an HTTP span, becomes a link. With nothing in `_meta`, that current span is the parent.
 - **Attributes:** `mcp.method.name`, `gen_ai.tool.name`, `gen_ai.operation.name`, `jsonrpc.request.id`, and `mcp.session.id` when there is one.
-- **Errors:** a tool's failure, including invalid arguments, sets `error.type` to `tool_error` and the status to `ERROR`. A call naming a tool that doesn't exist, or one hidden from this caller, isn't an error: the span is named just `tools/call`, without the name the client sent, and `error.type` is its JSON-RPC code, `-32602`.
+- **Errors:** a tool's failure, including invalid arguments, sets `error.type` to `tool_error` and the status to `ERROR`. A call naming a tool that doesn't exist, or one hidden from this caller, isn't an error: the span is named just `tools/call`, without the name the client sent, and `rpc.status_code` is `-32602`, with no `error.type` or error status.
 - **Privacy:** spans hold no arguments, results or tool error messages.
 
 Inside a span, `context.trace` is that span's context, so gateways nest under it. On Node with a context manager, which the OpenTelemetry Node SDK sets up, a span a tool opens nests by itself. On Workers without `nodejs_compat` there is no context manager, so pass the parent yourself:
