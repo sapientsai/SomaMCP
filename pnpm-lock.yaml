@@ -250,8 +250,8 @@ importers:
         specifier: ^4.20260730.0
         version: 4.20260730.0(@types/node@24.19.2)
       ts-builds:
-        specifier: ^4.1.0
-        version: 4.1.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.5(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
+        specifier: ^4.3.0
+        version: 4.3.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.5(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
       tsdown:
         specifier: ^0.23.5
         version: 0.23.5(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13))
@@ -2207,8 +2207,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
-  ts-builds@4.1.0:
-    resolution: {integrity: sha512-kkdYJG/gkHwTk67e6eR0itYFMUzaSIZX2eU/mn28tCdSKG2dNdK2O+CkCZc8R5DOD1hwlpt7RZbV1nlEaf2j8Q==}
+  ts-builds@4.3.0:
+    resolution: {integrity: sha512-iBIPkG1r1oUdTIi1dcNo68ag4ygKNT5KjxzLSiTNmpZquSoJ0RKxDn0UuuFu13bx9T3vTcabsRwW2iHAaXZnnw==}
     engines: {node: ^22.12.0 || ^24.0.0 || >=26.0.0}
     hasBin: true
     peerDependencies:
@@ -4176,7 +4176,7 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  ts-builds@4.1.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.5(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)):
+  ts-builds@4.3.0(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(@typescript-eslint/eslint-plugin@8.71.2(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(@typescript-eslint/parser@8.71.2(eslint@10.13.0(supports-color@10.2.2))(supports-color@10.2.2)(typescript@6.0.3))(supports-color@10.2.2)(tsdown@0.23.5(tsx@4.23.15)(typescript@6.0.3)(unrun@0.2.39(synckit@0.11.13)))(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15)):
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.13.0(supports-color@10.2.2))
       '@vitest/coverage-v8': 5.0.5(vitest@5.0.5)
