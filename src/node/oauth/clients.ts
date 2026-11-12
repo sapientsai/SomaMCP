@@ -10,27 +10,108 @@ import { randomHex, randomToken } from "./secrets.js"
 /** With no patterns configured, only loopback redirect URIs, for native clients (RFC 8252 §7.3). */
 const LOOPBACK_ONLY = ["http://localhost:*", "http://127.0.0.1:*"]
 
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+
+const DEFAULT_PORT = { http: "80", https: "443" } as const
+
+type Scheme = keyof typeof DEFAULT_PORT
+
 /**
- * A glob as an anchored regular expression: `*` matches any run of characters, `?` exactly
- * one, and everything else only itself.
+ * An allowed redirect URI, parsed from a pattern: a literal scheme and host, a port (`*` for any,
+ * loopback only), and a glob over the path and query.
  */
-const globToRegExp = (pattern: string): RegExp =>
+export type RedirectPattern = {
+  readonly host: string
+  readonly path: RegExp
+  readonly port: string
+  readonly scheme: Scheme
+}
+
+/** `scheme://host[:port][path]`. The host is a DNS name, an IPv4 address or a bracketed IPv6 one. */
+const PATTERN = /^(https?):\/\/(\[[0-9a-f:.]+\]|[a-z0-9.-]+)(?::(\*|\d{1,5}))?(\/.*)?$/i
+
+const SHAPE =
+  "A pattern is http(s)://host[:port][/path]: the scheme and host are literal, * and ? match only in the path, a * port is allowed only on loopback, and http only on loopback."
+
+/** A path glob as an anchored regular expression: `*` matches any run of characters, `?` exactly one. */
+const globToRegExp = (glob: string): RegExp =>
   new RegExp(
-    `^${[...pattern]
+    `^${[...glob]
       .map((char) => (char === "*" ? ".*" : char === "?" ? "." : char.replace(/[.+^${}()|[\]\\]/g, "\\$&")))
       .join("")}$`,
   )
 
-/**
- * Whether a client may register `uri`. It must be an absolute URL with no user name or
- * password in it (`https://claude.ai@evil.example` hides its real host there), and match
- * one of `patterns`. Unset patterns allow loopback only; an empty list allows nothing.
- */
-export const isAllowedRedirectUri = (uri: string, patterns: Option<ReadonlyArray<string>>): boolean => {
-  const url = Try(() => new URL(uri)).toOption()
-  if (!url.exists((u) => u.username === "" && u.password === "")) return false
-  return patterns.orElse(LOOPBACK_ONLY).some((pattern) => globToRegExp(pattern).test(uri))
+const parsePattern = (pattern: string): Either<string, RedirectPattern> => {
+  const parts = Option(PATTERN.exec(pattern))
+  if (parts.isNone()) return Left(`"${pattern}" is not a pattern this server accepts`)
+  const [, scheme, host, port, path] = parts.orThrow()
+  // Groups 3 and 4 are optional: a pattern without them leaves them undefined.
+  const portGlob = Option(port)
+  const lower = scheme.toLowerCase() as Scheme
+  // The host as a browser reads it, so `127.1` or an upper-case name compares like the URI's.
+  const hostname = Try(() => new URL(`${lower}://${host}`).hostname).toOption()
+  if (hostname.isNone()) return Left(`"${pattern}" has a host that is not valid`)
+  const name = hostname.orThrow()
+  const loopback = LOOPBACK_HOSTS.includes(name)
+  const anyPort = portGlob.contains("*")
+  if (lower === "http" && !loopback) return Left(`"${pattern}" uses http on a host that is not loopback`)
+  if (anyPort && !loopback) return Left(`"${pattern}" allows any port on a host that is not loopback`)
+  const portNumber = portGlob.filter((p) => p !== "*").map(Number)
+  if (portNumber.exists((n) => n < 1 || n > 65535)) return Left(`"${pattern}" has a port out of range`)
+  return Right({
+    host: name,
+    // A pattern without a path allows any path on its origin.
+    path: globToRegExp(Option(path).orElse("*")),
+    port: anyPort ? "*" : portNumber.map(String).orElse(DEFAULT_PORT[lower]),
+    scheme: lower,
+  })
 }
+
+/**
+ * The redirect URI patterns to allow, or an error naming the first that is unsafe. Unset allows
+ * loopback only; an empty list allows nothing.
+ */
+export const parseRedirectPatterns = (
+  configured: Option<ReadonlyArray<string>>,
+): Either<Error, ReadonlyArray<RedirectPattern>> =>
+  configured
+    .fold(
+      (): ReadonlyArray<string> => LOOPBACK_ONLY,
+      (patterns) => patterns,
+    )
+    .reduce<Either<Error, ReadonlyArray<RedirectPattern>>>(
+      (parsed, pattern) =>
+        parsed.flatMap((list) =>
+          parsePattern(pattern).fold(
+            (problem) =>
+              Left<Error, ReadonlyArray<RedirectPattern>>(
+                new Error(`[somamcp/oauth] allowedRedirectUriPatterns: ${problem}. ${SHAPE}`),
+              ),
+            (one) => Right<Error, ReadonlyArray<RedirectPattern>>([...list, one]),
+          ),
+        ),
+      Right([]),
+    )
+
+const matches = (pattern: RedirectPattern, url: URL): boolean => {
+  const scheme = url.protocol.slice(0, -1)
+  if (scheme !== pattern.scheme) return false
+  if (url.hostname !== pattern.host) return false
+  const port = url.port === "" ? DEFAULT_PORT[pattern.scheme] : url.port
+  if (pattern.port !== "*" && pattern.port !== port) return false
+  return pattern.path.test(`${url.pathname}${url.search}`)
+}
+
+/**
+ * Whether a client may register `uri`, or still use it. It must be an absolute URL with no user
+ * name or password in it (`https://claude.ai@evil.example` hides its real host there) and no
+ * fragment (RFC 6749 §3.1.2), and match one of `patterns` on its parsed scheme, host, port and path.
+ */
+export const isAllowedRedirectUri = (uri: string, patterns: ReadonlyArray<RedirectPattern>): boolean =>
+  Try(() => new URL(uri))
+    .toOption()
+    .filter((url) => url.username === "" && url.password === "" && url.hash === "")
+    .exists((url) => patterns.some((pattern) => matches(pattern, url)))
 
 const optionalString = z.string().optional()
 
@@ -69,7 +150,7 @@ export type RegistrationResponse = ClientRegistration & {
  * sign-in or a refresh. A client nobody uses for that long is forgotten, so open registration
  * cannot fill the store.
  */
-export const createClientRegistry = (records: Records, patterns: Option<ReadonlyArray<string>>, lifetime: number) => {
+export const createClientRegistry = (records: Records, patterns: ReadonlyArray<RedirectPattern>, lifetime: number) => {
   const register = async (input: unknown): Promise<Either<OAuthError, RegistrationResponse>> => {
     const parsed = registrationSchema.safeParse(input)
     if (!parsed.success) {
@@ -132,6 +213,8 @@ export const createClientRegistry = (records: Records, patterns: Option<Readonly
   }
 
   return {
+    /** Whether the server's patterns allow `uri` now: a client registered under looser ones may not use it. */
+    allows: (uri: string): boolean => isAllowedRedirectUri(uri, patterns),
     find: (clientId: string): Promise<Option<RegisteredClient>> => records.clients.find(clientId),
     register,
     use,

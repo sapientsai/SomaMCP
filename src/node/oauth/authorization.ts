@@ -43,6 +43,8 @@ export type AuthorizationSettings = {
   authorizationCodeLifetime: number
   /** `<baseUrl>/oauth/callback`: the redirect URI registered with the provider. */
   callbackUrl: string
+  /** `<baseUrl>/oauth/consent`: where the consent page's form posts. */
+  consentUrl: string
   consentRequired: boolean
   /** The server's base URL, sent back as `iss` (RFC 9207) when `sendIssuer` is on. */
   issuer: string
@@ -94,8 +96,9 @@ export const createAuthorization = (
       }),
     )
 
-  /** The client still lists the redirect URI the request will return to. */
+  /** The client still lists the redirect URI the request will return to, and the server still allows it. */
   const stillRegistered = async (request: PendingAuthorization): Promise<boolean> =>
+    clients.allows(request.clientCallbackUrl) &&
     (await clients.find(request.clientId)).exists((client) => client.redirectUris.includes(request.clientCallbackUrl))
 
   /** Why a verified request cannot proceed, if it cannot. */
@@ -117,6 +120,8 @@ export const createAuthorization = (
     if (client.isNone()) return Left(Errors.unknownClient(clientId))
     if (!client.exists((c) => c.redirectUris.includes(redirectUri)))
       return Left(Errors.invalidRequest("That redirect_uri is not registered for this client."))
+    if (!clients.allows(redirectUri))
+      return Left(Errors.invalidRequest("That redirect_uri is no longer allowed by this server."))
 
     // Verified from here on: errors go back to the client.
     const state = params.state ?? ""
@@ -150,7 +155,7 @@ export const createAuthorization = (
     return Right({
       _tag: "Consent",
       screen: {
-        action: `${settings.issuer}/oauth/consent`,
+        action: settings.consentUrl,
         clientName: client
           .flatMap((c) => Option(c.metadata?.client_name))
           .map((name) => name.trim())

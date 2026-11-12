@@ -14,12 +14,28 @@ export const isAlwaysKept = (scope: string): boolean => ALWAYS.contains(scope)
 /** A `scope` parameter as a list, without empty parts. */
 export const splitScope = (scope: string): ReadonlyArray<string> => scope.split(" ").filter((part) => part !== "")
 
+/** How two spellings of one scope compare: by default, only as the same string. */
+export type ScopeKey = (scope: string) => string
+
+const exactly: ScopeKey = (scope) => scope
+
 /**
  * The scopes on `allowed` that the client asked for, plus `openid` and `offline_access` when
- * `allowed` has them, in `allowed`'s order. None when the client asked for nothing on the list.
+ * `allowed` has them, in `allowed`'s order and spelling. `key` decides when a requested scope is
+ * one on `allowed`, so the result never holds anything `allowed` doesn't. None when the client
+ * asked for nothing on the list.
  */
-export const narrowScope = (requested: ReadonlyArray<string>, allowed: ReadonlyArray<string>): Option<string[]> => {
-  const asked = List(requested)
-  if (!allowed.some((scope) => asked.contains(scope))) return Option.none()
-  return Option(allowed.filter((scope) => asked.contains(scope) || ALWAYS.contains(scope)))
+export const narrowScope = (
+  requested: ReadonlyArray<string>,
+  allowed: ReadonlyArray<string>,
+  key: ScopeKey = exactly,
+): Option<string[]> => {
+  const asked = List(requested.map(key))
+  const wanted = (scope: string): boolean => asked.contains(key(scope))
+  if (!allowed.some(wanted)) return Option.none()
+  return Option(allowed.filter((scope) => wanted(scope) || ALWAYS.contains(scope)))
 }
+
+/** Whether `scopes` holds `scope`, compared by `key`. */
+export const holdsScope = (scopes: ReadonlyArray<string>, scope: string, key: ScopeKey = exactly): boolean =>
+  scopes.some((held) => key(held) === key(scope))

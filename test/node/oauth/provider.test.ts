@@ -75,16 +75,16 @@ describe("the Azure provider", () => {
     expect((await metadataOf(azure({ scopes: ["User.Read"] }))).scopes_supported).toEqual(["User.Read"])
   })
 
-  it("uses the server's defaults for options it is not given: plain PKCE, iss, and consent", async () => {
+  it("uses the server's defaults for options it is not given: S256 only, iss, and consent", async () => {
     const metadata = await metadataOf(azure())
-    expect(metadata.code_challenge_methods_supported).toEqual(["S256", "plain"])
+    expect(metadata.code_challenge_methods_supported).toEqual(["S256"])
     expect(metadata.authorization_response_iss_parameter_supported).toBe(true)
     expect((await authorizeStep(azure())).status).toBe(200)
   })
 
   it("passes the options it is given on to the server", async () => {
-    const metadata = await metadataOf(azure({ allowPlainPkce: false, authorizationResponseIss: false }))
-    expect(metadata.code_challenge_methods_supported).toEqual(["S256"])
+    const metadata = await metadataOf(azure({ allowPlainPkce: true, authorizationResponseIss: false }))
+    expect(metadata.code_challenge_methods_supported).toEqual(["S256", "plain"])
     expect(metadata).not.toHaveProperty("authorization_response_iss_parameter_supported")
     expect((await authorizeStep(azure({ consentRequired: false }))).status).toBe(302)
   })

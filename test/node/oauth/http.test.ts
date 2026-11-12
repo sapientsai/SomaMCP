@@ -110,9 +110,13 @@ const signIn = async (env: ReturnType<typeof setup>, extra: Record<string, strin
       ...extra,
     })}`,
   )
+  const html = await page.text()
+  // Posted where the page's form says, so a wrong action URL fails here.
+  const action = new URL(/<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? "")
+  expect(action.origin).toBe(BASE)
   const consent = await request(
-    "/oauth/consent",
-    form({ action: "approve", transaction_id: transactionIn(await page.text()) }),
+    `${action.pathname}${action.search}`,
+    form({ action: "approve", transaction_id: transactionIn(html) }),
   )
   const upstream = new URL(consent.headers.get("location") ?? "")
   const callback = await request(`/oauth/callback?code=ms-code&state=${upstream.searchParams.get("state") ?? ""}`)
@@ -177,6 +181,60 @@ describe("a sign-in over HTTP, as claude.ai does it", () => {
     expect(refreshed.status).toBe(200)
     const next = (await refreshed.json()) as { access_token: string }
     expect(await (await callTool(env, next.access_token)).text()).toContain("graph token: access-2")
+  })
+})
+
+describe("scopes Microsoft reports with the Graph prefix", () => {
+  it("keeps them on a refresh whose client names them as the server lists them", async () => {
+    const env = setup({ scopes: ["openid", "offline_access", "Tasks.ReadWrite"] })
+    env.fake.queue(
+      json({
+        access_token: "a1",
+        expires_in: 3600,
+        refresh_token: "r1",
+        scope: "openid https://graph.microsoft.com/Tasks.ReadWrite",
+      }),
+    )
+    const { client, tokens } = await signIn(env)
+    const refreshed = await env.request(
+      "/oauth/token",
+      form({
+        client_id: client.client_id,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token ?? "",
+        scope: "openid offline_access tasks.readwrite",
+      }),
+    )
+    expect(refreshed.status).toBe(200)
+    expect(env.fake.requests[1]?.body.get("scope")).toBe(
+      "openid https://graph.microsoft.com/Tasks.ReadWrite offline_access",
+    )
+  })
+})
+
+describe("baseUrl", () => {
+  // The routes mount at the root, so a path in the issuer would advertise metadata and endpoints that 404.
+  it.each(["http://localhost:3420/todo", "https://mcp.example.com/mcp/", "https://mcp.example.com/?x=1", "not a url"])(
+    "is refused when it is %s",
+    (baseUrl) => {
+      expect(() => azure(createFakeProvider(), { baseUrl })).toThrow(/baseUrl/)
+    },
+  )
+
+  it("may end in a slash: the issuer is used as given, and the endpoints have one slash and answer", async () => {
+    const env = setup({ baseUrl: "https://ms365.test/" })
+    const metadata = (await (await env.request("/.well-known/oauth-authorization-server")).json()) as Record<
+      string,
+      string
+    >
+    expect(metadata.issuer).toBe("https://ms365.test/")
+    expect(metadata.authorization_endpoint).toBe("https://ms365.test/oauth/authorize")
+    expect(metadata.registration_endpoint).toBe("https://ms365.test/oauth/register")
+    expect(metadata.token_endpoint).toBe("https://ms365.test/oauth/token")
+    const { callback, token, upstream } = await signIn(env)
+    expect(upstream.searchParams.get("redirect_uri")).toBe("https://ms365.test/oauth/callback")
+    expect(callback.status).toBe(302)
+    expect(token.status).toBe(200)
   })
 })
 

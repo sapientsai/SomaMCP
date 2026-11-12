@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { accessSync, constants, mkdirSync } from "node:fs"
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 
@@ -43,7 +44,8 @@ const isCurrent = (entry: FileEntry): boolean => entry.expiresAt >= Date.now()
  * - The file holds `{ "expiresAt": <epoch ms>, "value": <value> }`, with
  *   `Number.MAX_SAFE_INTEGER` for no expiry.
  *
- * Files are created owner-only (0600) in an owner-only directory (0700). A save writes a
+ * The directory is created owner-only (0700) when the store is, and an error is logged then if it
+ * can't be written. Files are created owner-only (0600). A save writes a
  * temporary file and renames it into place, so a reader sees the old value or the new one,
  * never a partial file. `take` first moves the file to a private name; the rename either
  * happens or fails, so of several processes reading the same key, one gets the value.
@@ -67,6 +69,19 @@ export const createDiskStore = (options: DiskStoreOptions): TokenStore => {
     )
   // Created up front so the first read does not race the first write; a failure resurfaces on save.
   const ready = ensureDirectory().catch(() => {})
+
+  // Checked now, so a server whose store can't be written says so at startup, not on every registration.
+  Try(() => {
+    mkdirSync(directory, { mode: 0o700, recursive: true })
+    accessSync(directory, constants.W_OK)
+  }).fold(
+    (error) =>
+      logger.error(
+        `[somamcp/oauth] the token store directory ${directory} is not writable: client registration and sign-in will fail.`,
+        error,
+      ),
+    () => undefined,
+  )
 
   /** A file's entry. A file that exists but does not parse reads as missing, and is reported. */
   const readEntry = async (key: string, file: string): Promise<Option<FileEntry>> => {

@@ -288,9 +288,17 @@ An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer res
 
 **Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. They become the standard OAuth codes (`invalid_grant`, `invalid_client`, …) only where a response leaves the server, because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
 
+**PKCE** must use `S256`. `allowPlainPkce: true` also accepts `plain`, which OAuth 2.1 and the MCP spec drop; FastMCP allowed it by default.
+
+**`baseUrl`** is the server's public origin, such as `https://mcp.example.com`. The OAuth routes mount at the root, so a `baseUrl` with a path, query or fragment throws when the provider is created. Serve the server at the root of its own host.
+
 **The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part.
 
-The page is a confirmation for the user, not a guard against a hostile client. Whoever starts a sign-in holds its transaction id, so they can approve it themselves. What stops a stolen sign-in is the redirect-URI allow-list: the code only ever goes to a URI on it. Keep `allowedRedirectUriPatterns` to hosts you trust, such as `https://claude.ai/*` and loopback, and never a pattern like `https://*` that lets anyone register a host they run. The page has no scripts and can't be framed, and Deny comes first in the tab order. It has a light mode and works at phone width. A long scope list, such as the 20 or more a Microsoft 365 server asks for, shows its count and first 8 scopes, and the rest are one tap away under "Show all".
+The page is a confirmation for the user, not a guard against a hostile client. Whoever starts a sign-in holds its transaction id, so they can approve it themselves. What stops a stolen sign-in is the redirect-URI allow-list: the code only ever goes to a URI on it. Keep `allowedRedirectUriPatterns` to hosts you trust, such as `https://claude.ai/*` and loopback.
+
+**Redirect-URI patterns** are `http(s)://host[:port][/path]`. The scheme and host match literally, so no pattern can admit a host an attacker runs. `*` (any run) and `?` (one character) match only in the path and query, and a pattern with no path allows any path on its origin. A `*` port and plain `http` are for loopback hosts only (`localhost`, `127.0.0.1`, `[::1]`). `createAzureProvider` throws on any other pattern, such as `https://claude.ai*` or `https://*`. A client registered under a looser pattern can't use a URI the current patterns refuse.
+
+The page has no scripts and can't be framed, and Deny comes first in the tab order. It has a light mode and works at phone width. A long scope list, such as the 20 or more a Microsoft 365 server asks for, shows its count and first 8 scopes, and the rest are one tap away under "Show all".
 
 **Moving from FastMCP.** `createAzureProvider` takes FastMCP's `AzureProviderConfig` unchanged, so `new AzureProvider(config)` becomes `createAzureProvider(config)`, and `new DiskStore(options)` becomes `createDiskStore(options)`. The move is one way: somamcp reads everything FastMCP 4.22.10 stored and issued, so existing sign-ins survive it. It reads:
 

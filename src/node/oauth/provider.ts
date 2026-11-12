@@ -136,6 +136,12 @@ const sameTenant =
   }
 
 /** Sign-in with Microsoft Entra ID (`login.microsoftonline.com/{tenant}/oauth2/v2.0`). */
+/**
+ * Microsoft compares scope names without regard to case, and may report a Graph scope with its
+ * resource, as `https://graph.microsoft.com/Tasks.ReadWrite`, though it was asked for as `Tasks.ReadWrite`.
+ */
+const graphScopeKey = (scope: string): string => scope.toLowerCase().replace(/^https:\/\/graph\.microsoft\.com\//, "")
+
 export const createAzureProvider = (config: AzureProviderConfig): OAuthAuthProvider<AzureSession> => {
   const { acceptSignIn, clientId, clientSecret, scopes: configured, tenantId: tenant, tokenStorage, ...shared } = config
   const tenantId = tenant ?? "common"
@@ -181,6 +187,7 @@ export const createAzureProvider = (config: AzureProviderConfig): OAuthAuthProvi
         clientId,
         clientSecret,
         name: "Microsoft",
+        scopeKey: graphScopeKey,
         tokenEndpoint: `${authority}/token`,
       },
     },

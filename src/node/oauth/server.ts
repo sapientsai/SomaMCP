@@ -1,11 +1,11 @@
 // The OAuth 2.1 authorization server, put together: it registers clients, runs the
 // browser flow, issues and refreshes tokens, and resolves its tokens to the upstream ones.
-import { Option } from "functype"
+import { Option, Try } from "functype"
 
 import type { Logger } from "../../types/server.js"
 import { createAuthorization } from "./authorization.js"
 import { type ClaimsPolicy, createClaimsCopier } from "./claims.js"
-import { createClientRegistry } from "./clients.js"
+import { createClientRegistry, parseRedirectPatterns } from "./clients.js"
 import { createGrants } from "./grants.js"
 import { createJwtSigner } from "./jwt.js"
 import { createRecords } from "./records.js"
@@ -39,12 +39,17 @@ export type Lifetimes = {
  *   sign-in that still comes back without an id token is refused. It runs again on every
  *   refresh, so a rule tightened later ends sessions it now refuses. A session signed in
  *   without an id token (before `openid` was added) has nothing to check, and keeps refreshing.
- * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
- *   match. Unset allows loopback URIs only; `[]` allows none.
- * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
+ * - `allowedRedirectUriPatterns` — the redirect URIs a client may register, as
+ *   `http(s)://host[:port][/path]`. The scheme and host match literally; `*` (any run) and `?`
+ *   (one character) match only in the path and query, and a pattern with no path allows any path
+ *   on its origin. A `*` port and plain http are for loopback hosts only. Creating the server
+ *   throws on a pattern outside these rules. Unset allows loopback URIs only; `[]` allows none.
+ * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to false: OAuth 2.1 and
+ *   the MCP spec require `S256`.
  * - `authorizationResponseIss` — send `iss` on redirects back to the client (RFC 9207). Defaults to true.
  * - `baseUrl` — the server's public URL. It is the issuer and audience of its tokens, so it
- *   must not change while tokens are in use.
+ *   must not change while tokens are in use. It must be an origin, with no path: creating the
+ *   server throws otherwise.
  * - `claims` — which upstream claims to copy into issued tokens. Off by default: tools get the
  *   user from the session, and clients treat the token as opaque.
  * - `consentRequired` — show the consent page before the provider's sign-in. Defaults to true.
@@ -93,6 +98,38 @@ const DEFAULTS = {
   transaction: 600,
 } as const
 
+/**
+ * @interop Refused when the server is created, so a pattern that would let a client register a
+ * host it runs never serves a sign-in. The factory has no other way to report a bad config.
+ */
+const redirectPatternsOrThrow = (patterns: ReadonlyArray<string> | undefined) =>
+  parseRedirectPatterns(Option(patterns)).fold(
+    (error) => {
+      throw error
+    },
+    (parsed) => parsed,
+  )
+
+/**
+ * Whether `baseUrl` is an origin. Its routes mount at the server's root, so a path would put the
+ * metadata and endpoints it advertises where nothing answers.
+ */
+const isOrigin = (baseUrl: string): boolean =>
+  Try(() => new URL(baseUrl))
+    .toOption()
+    .exists((url) => url.pathname === "/" && url.search === "" && url.hash === "")
+
+/**
+ * @interop Refused when the server is created: the factory has no other way to report a bad
+ * config. The string itself is kept as given, because it is the issuer and audience of live tokens.
+ */
+const checkBaseUrl = (baseUrl: string): void => {
+  if (!isOrigin(baseUrl))
+    throw new Error(
+      `[somamcp/oauth] baseUrl must be an origin such as https://mcp.example.com, with no path, query or fragment; got "${baseUrl}". Serve the server at the root of its own host.`,
+    )
+}
+
 export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const logger = config.logger ?? console
   // An unset, zero or negative lifetime takes the default: to a store, a ttl of 0 means "never expires".
@@ -107,7 +144,9 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     refreshToken: lifetime("refreshToken"),
     transaction: lifetime("transaction"),
   }
-  const allowPlainPkce = config.allowPlainPkce ?? true
+  checkBaseUrl(config.baseUrl)
+  const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
+  const allowPlainPkce = config.allowPlainPkce ?? false
   const sendIssuer = config.authorizationResponseIss ?? true
 
   // A store the server makes for itself is its own to close; a store passed in is the caller's.
@@ -130,7 +169,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       : createEncryptedStore(plainStore, config.encryptionKey ?? randomHex(), logger)
 
   const records = createRecords(store)
-  const clients = createClientRegistry(records, Option(config.allowedRedirectUriPatterns), lifetimes.client)
+  const clients = createClientRegistry(records, redirectPatterns, lifetimes.client)
   const acceptSignIn = Option(config.acceptSignIn).map(
     (accept) => (claims: Readonly<Record<string, unknown>>) => Option(accept(claims)),
   )
@@ -139,13 +178,16 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     fetch: config.fetch ?? ((url, init) => fetch(url, init)),
     logger,
   })
+  // Endpoints hang off the origin with one slash; the issuer stays `baseUrl` as given, trailing slash and all.
+  const endpoint = (path: string): string => `${config.baseUrl.replace(/\/+$/, "")}${path}`
   const signer = createJwtSigner(config.baseUrl, config.jwtSigningKey ?? randomHex())
   const authorization = createAuthorization(
     {
       acceptSignIn,
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
-      callbackUrl: `${config.baseUrl}/oauth/callback`,
+      callbackUrl: endpoint("/oauth/callback"),
+      consentUrl: endpoint("/oauth/consent"),
       consentRequired: config.consentRequired ?? true,
       issuer: config.baseUrl,
       providerName: config.upstream.name,
@@ -163,6 +205,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       allowPlainPkce,
       defaultAccessTokenLifetime: lifetimes.accessToken,
       refreshTokenLifetime: lifetimes.refreshToken,
+      scopeKey: config.upstream.scopeKey ?? ((scope) => scope),
       scopes: config.scopes,
       subjectClaim: config.subjectClaim ?? "sub",
       widenScopesOnRefresh: config.widenScopesOnRefresh ?? false,
@@ -181,15 +224,15 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
 
   /** Authorization server metadata (RFC 8414), with keys in the order FastMCP served them. */
   const metadata = () => ({
-    authorization_endpoint: `${config.baseUrl}/oauth/authorize`,
+    authorization_endpoint: endpoint("/oauth/authorize"),
     ...(sendIssuer ? { authorization_response_iss_parameter_supported: true } : {}),
     code_challenge_methods_supported: allowPlainPkce ? ["S256", "plain"] : ["S256"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     issuer: config.baseUrl,
-    registration_endpoint: `${config.baseUrl}/oauth/register`,
+    registration_endpoint: endpoint("/oauth/register"),
     response_types_supported: ["code"],
     scopes_supported: config.scopes,
-    token_endpoint: `${config.baseUrl}/oauth/token`,
+    token_endpoint: endpoint("/oauth/token"),
     // Public clients authenticate with PKCE alone; confidential ones may send their secret.
     token_endpoint_auth_methods_supported: ["none", "client_secret_basic", "client_secret_post"],
   })

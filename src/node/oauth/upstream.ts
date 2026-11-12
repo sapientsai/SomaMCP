@@ -19,6 +19,12 @@ export type UpstreamConfig = {
   extraAuthorizationParams?: Record<string, string>
   /** Shown to the user, as in "You'll sign in with Microsoft next". */
   name: string
+  /**
+   * The form two spellings of one scope share, for comparing the scopes the provider reports
+   * granted with the server's list and a client's request. Defaults to the scope unchanged.
+   * The Azure provider lower-cases it and drops `https://graph.microsoft.com/`.
+   */
+  scopeKey?: (scope: string) => string
   /** How long to wait for the token endpoint. Defaults to 10 seconds. */
   timeoutMs?: number
   tokenEndpoint: string
