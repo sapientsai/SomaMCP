@@ -164,22 +164,26 @@ export const createRecords = (store: TokenStore) => {
       decode(pendingSchema, await take(`${KEY.pending}${id}`)).filter((p) => !lapsed(p.expiresAt)),
   }
 
+  /** A code, or the marker a redeemed one leaves, if it hasn't lapsed. */
+  const redemptionOf = (stored: unknown): Option<Redemption> => {
+    const spent = decode(spentSchema, stored)
+    if (spent.isSome())
+      return spent
+        .filter((s) => !lapsed(s.expiresAt))
+        .map((s): Redemption => ({ _tag: "Spent", expiresAt: s.expiresAt }))
+    return decode(codeSchema, stored)
+      .filter((c) => !lapsed(c.expiresAt))
+      .map((c): Redemption => ({ _tag: "Active", code: c }))
+  }
+
   const codes = {
+    /** What a code holds, leaving it in place, so a request that fails its checks spends nothing. */
+    peek: async (code: string): Promise<Option<Redemption>> => redemptionOf(await store.get(`${KEY.code}${code}`)),
     /**
      * Removes the code and returns what it held. Removal goes through `take`, so concurrent
      * redemptions resolve to one winner; the caller then writes the spent marker in its place.
      */
-    redeem: async (code: string): Promise<Option<Redemption>> => {
-      const stored = await take(`${KEY.code}${code}`)
-      const spent = decode(spentSchema, stored)
-      if (spent.isSome())
-        return spent
-          .filter((s) => !lapsed(s.expiresAt))
-          .map((s): Redemption => ({ _tag: "Spent", expiresAt: s.expiresAt }))
-      return decode(codeSchema, stored)
-        .filter((c) => !lapsed(c.expiresAt))
-        .map((c): Redemption => ({ _tag: "Active", code: c }))
-    },
+    redeem: async (code: string): Promise<Option<Redemption>> => redemptionOf(await take(`${KEY.code}${code}`)),
     save: (code: AuthorizationCode): Promise<void> =>
       store.save(`${KEY.code}${code.code}`, code, secondsUntil(code.expiresAt)),
     /** The tombstone carries no tokens, and lapses when the code would have. */

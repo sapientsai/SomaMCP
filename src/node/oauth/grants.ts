@@ -21,7 +21,7 @@ import type { ClientRegistry } from "./clients.js"
 import { OAuthError as Errors, type OAuthError } from "./errors.js"
 import { type JwtSigner, type TokenUse, usableAs } from "./jwt.js"
 import { verifiesChallenge } from "./pkce.js"
-import { type Records, secondsUntil, type TokenGrant, type UpstreamTokens } from "./records.js"
+import { type AuthorizationCode, type Records, secondsUntil, type TokenGrant, type UpstreamTokens } from "./records.js"
 import { isAlwaysKept, narrowScope, splitScope } from "./scopes.js"
 import { randomToken } from "./secrets.js"
 import type { Upstream } from "./upstream.js"
@@ -137,28 +137,48 @@ export const createGrants = (
       (error: unknown) => logger.error("[somamcp/oauth] could not keep a client after issuing it tokens:", error),
     )
 
+  /** Why `request` may not redeem `issued`, checked before the code is spent. */
+  const redeemProblem = (issued: AuthorizationCode, request: TokenRequest): Option<OAuthError> => {
+    if (issued.clientId !== request.clientId)
+      return Option(Errors.invalidGrant("The authorization code was issued to another client."))
+    if (issued.codeChallenge === "")
+      return Option(Errors.invalidGrant("The authorization code was issued without PKCE."))
+    const verifier = request.codeVerifier ?? ""
+    if (verifier === "") return Option(Errors.invalidRequest("The request needs a code_verifier."))
+    if (issued.codeChallengeMethod === "plain" && !settings.allowPlainPkce)
+      return Option(Errors.invalidGrant('The code was issued for PKCE "plain", which is no longer allowed.'))
+    if (!verifiesChallenge(verifier, issued.codeChallenge, issued.codeChallengeMethod))
+      return Option(Errors.invalidGrant("The code_verifier does not match the code_challenge."))
+    return Option.none()
+  }
+
+  const invalidCode = (): OAuthError => Errors.invalidGrant("The authorization code is invalid or has expired.")
+  const usedCode = (): OAuthError => Errors.invalidGrant("The authorization code was already used.")
+
+  /**
+   * A code is checked where it lies and spent only by a request that passes, so a client that
+   * sees someone else's code, or guesses at its verifier, can't burn it. Of redemptions that
+   * pass at once, the store's `take` picks one; the others are told the code was used.
+   */
   const redeemCode = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
     if (request.clientId === "" || (await clients.find(request.clientId)).isNone())
       return Left(Errors.unknownClient(request.clientId))
     const code = request.code ?? ""
+    const peeked = await records.codes.peek(code)
+    if (peeked.isNone()) return Left(invalidCode())
+    const seen = peeked.orThrow()
+    if (seen._tag === "Spent") return Left(usedCode())
+    const problem = redeemProblem(seen.code, request)
+    if (problem.isSome()) return Left(problem.orThrow())
+
     const redemption = await records.codes.redeem(code)
-    if (redemption.isNone()) return Left(Errors.invalidGrant("The authorization code is invalid or has expired."))
+    if (redemption.isNone()) return Left(invalidCode())
     const claimed = redemption.orThrow()
     // Written back whatever happens next, so a second attempt is told the code was used.
     await records.codes.spend(code, claimed._tag === "Active" ? claimed.code.expiresAt : claimed.expiresAt)
-    if (claimed._tag === "Spent") return Left(Errors.invalidGrant("The authorization code was already used."))
+    if (claimed._tag === "Spent") return Left(usedCode())
 
     const issued = claimed.code
-    if (issued.clientId !== request.clientId)
-      return Left(Errors.invalidGrant("The authorization code was issued to another client."))
-    if (issued.codeChallenge === "") return Left(Errors.invalidGrant("The authorization code was issued without PKCE."))
-    const verifier = request.codeVerifier ?? ""
-    if (verifier === "") return Left(Errors.invalidRequest("The request needs a code_verifier."))
-    if (issued.codeChallengeMethod === "plain" && !settings.allowPlainPkce)
-      return Left(Errors.invalidGrant('The code was issued for PKCE "plain", which is no longer allowed.'))
-    if (!verifiesChallenge(verifier, issued.codeChallenge, issued.codeChallengeMethod))
-      return Left(Errors.invalidGrant("The code_verifier does not match the code_challenge."))
-
     const key = randomToken()
     await keepUpstream(key, issued.upstreamTokens)
     const pair = await issuePair(issued.clientId, issued.upstreamTokens, key)

@@ -119,7 +119,7 @@ describe("redeeming an authorization code", () => {
     expect(Object.keys((await store.get(`code:${code}`)) as object).sort()).toEqual(["expiresAt", "used"])
   })
 
-  it("refuses a code issued to another client, and spends it", async () => {
+  it("refuses a code presented by another client, and leaves it for the client it was issued to", async () => {
     const { server } = setup()
     const { client_id } = await register(server)
     const other = (await register(server)).client_id
@@ -130,10 +130,41 @@ describe("redeeming an authorization code", () => {
       reason: "The authorization code was issued to another client.",
     })
     expect(
-      left(await server.token({ clientId: client_id, code, codeVerifier: verifier, grantType: "authorization_code" })),
-    ).toMatchObject({
-      reason: "The authorization code was already used.",
-    })
+      (
+        await server.token({ clientId: client_id, code, codeVerifier: verifier, grantType: "authorization_code" })
+      ).isRight(),
+    ).toBe(true)
+  })
+
+  it("refuses a wrong code_verifier, and leaves the code for the right one", async () => {
+    const { server } = setup()
+    const { client_id } = await register(server)
+    const { code, verifier } = await signIn(server, client_id)
+    expect(
+      left(
+        await server.token({
+          clientId: client_id,
+          code,
+          codeVerifier: pkcePair().verifier,
+          grantType: "authorization_code",
+        }),
+      ),
+    ).toMatchObject({ reason: "The code_verifier does not match the code_challenge." })
+    expect(
+      (
+        await server.token({ clientId: client_id, code, codeVerifier: verifier, grantType: "authorization_code" })
+      ).isRight(),
+    ).toBe(true)
+  })
+
+  it("redeems a code once when two redemptions race", async () => {
+    const { server } = setup()
+    const { client_id } = await register(server)
+    const { code, verifier } = await signIn(server, client_id)
+    const redeem = () =>
+      server.token({ clientId: client_id, code, codeVerifier: verifier, grantType: "authorization_code" })
+    const results = await Promise.all([redeem(), redeem()])
+    expect(results.filter((r) => r.isRight())).toHaveLength(1)
   })
 
   describe("PKCE", () => {
