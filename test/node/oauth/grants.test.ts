@@ -92,7 +92,8 @@ describe("redeeming an authorization code", () => {
     )
     expect(wire(await server.token({ clientId: "nobody", code: "c", grantType: "authorization_code" }))).toEqual({
       code: "invalid_client",
-      description: "This client is not registered with the server.",
+      description:
+        "This client is not registered with the server, or its registration lapsed. Remove the server from your MCP client and add it again.",
       status: 400,
     })
   })
@@ -940,23 +941,24 @@ describe("acceptSignIn on a refresh", () => {
 
 describe("how long a registered client is kept", () => {
   const NINETY_DAYS = 90 * 24 * 60 * 60
+  const ONE_DAY = 24 * 60 * 60
   const clientSaves = (saves: ReturnType<typeof setup>["saves"], clientId: string) =>
     saves.filter((s) => s.key === `client:${clientId}`).map((s) => s.ttl)
 
-  it("90 days from registration by default", async () => {
+  it("a day from registration by default, until its first sign-in completes", async () => {
     const { saves, server } = setup()
     const { client_id } = await register(server)
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
+    expect(clientSaves(saves, client_id)).toEqual([ONE_DAY])
   })
 
-  it("starts over at each completed sign-in and refresh", async () => {
+  it("90 days from each completed sign-in and refresh", async () => {
     const { saves, server } = setup()
     const { client_id } = await register(server)
     const tokens = await issueTokens(server, client_id)
     // registration, then the code's redemption
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS])
+    expect(clientSaves(saves, client_id)).toEqual([ONE_DAY, NINETY_DAYS])
     right(await refreshWith(server, client_id, tokens.refresh_token ?? ""))
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS, NINETY_DAYS, NINETY_DAYS])
+    expect(clientSaves(saves, client_id)).toEqual([ONE_DAY, NINETY_DAYS, NINETY_DAYS])
   })
 
   it("not for an authorize alone, which anyone can send with a client's public id", async () => {
@@ -964,23 +966,59 @@ describe("how long a registered client is kept", () => {
     const { client_id } = await register(server)
     await authorize(server, client_id, pkcePair().challenge)
     await authorize(server, client_id, pkcePair().challenge, { redirect_uri: "https://elsewhere.example/cb" })
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
+    expect(clientSaves(saves, client_id)).toEqual([ONE_DAY])
   })
 
-  it("for lifetimes.client when set", async () => {
-    const { saves, server } = setup({ lifetimes: { client: 3_600_000, refreshToken: 3_600 } })
+  it("forgets a client nobody signed in with once its day is up, and keeps one somebody did", async () => {
+    vi.useFakeTimers({ now: 1_700_000_000_000, toFake: ["Date"] })
+    const { server } = setup()
+    const unclaimed = (await register(server)).client_id
+    const claimed = (await register(server)).client_id
+    await issueTokens(server, claimed)
+    vi.setSystemTime(Date.now() + (ONE_DAY + 1) * 1000)
+    expect(left(await authorize(server, unclaimed, pkcePair().challenge))._tag).toBe("UnknownClient")
+    expect((await authorize(server, claimed, pkcePair().challenge)).isRight()).toBe(true)
+  })
+
+  it("tells a user whose client's registration lapsed how to fix it", async () => {
+    const { server, store } = setup()
     const { client_id } = await register(server)
-    expect(clientSaves(saves, client_id)).toEqual([3_600_000])
+    await store.delete(`client:${client_id}`)
+    expect(wire(await authorize(server, client_id, pkcePair().challenge))).toMatchObject({
+      code: "invalid_client",
+      description:
+        "This client is not registered with the server, or its registration lapsed. Remove the server from your MCP client and add it again.",
+    })
+  })
+
+  it("for lifetimes.client and lifetimes.unclaimedClient when set", async () => {
+    const { saves, server } = setup({ lifetimes: { client: 3_600_000, refreshToken: 3_600, unclaimedClient: 7_200 } })
+    const { client_id } = await register(server)
+    await issueTokens(server, client_id)
+    expect(clientSaves(saves, client_id)).toEqual([7_200, 3_600_000])
+  })
+
+  it("never keeps an unclaimed client longer than a claimed one", async () => {
+    const { saves, server } = setup({ lifetimes: { client: 3_600, refreshToken: 600, unclaimedClient: 7_200 } })
+    const { client_id } = await register(server)
+    expect(clientSaves(saves, client_id)).toEqual([3_600])
   })
 
   it.each([
     ["zero", 0],
     ["negative", -1],
     ["unset", undefined],
-  ])("for the default when lifetimes.client is %s, never for ever", async (_name, client) => {
-    const { saves, server } = setup({ lifetimes: { client } })
+  ])("for the defaults when lifetimes.client and unclaimedClient are %s, never for ever", async (_name, seconds) => {
+    const { saves, server } = setup({ lifetimes: { client: seconds, unclaimedClient: seconds } })
     const { client_id } = await register(server)
-    expect(clientSaves(saves, client_id)).toEqual([NINETY_DAYS])
+    await issueTokens(server, client_id)
+    expect(clientSaves(saves, client_id)).toEqual([ONE_DAY, NINETY_DAYS])
+  })
+
+  it("warns when an unclaimed client lapses before a sign-in can finish", () => {
+    const warn = vi.fn()
+    setup({ lifetimes: { unclaimedClient: 60 }, logger: { error: () => {}, warn } })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lifetimes.unclaimedClient is shorter"))
   })
 
   it("warns when it is shorter than the refresh token's lifetime", () => {

@@ -318,10 +318,25 @@ Defaults:
 - access tokens follow Microsoft's `expires_in`
 - refresh tokens last 30 days
 - codes last 5 minutes and sign-ins 10
-- registered clients last 90 days after their last sign-in or refresh
+- a new client lasts a day until its first sign-in completes, then 90 days after each sign-in or refresh
 - the upstream timeout is 10 seconds
 
 Set `lifetimes` to change them.
+
+**Open registration.** Anyone can call `/oauth/register` without signing in, as MCP clients need. Two things stop that from filling the store:
+
+- **Unused clients lapse after a day.** A client is kept for `lifetimes.unclaimedClient` (a day) until its first sign-in completes, then for `lifetimes.client` (90 days). Claude and the MCP SDK clients register right before they sign in, so they're unaffected. A client that registers and comes back after the day gets `invalid_client` at `/oauth/authorize`, and the user has to remove the server and add it again.
+- **`refuseRegistration` lets you rate-limit.** It's called with the request before the body is read. Return a `Response` to refuse, with your own status and `Retry-After`, or nothing to let it through. Behind a proxy, key it on the client IP the proxy forwards: somamcp can't tell which header to trust.
+
+```typescript
+const auth = createAzureProvider({
+  // ...
+  refuseRegistration: (request) =>
+    limiter.allow(request.headers.get("cf-connecting-ip") ?? "unknown")
+      ? undefined
+      : new Response(null, { headers: { "Retry-After": "60" }, status: 429 }),
+})
+```
 
 Behaviour to know about:
 

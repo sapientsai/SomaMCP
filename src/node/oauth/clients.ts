@@ -145,12 +145,19 @@ export type RegistrationResponse = ClientRegistration & {
   token_endpoint_auth_method: string
 }
 
+/** In seconds: how long a client is kept after it registers, and after each completed sign-in or refresh. */
+export type ClientLifetimes = { readonly claimed: number; readonly unclaimed: number }
+
 /**
- * `lifetime` is how long, in seconds, a client is kept after it registered, or last completed a
- * sign-in or a refresh. A client nobody uses for that long is forgotten, so open registration
- * cannot fill the store.
+ * A new client is kept for `lifetimes.unclaimed`, and each completed sign-in or refresh keeps it
+ * for `lifetimes.claimed` from then. So registrations nobody signs in with lapse quickly, and
+ * open registration can't fill the store with them.
  */
-export const createClientRegistry = (records: Records, patterns: ReadonlyArray<RedirectPattern>, lifetime: number) => {
+export const createClientRegistry = (
+  records: Records,
+  patterns: ReadonlyArray<RedirectPattern>,
+  lifetimes: ClientLifetimes,
+) => {
   const register = async (input: unknown): Promise<Either<OAuthError, RegistrationResponse>> => {
     const parsed = registrationSchema.safeParse(input)
     if (!parsed.success) {
@@ -187,7 +194,7 @@ export const createClientRegistry = (records: Records, patterns: ReadonlyArray<R
       redirectUris: request.redirect_uris,
       registeredAt: new Date(),
     }
-    await records.clients.save(client, lifetime)
+    await records.clients.save(client, lifetimes.unclaimed)
 
     return Right({
       ...request,
@@ -202,12 +209,12 @@ export const createClientRegistry = (records: Records, patterns: ReadonlyArray<R
     })
   }
 
-  /** Keep the client another `lifetime`, after a completed sign-in or refresh. Nothing when it is gone. */
+  /** Keep the client for `lifetimes.claimed` from now, after a completed sign-in or refresh. Nothing when it is gone. */
   const use = async (clientId: string): Promise<Option<RegisteredClient>> => {
     const client = await records.clients.find(clientId)
     await client.fold(
       () => Promise.resolve(),
-      (found) => records.clients.save(found, lifetime),
+      (found) => records.clients.save(found, lifetimes.claimed),
     )
     return client
   }

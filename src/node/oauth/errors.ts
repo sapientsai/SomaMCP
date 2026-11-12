@@ -59,7 +59,10 @@ export const toWireError = (error: OAuthError): WireError => {
     case "InvalidRequest":
       return wire("invalid_request", error.reason)
     case "UnknownClient":
-      return wire("invalid_client", "This client is not registered with the server.")
+      return wire(
+        "invalid_client",
+        "This client is not registered with the server, or its registration lapsed. Remove the server from your MCP client and add it again.",
+      )
     case "InvalidGrant":
       return wire("invalid_grant", error.reason)
     case "UnsupportedGrantType":
