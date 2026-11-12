@@ -326,7 +326,7 @@ Set `lifetimes` to change them.
 **Open registration.** Anyone can call `/oauth/register` without signing in, as MCP clients need. Two things stop that from filling the store:
 
 - **Unused clients lapse after a day.** A client is kept for `lifetimes.unclaimedClient` (a day) until its first sign-in completes, then for `lifetimes.client` (90 days). Claude and the MCP SDK clients register right before they sign in, so they're unaffected. A client that registers and comes back after the day gets `invalid_client` at `/oauth/authorize`, and the user has to remove the server and add it again.
-- **`refuseRegistration` lets you rate-limit.** It's called with the request before the body is read. Return a `Response` to refuse, with your own status and `Retry-After`, or nothing to let it through. Behind a proxy, key it on the client IP the proxy forwards: somamcp can't tell which header to trust.
+- **`refuseRegistration` lets you rate-limit.** It's called before the body is read, with the request's method, URL and headers but no body. Return a `Response` to refuse, with your own status and `Retry-After`, or nothing to let it through. Behind a proxy, key it on the client IP the proxy forwards: somamcp can't tell which header to trust.
 
 ```typescript
 const auth = createAzureProvider({

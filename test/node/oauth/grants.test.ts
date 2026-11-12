@@ -993,6 +993,16 @@ describe("how long a registered client is kept", () => {
     })
   })
 
+  it("says the registration lapsed when it lapses before the user denies consent", async () => {
+    const { server, store } = setup()
+    const { client_id } = await register(server)
+    const screen = consentOf(right(await authorize(server, client_id, pkcePair().challenge)))
+    await store.delete(`client:${client_id}`)
+    expect(
+      wire(await server.decide(new URLSearchParams({ action: "deny", transaction_id: screen.transactionId }))),
+    ).toMatchObject({ code: "invalid_client" })
+  })
+
   it("tells a user whose client's registration lapsed how to fix it", async () => {
     const { server, store } = setup()
     const { client_id } = await register(server)
@@ -1022,6 +1032,18 @@ describe("how long a registered client is kept", () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("lifetimes.unclaimedClient is longer than lifetimes.client"),
     )
+  })
+
+  it("says nothing about a cap when unclaimedClient falls back to its default", () => {
+    const warn = vi.fn()
+    setup({ lifetimes: { client: 3_600, refreshToken: 600, unclaimedClient: 0 }, logger: { error: () => {}, warn } })
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining("lifetimes.unclaimedClient is longer"))
+  })
+
+  it("names the transaction when a long sign-in outlasts a new client", () => {
+    const warn = vi.fn()
+    setup({ lifetimes: { transaction: 100_000 }, logger: { error: () => {}, warn } })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lifetimes.transaction (100000)"))
   })
 
   it("names the setting that made a new client's lifetime too short", () => {

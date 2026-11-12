@@ -188,8 +188,11 @@ export const createOAuthRoutes = (
             // Asked first, so a refused registration costs no body read and no store write.
             const refused = await server.refuseRegistration.fold(
               () => Promise.resolve(Option.none<Response>()),
-              // A copy, so a hook that reads the body leaves it for the registration.
-              async (refuse) => Option(await refuse(c.req.raw.clone())),
+              // Method, URL and headers only: the body is the registration's, read under its 64 KiB cap.
+              async (refuse) =>
+                Option(
+                  await refuse(new Request(c.req.raw.url, { headers: c.req.raw.headers, method: c.req.raw.method })),
+                ),
             )
             if (refused.isSome()) return refused.orThrow()
             return withBody(c, async (body) => {
