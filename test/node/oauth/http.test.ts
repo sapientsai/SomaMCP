@@ -110,9 +110,13 @@ const signIn = async (env: ReturnType<typeof setup>, extra: Record<string, strin
       ...extra,
     })}`,
   )
+  const html = await page.text()
+  // Posted where the page's form says, so a wrong action URL fails here.
+  const action = new URL(/<form[^>]*action="([^"]+)"/.exec(html)?.[1] ?? "")
+  expect(action.origin).toBe(BASE)
   const consent = await request(
-    "/oauth/consent",
-    form({ action: "approve", transaction_id: transactionIn(await page.text()) }),
+    `${action.pathname}${action.search}`,
+    form({ action: "approve", transaction_id: transactionIn(html) }),
   )
   const upstream = new URL(consent.headers.get("location") ?? "")
   const callback = await request(`/oauth/callback?code=ms-code&state=${upstream.searchParams.get("state") ?? ""}`)

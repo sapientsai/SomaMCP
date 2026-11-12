@@ -43,6 +43,8 @@ export type AuthorizationSettings = {
   authorizationCodeLifetime: number
   /** `<baseUrl>/oauth/callback`: the redirect URI registered with the provider. */
   callbackUrl: string
+  /** `<baseUrl>/oauth/consent`: where the consent page's form posts. */
+  consentUrl: string
   consentRequired: boolean
   /** The server's base URL, sent back as `iss` (RFC 9207) when `sendIssuer` is on. */
   issuer: string
@@ -153,7 +155,7 @@ export const createAuthorization = (
     return Right({
       _tag: "Consent",
       screen: {
-        action: `${settings.issuer}/oauth/consent`,
+        action: settings.consentUrl,
         clientName: client
           .flatMap((c) => Option(c.metadata?.client_name))
           .map((name) => name.trim())

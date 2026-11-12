@@ -187,6 +187,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
       callbackUrl: endpoint("/oauth/callback"),
+      consentUrl: endpoint("/oauth/consent"),
       consentRequired: config.consentRequired ?? true,
       issuer: config.baseUrl,
       providerName: config.upstream.name,
