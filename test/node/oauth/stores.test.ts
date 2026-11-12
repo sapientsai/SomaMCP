@@ -207,6 +207,25 @@ describe("the disk store", () => {
     expect(await readdir(state.directory)).toEqual([])
   })
 
+  it.skipIf(process.getuid?.() === 0)(
+    "says when it is created that a directory it can't write to will fail every save",
+    async () => {
+      await chmod(state.directory, 0o500)
+      const errors: unknown[][] = []
+      track(createDiskStore({ directory: state.directory, logger: { error: (...a) => errors.push(a) } }))
+      await chmod(state.directory, 0o700)
+      expect(String(errors[0]?.[0])).toContain(`${state.directory} is not writable`)
+    },
+  )
+
+  it("says nothing about a directory it can write to, or one it will create", () => {
+    const errors: unknown[][] = []
+    const logger = { error: (...a: unknown[]) => errors.push(a) }
+    track(createDiskStore({ directory: state.directory, logger }))
+    track(createDiskStore({ directory: join(state.directory, "new", "deeper"), logger }))
+    expect(errors).toEqual([])
+  })
+
   it("refuses a directory path that is a file", async () => {
     const file = join(state.directory, "file")
     await writeFile(file, "")
