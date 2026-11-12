@@ -250,6 +250,24 @@ describe("refuseRegistration", () => {
     }
   })
 
+  it("sees the method, URL and headers but no body, so it can't read an uncapped body", async () => {
+    const seen: Array<{ body: string; ip: string | null; method: string; url: string }> = []
+    const env = setup({
+      refuseRegistration: async (request) => {
+        seen.push({
+          body: await request.text(),
+          ip: request.headers.get("x-forwarded-for"),
+          method: request.method,
+          url: request.url,
+        })
+        return undefined
+      },
+    })
+    const res = await env.request("/oauth/register", registerRequest({ "x-forwarded-for": "203.0.113.9" }))
+    expect(res.status).toBe(201)
+    expect(seen).toEqual([{ body: "", ip: "203.0.113.9", method: "POST", url: `${BASE}/oauth/register` }])
+  })
+
   it("is asked before the body is read", async () => {
     const env = setup({ refuseRegistration: () => new Response(null, { status: 403 }) })
     const res = await env.request("/oauth/register", chunked(["{ not json"], "application/json", true))

@@ -96,10 +96,18 @@ export const createAuthorization = (
       }),
     )
 
-  /** The client still lists the redirect URI the request will return to, and the server still allows it. */
-  const stillRegistered = async (request: PendingAuthorization): Promise<boolean> =>
-    clients.allows(request.clientCallbackUrl) &&
-    (await clients.find(request.clientId)).exists((client) => client.redirectUris.includes(request.clientCallbackUrl))
+  /**
+   * Why a request can no longer return to its client: the client's registration lapsed, or it no
+   * longer lists the redirect URI, or the server no longer allows it.
+   */
+  const notReturnable = async (request: PendingAuthorization): Promise<Option<OAuthError>> => {
+    const client = await clients.find(request.clientId)
+    if (client.isNone()) return Option(Errors.unknownClient(request.clientId))
+    const listed = client.exists((c) => c.redirectUris.includes(request.clientCallbackUrl))
+    if (!listed || !clients.allows(request.clientCallbackUrl))
+      return Option(Errors.invalidRequest("The client no longer lists this redirect URI."))
+    return Option.none()
+  }
 
   /** Why a verified request cannot proceed, if it cannot. */
   const pkceProblem = (challenge: Option<string>, method: string): Option<OAuthError> => {
@@ -185,8 +193,8 @@ export const createAuthorization = (
       return Right(toProvider(approved))
     }
     await records.pending.delete(transactionId)
-    if (!(await stillRegistered(request)))
-      return Left(Errors.invalidRequest("The client no longer lists this redirect URI."))
+    const denied = await notReturnable(request)
+    if (denied.isSome()) return Left(denied.orThrow())
     return Right(
       toClient(request.clientCallbackUrl, request.state, {
         error: "access_denied",
@@ -247,8 +255,8 @@ export const createAuthorization = (
     const found = await records.pending.take(state)
     if (found.isNone()) return Left(Errors.invalidRequest("This sign-in request has expired or was already completed."))
     const request = found.orThrow()
-    if (!(await stillRegistered(request)))
-      return Left(Errors.invalidRequest("The client no longer lists this redirect URI."))
+    const gone = await notReturnable(request)
+    if (gone.isSome()) return Left(gone.orThrow())
     // Without consent on record, the user was sent to the provider some other way than the consent page.
     if (settings.consentRequired && request.consentGiven !== true)
       return Left(Errors.invalidRequest("This sign-in request was not approved on the consent page."))
