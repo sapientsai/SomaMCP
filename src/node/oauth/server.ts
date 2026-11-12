@@ -1,6 +1,6 @@
 // The OAuth 2.1 authorization server, put together: it registers clients, runs the
 // browser flow, issues and refreshes tokens, and resolves its tokens to the upstream ones.
-import { Option } from "functype"
+import { Option, Try } from "functype"
 
 import type { Logger } from "../../types/server.js"
 import { createAuthorization } from "./authorization.js"
@@ -47,7 +47,8 @@ export type Lifetimes = {
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
  * - `authorizationResponseIss` — send `iss` on redirects back to the client (RFC 9207). Defaults to true.
  * - `baseUrl` — the server's public URL. It is the issuer and audience of its tokens, so it
- *   must not change while tokens are in use.
+ *   must not change while tokens are in use. It must be an origin, with no path: creating the
+ *   server throws otherwise.
  * - `claims` — which upstream claims to copy into issued tokens. Off by default: tools get the
  *   user from the session, and clients treat the token as opaque.
  * - `consentRequired` — show the consent page before the provider's sign-in. Defaults to true.
@@ -108,6 +109,26 @@ const redirectPatternsOrThrow = (patterns: ReadonlyArray<string> | undefined) =>
     (parsed) => parsed,
   )
 
+/**
+ * Whether `baseUrl` is an origin. Its routes mount at the server's root, so a path would put the
+ * metadata and endpoints it advertises where nothing answers.
+ */
+const isOrigin = (baseUrl: string): boolean =>
+  Try(() => new URL(baseUrl))
+    .toOption()
+    .exists((url) => url.pathname === "/" && url.search === "" && url.hash === "")
+
+/**
+ * @interop Refused when the server is created: the factory has no other way to report a bad
+ * config. The string itself is kept as given, because it is the issuer and audience of live tokens.
+ */
+const checkBaseUrl = (baseUrl: string): void => {
+  if (!isOrigin(baseUrl))
+    throw new Error(
+      `[somamcp/oauth] baseUrl must be an origin such as https://mcp.example.com, with no path, query or fragment; got "${baseUrl}". Serve the server at the root of its own host.`,
+    )
+}
+
 export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const logger = config.logger ?? console
   // An unset, zero or negative lifetime takes the default: to a store, a ttl of 0 means "never expires".
@@ -122,6 +143,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     refreshToken: lifetime("refreshToken"),
     transaction: lifetime("transaction"),
   }
+  checkBaseUrl(config.baseUrl)
   const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
   const allowPlainPkce = config.allowPlainPkce ?? true
   const sendIssuer = config.authorizationResponseIss ?? true

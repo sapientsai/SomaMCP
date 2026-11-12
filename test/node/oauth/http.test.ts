@@ -208,6 +208,22 @@ describe("scopes Microsoft reports with the Graph prefix", () => {
   })
 })
 
+describe("baseUrl", () => {
+  // The routes mount at the root, so a path in the issuer would advertise metadata and endpoints that 404.
+  it.each(["http://localhost:3420/todo", "https://mcp.example.com/mcp/", "https://mcp.example.com/?x=1", "not a url"])(
+    "is refused when it is %s",
+    (baseUrl) => {
+      expect(() => azure(createFakeProvider(), { baseUrl })).toThrow(/baseUrl/)
+    },
+  )
+
+  it("may end in a slash, and is used as given", async () => {
+    const env = setup({ baseUrl: "https://ms365.test/" })
+    const res = await env.request("/.well-known/oauth-authorization-server")
+    expect(((await res.json()) as { issuer: string }).issuer).toBe("https://ms365.test/")
+  })
+})
+
 describe("the metadata documents", () => {
   it("serve the authorization server's metadata (RFC 8414)", async () => {
     const res = await setup().request("/.well-known/oauth-authorization-server")

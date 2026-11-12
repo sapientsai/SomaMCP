@@ -288,6 +288,8 @@ An unauthenticated MCP request gets a 401 carrying `WWW-Authenticate: Bearer res
 
 **Errors.** Inside the server, failures are a tagged union, `OAuthError` (`InvalidGrant`, `UnknownClient`, `ProviderRejected` and so on), returned as the `Left` of an `Either`. They become the standard OAuth codes (`invalid_grant`, `invalid_client`, …) only where a response leaves the server, because clients act on those codes. Until the client and its redirect URI are verified, an error is shown to the user, as JSON or as a page when the browser asks for HTML. After that, it goes back to the client on its redirect URI, so the app can tell the user what happened. That includes the user cancelling at Microsoft.
 
+**`baseUrl`** is the server's public origin, such as `https://mcp.example.com`. The OAuth routes mount at the root, so a `baseUrl` with a path, query or fragment throws when the provider is created. Serve the server at the root of its own host.
+
 **The consent page** shows the app's registered name, the host the user returns to, the provider and the requested scopes. Anyone can register any name, so the page asks the user to approve only if they started from the return host, which is the verified part.
 
 The page is a confirmation for the user, not a guard against a hostile client. Whoever starts a sign-in holds its transaction id, so they can approve it themselves. What stops a stolen sign-in is the redirect-URI allow-list: the code only ever goes to a URI on it. Keep `allowedRedirectUriPatterns` to hosts you trust, such as `https://claude.ai/*` and loopback.
