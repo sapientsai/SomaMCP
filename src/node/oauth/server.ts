@@ -5,7 +5,7 @@ import { Option } from "functype"
 import type { Logger } from "../../types/server.js"
 import { createAuthorization } from "./authorization.js"
 import { type ClaimsPolicy, createClaimsCopier } from "./claims.js"
-import { createClientRegistry } from "./clients.js"
+import { createClientRegistry, parseRedirectPatterns } from "./clients.js"
 import { createGrants } from "./grants.js"
 import { createJwtSigner } from "./jwt.js"
 import { createRecords } from "./records.js"
@@ -39,8 +39,11 @@ export type Lifetimes = {
  *   sign-in that still comes back without an id token is refused. It runs again on every
  *   refresh, so a rule tightened later ends sessions it now refuses. A session signed in
  *   without an id token (before `openid` was added) has nothing to check, and keeps refreshing.
- * - `allowedRedirectUriPatterns` — glob patterns (`*`, `?`) a registered redirect URI must
- *   match. Unset allows loopback URIs only; `[]` allows none.
+ * - `allowedRedirectUriPatterns` — the redirect URIs a client may register, as
+ *   `http(s)://host[:port][/path]`. The scheme and host match literally; `*` (any run) and `?`
+ *   (one character) match only in the path and query, and a pattern with no path allows any path
+ *   on its origin. A `*` port and plain http are for loopback hosts only. Creating the server
+ *   throws on a pattern outside these rules. Unset allows loopback URIs only; `[]` allows none.
  * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
  * - `authorizationResponseIss` — send `iss` on redirects back to the client (RFC 9207). Defaults to true.
  * - `baseUrl` — the server's public URL. It is the issuer and audience of its tokens, so it
@@ -93,6 +96,18 @@ const DEFAULTS = {
   transaction: 600,
 } as const
 
+/**
+ * @interop Refused when the server is created, so a pattern that would let a client register a
+ * host it runs never serves a sign-in. The factory has no other way to report a bad config.
+ */
+const redirectPatternsOrThrow = (patterns: ReadonlyArray<string> | undefined) =>
+  parseRedirectPatterns(Option(patterns)).fold(
+    (error) => {
+      throw error
+    },
+    (parsed) => parsed,
+  )
+
 export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const logger = config.logger ?? console
   // An unset, zero or negative lifetime takes the default: to a store, a ttl of 0 means "never expires".
@@ -107,6 +122,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     refreshToken: lifetime("refreshToken"),
     transaction: lifetime("transaction"),
   }
+  const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
   const allowPlainPkce = config.allowPlainPkce ?? true
   const sendIssuer = config.authorizationResponseIss ?? true
 
@@ -130,7 +146,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       : createEncryptedStore(plainStore, config.encryptionKey ?? randomHex(), logger)
 
   const records = createRecords(store)
-  const clients = createClientRegistry(records, Option(config.allowedRedirectUriPatterns), lifetimes.client)
+  const clients = createClientRegistry(records, redirectPatterns, lifetimes.client)
   const acceptSignIn = Option(config.acceptSignIn).map(
     (accept) => (claims: Readonly<Record<string, unknown>>) => Option(accept(claims)),
   )

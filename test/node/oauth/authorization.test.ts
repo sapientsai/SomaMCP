@@ -72,6 +72,20 @@ describe("/oauth/authorize", () => {
     expect(await scopeFor("Mail.Send")).toEqual(["openid", "offline_access", "User.Read", "Mail.Read"])
   })
 
+  it("refuses a redirect URI the server's patterns no longer allow, though the client registered it", async () => {
+    const store = createMemoryStore()
+    const before = make(createFakeProvider(), {
+      allowedRedirectUriPatterns: ["https://claude.ai/*", "https://old.example/*"],
+      store,
+    })
+    const { client_id } = await register(before, ["https://old.example/cb"])
+    const after = make(createFakeProvider(), { allowedRedirectUriPatterns: ["https://claude.ai/*"], store })
+    expect(
+      left(await authorize(after, client_id, pkcePair().challenge, { redirect_uri: "https://old.example/cb" })),
+    ).toMatchObject({ _tag: "InvalidRequest", reason: "That redirect_uri is no longer allowed by this server." })
+    store.close?.()
+  })
+
   it("goes straight to the provider when consent is not required, and the sign-in completes", async () => {
     const server = make(createFakeProvider(), { consentRequired: false })
     const { client_id } = await register(server)

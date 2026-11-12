@@ -2,7 +2,7 @@ import { Option } from "functype"
 import { describe, expect, it } from "vitest"
 
 import { createClaimsCopier } from "../../../src/node/oauth/claims.js"
-import { isAllowedRedirectUri } from "../../../src/node/oauth/clients.js"
+import { isAllowedRedirectUri, parseRedirectPatterns } from "../../../src/node/oauth/clients.js"
 import { createFakeProvider, createTestServer, left, quiet, right } from "./harness.js"
 
 const jwtWith = (claims: Record<string, unknown>): string =>
@@ -84,7 +84,14 @@ describe("copying upstream claims into issued tokens", () => {
 })
 
 describe("which redirect URIs a client may register", () => {
-  const allowed = (uri: string, patterns?: ReadonlyArray<string>) => isAllowedRedirectUri(uri, Option(patterns))
+  const patternsOf = (patterns?: ReadonlyArray<string>) =>
+    parseRedirectPatterns(Option(patterns)).fold(
+      (error) => {
+        throw error
+      },
+      (parsed) => parsed,
+    )
+  const allowed = (uri: string, patterns?: ReadonlyArray<string>) => isAllowedRedirectUri(uri, patternsOf(patterns))
 
   it("allows only loopback URIs when no patterns are configured", () => {
     expect(allowed("http://localhost:33418/callback")).toBe(true)
@@ -98,29 +105,92 @@ describe("which redirect URIs a client may register", () => {
     expect(allowed("https://evil.example/", [])).toBe(false)
   })
 
-  it("matches configured globs: * for any run, ? for one character", () => {
-    const patterns = ["https://claude.ai/*", "http://localhost:*/*", "https://app?.example.test/cb"]
+  it("matches scheme, host and port literally, and globs only the path: * for any run, ? for one character", () => {
+    const patterns = ["https://claude.ai/*", "http://localhost:*/*", "https://app.example.test/cb?"]
     expect(allowed("https://claude.ai/api/mcp/auth_callback", patterns)).toBe(true)
     expect(allowed("http://localhost:4000/callback", patterns)).toBe(true)
-    expect(allowed("https://app1.example.test/cb", patterns)).toBe(true)
-    expect(allowed("https://app12.example.test/cb", patterns)).toBe(false)
+    expect(allowed("https://app.example.test/cb1", patterns)).toBe(true)
+    expect(allowed("https://app.example.test/cb12", patterns)).toBe(false)
     expect(allowed("https://claude.ai.evil.example/x", patterns)).toBe(false)
+    expect(allowed("https://claude.ai:8443/x", patterns)).toBe(false)
+    expect(allowed("http://claude.ai/x", patterns)).toBe(false)
   })
 
-  it("treats regex characters in a pattern as themselves", () => {
-    expect(allowed("https://claudeXai/cb", ["https://claude.ai/cb"])).toBe(false)
-    expect(allowed("https://a+b.example/cb", ["https://a+b.example/cb"])).toBe(true)
-    expect(allowed("https://aab.example/cb", ["https://a+b.example/cb"])).toBe(false)
+  it("reads a pattern with no path as any path on that origin", () => {
+    expect(allowed("http://localhost:33418/callback", ["http://localhost:*"])).toBe(true)
+    expect(allowed("https://claude.ai/a/b?c=d", ["https://claude.ai"])).toBe(true)
+    expect(allowed("https://claude.ai.evil.example/", ["https://claude.ai"])).toBe(false)
+  })
+
+  it("compares the port the URI really uses, default ports included", () => {
+    expect(allowed("https://claude.ai:443/cb", ["https://claude.ai/*"])).toBe(true)
+    expect(allowed("http://localhost/cb", ["http://localhost:80/*"])).toBe(true)
+    expect(allowed("http://[::1]:5000/cb", ["http://[::1]:*/*"])).toBe(true)
+    expect(allowed("http://[::2]:5000/cb", ["http://[::1]:*/*"])).toBe(false)
+  })
+
+  it("compares hosts without regard to case", () => {
+    expect(allowed("https://CLAUDE.ai/cb", ["https://claude.ai/*"])).toBe(true)
+    expect(allowed("https://claude.ai/cb", ["https://Claude.AI/*"])).toBe(true)
+  })
+
+  it("treats regex characters in a path as themselves", () => {
+    expect(allowed("https://claude.ai/aXb", ["https://claude.ai/a.b"])).toBe(false)
+    expect(allowed("https://claude.ai/a+b", ["https://claude.ai/a+b"])).toBe(true)
+    expect(allowed("https://claude.ai/aab", ["https://claude.ai/a+b"])).toBe(false)
   })
 
   it("rejects a URI that hides its real host behind a user name", () => {
     expect(allowed("http://localhost:1@evil.example/cb")).toBe(false)
-    expect(allowed("https://claude.ai@evil.example/x", ["https://claude.ai*"])).toBe(false)
+    expect(allowed("https://claude.ai@evil.example/x", ["https://claude.ai/*"])).toBe(false)
+  })
+
+  it("rejects a URI with a fragment (RFC 6749 §3.1.2)", () => {
+    expect(allowed("https://claude.ai/cb#frag", ["https://claude.ai/*"])).toBe(false)
   })
 
   it("rejects anything that is not an absolute URL", () => {
-    expect(allowed("/relative", ["*"])).toBe(false)
-    expect(allowed("not a url", ["*"])).toBe(false)
+    expect(allowed("/relative", ["https://claude.ai/*"])).toBe(false)
+    expect(allowed("not a url", ["https://claude.ai/*"])).toBe(false)
+  })
+
+  // Each of these let a client register a host an attacker runs (somamcp 2.6.0 matched `*` across `.` and `/`).
+  it.each([
+    "https://claude.ai*",
+    "http://localhost*",
+    "https://app.*.com/cb",
+    "*",
+    "*://claude.ai/*",
+    "*claude.ai/*",
+    "http*://claude.ai/*",
+    "https://?*",
+  ])("refuses the pattern %s when the server is created", (pattern) => {
+    expect(() => createTestServer(createFakeProvider(), { allowedRedirectUriPatterns: [pattern] })).toThrow(
+      /allowedRedirectUriPatterns/,
+    )
+  })
+
+  it.each([
+    ["http to a host other than loopback", "http://example.com/*"],
+    ["a * port off loopback", "https://claude.ai:*/*"],
+    ["a scheme other than http(s)", "myapp://callback"],
+    ["a user name in the pattern", "https://claude.ai@evil.example/*"],
+  ])("refuses %s when the server is created", (_why, pattern) => {
+    expect(() => createTestServer(createFakeProvider(), { allowedRedirectUriPatterns: [pattern] })).toThrow(
+      /allowedRedirectUriPatterns/,
+    )
+  })
+
+  it("accepts the patterns real servers use", () => {
+    const patterns = [
+      "https://claude.ai/*",
+      "https://claude.com/*",
+      "http://localhost/*",
+      "http://localhost:*/*",
+      "http://127.0.0.1/*",
+      "http://127.0.0.1:*/*",
+    ]
+    expect(() => createTestServer(createFakeProvider(), { allowedRedirectUriPatterns: patterns }).close()).not.toThrow()
   })
 })
 
