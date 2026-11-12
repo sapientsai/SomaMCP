@@ -205,7 +205,7 @@ describe("redeeming an authorization code", () => {
     }
 
     it("redeems a plain code while plain is allowed", async () => {
-      const { server } = setup()
+      const { server } = setup({ allowPlainPkce: true })
       const { client_id } = await register(server)
       const code = await plainCode(server, client_id)
       expect(
@@ -223,7 +223,7 @@ describe("redeeming an authorization code", () => {
     it("refuses a plain code issued before plain was turned off", async () => {
       const provider = createFakeProvider()
       const store = createMemoryStore()
-      const before = make(provider, { store })
+      const before = make(provider, { allowPlainPkce: true, store })
       const { client_id } = await register(before)
       const code = await plainCode(before, client_id)
       const after = make(provider, { allowPlainPkce: false, store })

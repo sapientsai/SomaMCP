@@ -185,8 +185,19 @@ describe("/oauth/authorize", () => {
   })
 
   describe("PKCE", () => {
-    it("accepts plain by default, and a challenge without a method as plain (RFC 7636 §4.3)", async () => {
+    it("refuses plain by default, and a challenge without a method, which means plain (RFC 7636 §4.3)", async () => {
       const server = make(createFakeProvider())
+      const { client_id } = await register(server)
+      for (const method of ["plain", undefined])
+        expect(
+          redirectOf(
+            right(await authorize(server, client_id, "p".repeat(43), { code_challenge_method: method })),
+          ).searchParams.get("error"),
+        ).toBe("invalid_request")
+    })
+
+    it("accepts plain when allowed, and a challenge without a method as plain (RFC 7636 §4.3)", async () => {
+      const server = make(createFakeProvider(), { allowPlainPkce: true })
       const { client_id } = await register(server)
       expect(right(await authorize(server, client_id, "p".repeat(43), { code_challenge_method: "plain" }))._tag).toBe(
         "Consent",
@@ -203,10 +214,11 @@ describe("/oauth/authorize", () => {
     })
 
     it("advertises plain only while it is allowed", () => {
-      expect(make(createFakeProvider()).metadata().code_challenge_methods_supported).toEqual(["S256", "plain"])
-      expect(make(createFakeProvider(), { allowPlainPkce: false }).metadata().code_challenge_methods_supported).toEqual(
-        ["S256"],
-      )
+      expect(make(createFakeProvider()).metadata().code_challenge_methods_supported).toEqual(["S256"])
+      expect(make(createFakeProvider(), { allowPlainPkce: true }).metadata().code_challenge_methods_supported).toEqual([
+        "S256",
+        "plain",
+      ])
     })
   })
 })

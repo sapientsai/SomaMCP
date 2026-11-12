@@ -44,7 +44,8 @@ export type Lifetimes = {
  *   (one character) match only in the path and query, and a pattern with no path allows any path
  *   on its origin. A `*` port and plain http are for loopback hosts only. Creating the server
  *   throws on a pattern outside these rules. Unset allows loopback URIs only; `[]` allows none.
- * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to true.
+ * - `allowPlainPkce` — accept PKCE `plain` as well as `S256`. Defaults to false: OAuth 2.1 and
+ *   the MCP spec require `S256`.
  * - `authorizationResponseIss` — send `iss` on redirects back to the client (RFC 9207). Defaults to true.
  * - `baseUrl` — the server's public URL. It is the issuer and audience of its tokens, so it
  *   must not change while tokens are in use. It must be an origin, with no path: creating the
@@ -145,7 +146,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   }
   checkBaseUrl(config.baseUrl)
   const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
-  const allowPlainPkce = config.allowPlainPkce ?? true
+  const allowPlainPkce = config.allowPlainPkce ?? false
   const sendIssuer = config.authorizationResponseIss ?? true
 
   // A store the server makes for itself is its own to close; a store passed in is the caller's.

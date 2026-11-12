@@ -244,7 +244,8 @@ describe("compatibility with what fastmcp 4.22.10 stored and issued", () => {
   describe("the HTTP responses clients already rely on, byte for byte", () => {
     const captured = fixture.http
     const capturedBase = "http://127.0.0.1:39417"
-    const served = () => serve(provider({ baseUrl: capturedBase }))
+    // FastMCP allowed PKCE plain by default and somamcp no longer does, so the capture needs it on.
+    const served = () => serve(provider({ allowPlainPkce: true, baseUrl: capturedBase }))
 
     it.each([
       ["authorization server metadata", captured.authorizationServerMetadata],
