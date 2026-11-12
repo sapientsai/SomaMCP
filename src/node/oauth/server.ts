@@ -179,6 +179,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       allowPlainPkce,
       defaultAccessTokenLifetime: lifetimes.accessToken,
       refreshTokenLifetime: lifetimes.refreshToken,
+      scopeKey: config.upstream.scopeKey ?? ((scope) => scope),
       scopes: config.scopes,
       subjectClaim: config.subjectClaim ?? "sub",
       widenScopesOnRefresh: config.widenScopesOnRefresh ?? false,

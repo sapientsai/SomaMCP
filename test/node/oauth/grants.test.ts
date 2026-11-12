@@ -6,6 +6,7 @@ import { createMemoryStore } from "../../../src/node/oauth/stores/memory.js"
 import type { TokenStore } from "../../../src/node/oauth/stores/types.js"
 import {
   authorize,
+  AUTHORIZE,
   consentOf,
   createFakeProvider,
   createTestServer,
@@ -691,6 +692,52 @@ describe("widenScopesOnRefresh", () => {
     })
     right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
     expect(provider.requests[1]?.body.has("scope")).toBe(false)
+  })
+})
+
+describe("a provider that reports scopes in its own spelling", () => {
+  const GRAPH = "https://graph.microsoft.com/"
+  const upstream = {
+    authorizationEndpoint: AUTHORIZE,
+    clientId: "upstream-client",
+    clientSecret: "upstream-secret",
+    name: "Example",
+    scopeKey: (scope: string) => scope.toLowerCase().replace(GRAPH, ""),
+    tokenEndpoint: TOKEN,
+  }
+  const scopes = ["openid", "offline_access", "Tasks.ReadWrite"]
+
+  const signedIn = async (overrides: Parameters<typeof createTestServer>[1] = {}) => {
+    const env = setup({ scopes, upstream, ...overrides })
+    const { client_id } = await register(env.server)
+    env.provider.queue(
+      json({ access_token: "a1", expires_in: 3600, refresh_token: "r1", scope: `openid ${GRAPH}Tasks.ReadWrite` }),
+    )
+    return { ...env, clientId: client_id, tokens: await issueTokens(env.server, client_id) }
+  }
+
+  it("keeps a granted scope a client names in the server's spelling, and sends the provider its own", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "openid offline_access Tasks.ReadWrite"))
+    expect(provider.requests[1]?.body.get("scope")).toBe(`openid ${GRAPH}Tasks.ReadWrite offline_access`)
+  })
+
+  it("never adds a scope by spelling: what goes upstream is the grant's own", async () => {
+    const { clientId, provider, server, tokens } = await signedIn()
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "TASKS.READWRITE Mail.Send"))
+    expect(provider.requests[1]?.body.get("scope")).toBe(`openid ${GRAPH}Tasks.ReadWrite offline_access`)
+  })
+
+  it("does not widen a grant that holds the whole list in the provider's spelling", async () => {
+    const { clientId, provider, server, tokens } = await signedIn({ widenScopesOnRefresh: true })
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? ""))
+    expect(provider.requests[1]?.body.has("scope")).toBe(false)
+  })
+
+  it("compares scopes exactly when the provider gives no scopeKey", async () => {
+    const { clientId, provider, server, tokens } = await signedIn({ upstream: { ...upstream, scopeKey: undefined } })
+    right(await refreshWith(server, clientId, tokens.refresh_token ?? "", "openid offline_access Tasks.ReadWrite"))
+    expect(provider.requests[1]?.body.get("scope")).toBe("openid offline_access")
   })
 })
 

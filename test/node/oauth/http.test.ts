@@ -180,6 +180,34 @@ describe("a sign-in over HTTP, as claude.ai does it", () => {
   })
 })
 
+describe("scopes Microsoft reports with the Graph prefix", () => {
+  it("keeps them on a refresh whose client names them as the server lists them", async () => {
+    const env = setup({ scopes: ["openid", "offline_access", "Tasks.ReadWrite"] })
+    env.fake.queue(
+      json({
+        access_token: "a1",
+        expires_in: 3600,
+        refresh_token: "r1",
+        scope: "openid https://graph.microsoft.com/Tasks.ReadWrite",
+      }),
+    )
+    const { client, tokens } = await signIn(env)
+    const refreshed = await env.request(
+      "/oauth/token",
+      form({
+        client_id: client.client_id,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token ?? "",
+        scope: "openid offline_access tasks.readwrite",
+      }),
+    )
+    expect(refreshed.status).toBe(200)
+    expect(env.fake.requests[1]?.body.get("scope")).toBe(
+      "openid https://graph.microsoft.com/Tasks.ReadWrite offline_access",
+    )
+  })
+})
+
 describe("the metadata documents", () => {
   it("serve the authorization server's metadata (RFC 8414)", async () => {
     const res = await setup().request("/.well-known/oauth-authorization-server")

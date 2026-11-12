@@ -22,7 +22,7 @@ import { OAuthError as Errors, type OAuthError } from "./errors.js"
 import { type JwtSigner, type TokenUse, usableAs } from "./jwt.js"
 import { verifiesChallenge } from "./pkce.js"
 import { type AuthorizationCode, type Records, secondsUntil, type TokenGrant, type UpstreamTokens } from "./records.js"
-import { isAlwaysKept, narrowScope, splitScope } from "./scopes.js"
+import { holdsScope, isAlwaysKept, narrowScope, type ScopeKey, splitScope } from "./scopes.js"
 import { randomToken } from "./secrets.js"
 import type { Upstream } from "./upstream.js"
 
@@ -53,6 +53,8 @@ export type GrantSettings = {
   refreshTokenLifetime: number
   /** The server's scopes: the openid and offline_access a refresh may ask for again, and the list it widens to. */
   scopes: ReadonlyArray<string>
+  /** How the provider's spelling of a scope compares with the server's and a client's. */
+  scopeKey: ScopeKey
   /** The id token claim that names a user to `revokeUser`. */
   subjectClaim: string
   /** Ask for all of `scopes` on a refresh whose grant lacks some, and fall back to the grant if refused. */
@@ -301,7 +303,7 @@ export const createGrants = (
   /** What a refresh may ask for: the grant's scope, plus openid and offline_access from the server's list. */
   const refreshCap = (granted: ReadonlyArray<string>): ReadonlyArray<string> => [
     ...granted,
-    ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !granted.includes(scope)),
+    ...settings.scopes.filter((scope) => isAlwaysKept(scope) && !holdsScope(granted, scope, settings.scopeKey)),
   ]
 
   /**
@@ -311,7 +313,9 @@ export const createGrants = (
   const widenedScope = (granted: ReadonlyArray<string>): Option<string> =>
     Option(settings.scopes)
       .filter(() => settings.widenScopesOnRefresh)
-      .filter((scopes) => scopes.some((scope) => !isAlwaysKept(scope) && !granted.includes(scope)))
+      .filter((scopes) =>
+        scopes.some((scope) => !isAlwaysKept(scope) && !holdsScope(granted, scope, settings.scopeKey)),
+      )
       .map((scopes) => scopes.join(" "))
 
   /** Whether a refresh that failed this way may be tried again with the same token. */
@@ -342,7 +346,10 @@ export const createGrants = (
       rotate(
         grant,
         // RFC 6749 §6: never more than was granted. openid and offline_access may be asked again.
-        requested.flatMap((s) => narrowScope(s, refreshCap(grant.scope))).map((scope) => scope.join(" ")),
+        // Compared by the provider's scopeKey, but what goes upstream is always the grant's own spelling.
+        requested
+          .flatMap((s) => narrowScope(s, refreshCap(grant.scope), settings.scopeKey))
+          .map((scope) => scope.join(" ")),
         // Only a refresh that names no scope is widened: a client never adds to its grant.
         requested.fold(
           () => widenedScope(grant.scope),
