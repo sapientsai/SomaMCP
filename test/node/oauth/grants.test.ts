@@ -980,6 +980,19 @@ describe("how long a registered client is kept", () => {
     expect((await authorize(server, claimed, pkcePair().challenge)).isRight()).toBe(true)
   })
 
+  it("says the registration lapsed when it lapses in the middle of a sign-in", async () => {
+    const { server, store } = setup()
+    const { client_id } = await register(server)
+    const screen = consentOf(right(await authorize(server, client_id, pkcePair().challenge)))
+    const upstream = redirectOf(
+      right(await server.decide(new URLSearchParams({ action: "approve", transaction_id: screen.transactionId }))),
+    )
+    await store.delete(`client:${client_id}`)
+    expect(wire(await server.callback(providerCallback(upstream)))).toMatchObject({
+      code: "invalid_client",
+    })
+  })
+
   it("tells a user whose client's registration lapsed how to fix it", async () => {
     const { server, store } = setup()
     const { client_id } = await register(server)
@@ -998,10 +1011,23 @@ describe("how long a registered client is kept", () => {
     expect(clientSaves(saves, client_id)).toEqual([7_200, 3_600_000])
   })
 
-  it("never keeps an unclaimed client longer than a claimed one", async () => {
-    const { saves, server } = setup({ lifetimes: { client: 3_600, refreshToken: 600, unclaimedClient: 7_200 } })
+  it("never keeps an unclaimed client longer than a claimed one, and says so", async () => {
+    const warn = vi.fn()
+    const { saves, server } = setup({
+      lifetimes: { client: 3_600, refreshToken: 600, unclaimedClient: 7_200 },
+      logger: { error: () => {}, warn },
+    })
     const { client_id } = await register(server)
     expect(clientSaves(saves, client_id)).toEqual([3_600])
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("lifetimes.unclaimedClient is longer than lifetimes.client"),
+    )
+  })
+
+  it("names the setting that made a new client's lifetime too short", () => {
+    const warn = vi.fn()
+    setup({ lifetimes: { client: 60, refreshToken: 30 }, logger: { error: () => {}, warn } })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lifetimes.client caps it"))
   })
 
   it.each([
@@ -1018,7 +1044,7 @@ describe("how long a registered client is kept", () => {
   it("warns when an unclaimed client lapses before a sign-in can finish", () => {
     const warn = vi.fn()
     setup({ lifetimes: { unclaimedClient: 60 }, logger: { error: () => {}, warn } })
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("lifetimes.unclaimedClient is shorter"))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("kept for 60 seconds (lifetimes.unclaimedClient)"))
   })
 
   it("warns when it is shorter than the refresh token's lifetime", () => {
@@ -1050,6 +1076,17 @@ describe("how long a registered client is kept", () => {
     })
     await issueTokens(server, "from-fastmcp")
     expect(clientSaves(saves, "from-fastmcp")).toEqual([undefined, NINETY_DAYS])
+  })
+
+  it("says a client may lapse when it can't be kept after its first sign-in", async () => {
+    const error = vi.fn()
+    const env = setup({ logger: { error, warn: () => {} } })
+    const { client_id } = await register(env.server)
+    const save = env.store.save
+    env.store.save = (key, value, ttl) =>
+      key.startsWith("client:") ? Promise.reject(new Error("disk full")) : save(key, value, ttl)
+    await issueTokens(env.server, client_id)
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("until a refresh succeeds"), expect.any(Error))
   })
 
   it("never fails a refresh because the client could not be saved again", async () => {

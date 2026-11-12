@@ -309,7 +309,7 @@ The page has no scripts and can't be framed, and Deny comes first in the tab ord
 
 They survive only if the new server gets the same four values FastMCP had: `baseUrl` (the tokens' issuer and audience), `jwtSigningKey`, `encryptionKey`, and a `tokenStorage` on the same directory. A missing key falls back to a random one, as it does in FastMCP, which signs everyone out on the next restart.
 
-Registered clients now expire 90 days after their last sign-in or refresh. A client FastMCP registered gets that expiry the next time it signs in or refreshes, so the store stops growing. A client unused that long gets `invalid_client` when it next tries to sign in, and some MCP clients then need the user to add the server again.
+Registered clients now expire 90 days after their last sign-in or refresh, and a day after registering if nobody signs in with them. A client FastMCP registered gets that expiry the next time it signs in or refreshes, so the store stops growing. A client unused that long gets `invalid_client` when it next tries to sign in, and some MCP clients then need the user to add the server again.
 
 `test/node/oauth-compat.test.ts` guards this: it reads a store, tokens and HTTP captures that FastMCP generated (`test/fixtures/fastmcp-4.22.10-oauth`). `xcheck.mjs` in that directory also runs this server and FastMCP against a shared store. Its checks that FastMCP reads what somamcp writes are informational now, since nothing goes back to FastMCP.
 

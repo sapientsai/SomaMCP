@@ -96,8 +96,9 @@ export type OAuthProxyConfig = {
    * Asked before each `/oauth/register`, with the request: a `Response` refuses the
    * registration and is served as-is, so it can set its own status and `Retry-After`; nothing
    * lets it through. Registration is open to anyone, so use it to rate-limit, for example by the
-   * client IP your proxy forwards. It runs before the body is read. If it throws, the
-   * registration is refused with a 500.
+   * client IP your proxy forwards. It runs before the body is read, and gets a copy of the
+   * request, so reading its body leaves the registration intact. If it throws, the registration
+   * is refused with a 500.
    */
   // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
   refuseRegistration?: (request: Request) => Response | undefined | Promise<Response | undefined>
@@ -165,6 +166,10 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   }
   // An unclaimed client never outlives a claimed one.
   const unclaimedClient = Math.min(lifetime("unclaimedClient"), lifetimes.client)
+  if (lifetime("unclaimedClient") > lifetimes.client && config.lifetimes?.unclaimedClient !== undefined)
+    logger.warn(
+      `[somamcp/oauth] lifetimes.unclaimedClient is longer than lifetimes.client, so a new client is kept for ${lifetimes.client} seconds.`,
+    )
   checkBaseUrl(config.baseUrl)
   const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
   const allowPlainPkce = config.allowPlainPkce ?? false
@@ -184,7 +189,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     )
   if (unclaimedClient < lifetimes.transaction + lifetimes.authorizationCode)
     logger.warn(
-      "[somamcp/oauth] lifetimes.unclaimedClient is shorter than lifetimes.transaction plus lifetimes.authorizationCode: a new client can lapse before its first sign-in finishes.",
+      `[somamcp/oauth] a new client is kept for ${unclaimedClient} seconds (${unclaimedClient < lifetime("unclaimedClient") ? "lifetimes.client caps it" : "lifetimes.unclaimedClient"}), less than lifetimes.transaction plus lifetimes.authorizationCode: it can lapse before its first sign-in finishes.`,
     )
   if (config.jwtSigningKey === undefined)
     logger.warn("[somamcp/oauth] no jwtSigningKey: issued tokens will stop working on restart.")

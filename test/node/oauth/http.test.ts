@@ -250,6 +250,19 @@ describe("refuseRegistration", () => {
     }
   })
 
+  it("may read the body without breaking the registration", async () => {
+    const seen: string[] = []
+    const env = setup({
+      refuseRegistration: async (request) => {
+        seen.push(await request.text())
+        return undefined
+      },
+    })
+    const res = await env.request("/oauth/register", registerRequest())
+    expect(res.status).toBe(201)
+    expect(seen[0]).toContain("Claude")
+  })
+
   it("is asked before the body is read", async () => {
     const env = setup({ refuseRegistration: () => new Response(null, { status: 403 }) })
     const res = await env.request("/oauth/register", chunked(["{ not json"], "application/json", true))

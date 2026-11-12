@@ -136,7 +136,11 @@ export const createGrants = (
   const keepClient = (clientId: string): Promise<void> =>
     clients.use(clientId).then(
       () => undefined,
-      (error: unknown) => logger.error("[somamcp/oauth] could not keep a client after issuing it tokens:", error),
+      (error: unknown) =>
+        logger.error(
+          "[somamcp/oauth] could not keep a client after issuing it tokens. It keeps the lifetime it had, so a client on its first sign-in can lapse within a day, until a refresh succeeds:",
+          error,
+        ),
     )
 
   /** Why `request` may not redeem `issued`, checked before the code is spent. */
