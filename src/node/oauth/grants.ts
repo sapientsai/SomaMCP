@@ -160,7 +160,8 @@ export const createGrants = (
   /**
    * A code is checked where it lies and spent only by a request that passes, so a client that
    * sees someone else's code, or guesses at its verifier, can't burn it. Of redemptions that
-   * pass at once, the store's `take` picks one; the others are told the code was used.
+   * pass at once, the store's `take` picks one. Another is told the code was used, or, if it
+   * lands between the winner's `take` and the spent marker, that it is invalid.
    */
   const redeemCode = async (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
     if (request.clientId === "" || (await clients.find(request.clientId)).isNone())

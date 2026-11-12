@@ -217,10 +217,20 @@ describe("baseUrl", () => {
     },
   )
 
-  it("may end in a slash, and is used as given", async () => {
+  it("may end in a slash: the issuer is used as given, and the endpoints have one slash and answer", async () => {
     const env = setup({ baseUrl: "https://ms365.test/" })
-    const res = await env.request("/.well-known/oauth-authorization-server")
-    expect(((await res.json()) as { issuer: string }).issuer).toBe("https://ms365.test/")
+    const metadata = (await (await env.request("/.well-known/oauth-authorization-server")).json()) as Record<
+      string,
+      string
+    >
+    expect(metadata.issuer).toBe("https://ms365.test/")
+    expect(metadata.authorization_endpoint).toBe("https://ms365.test/oauth/authorize")
+    expect(metadata.registration_endpoint).toBe("https://ms365.test/oauth/register")
+    expect(metadata.token_endpoint).toBe("https://ms365.test/oauth/token")
+    const { callback, token, upstream } = await signIn(env)
+    expect(upstream.searchParams.get("redirect_uri")).toBe("https://ms365.test/oauth/callback")
+    expect(callback.status).toBe(302)
+    expect(token.status).toBe(200)
   })
 })
 

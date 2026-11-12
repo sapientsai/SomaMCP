@@ -178,13 +178,15 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     fetch: config.fetch ?? ((url, init) => fetch(url, init)),
     logger,
   })
+  // Endpoints hang off the origin with one slash; the issuer stays `baseUrl` as given, trailing slash and all.
+  const endpoint = (path: string): string => `${config.baseUrl.replace(/\/+$/, "")}${path}`
   const signer = createJwtSigner(config.baseUrl, config.jwtSigningKey ?? randomHex())
   const authorization = createAuthorization(
     {
       acceptSignIn,
       allowPlainPkce,
       authorizationCodeLifetime: lifetimes.authorizationCode,
-      callbackUrl: `${config.baseUrl}/oauth/callback`,
+      callbackUrl: endpoint("/oauth/callback"),
       consentRequired: config.consentRequired ?? true,
       issuer: config.baseUrl,
       providerName: config.upstream.name,
@@ -221,15 +223,15 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
 
   /** Authorization server metadata (RFC 8414), with keys in the order FastMCP served them. */
   const metadata = () => ({
-    authorization_endpoint: `${config.baseUrl}/oauth/authorize`,
+    authorization_endpoint: endpoint("/oauth/authorize"),
     ...(sendIssuer ? { authorization_response_iss_parameter_supported: true } : {}),
     code_challenge_methods_supported: allowPlainPkce ? ["S256", "plain"] : ["S256"],
     grant_types_supported: ["authorization_code", "refresh_token"],
     issuer: config.baseUrl,
-    registration_endpoint: `${config.baseUrl}/oauth/register`,
+    registration_endpoint: endpoint("/oauth/register"),
     response_types_supported: ["code"],
     scopes_supported: config.scopes,
-    token_endpoint: `${config.baseUrl}/oauth/token`,
+    token_endpoint: endpoint("/oauth/token"),
     // Public clients authenticate with PKCE alone; confidential ones may send their secret.
     token_endpoint_auth_methods_supported: ["none", "client_secret_basic", "client_secret_post"],
   })
