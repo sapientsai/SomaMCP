@@ -22,11 +22,18 @@ export type Lifetimes = {
   /** Defaults to 5 minutes. */
   authorizationCode?: number
   /**
-   * How long a registered client is kept after its last sign-in or refresh. Defaults to 90
+   * How long a client is kept after its last completed sign-in or refresh. Defaults to 90
    * days. Keep it longer than `refreshToken`, or a client can lapse while its refresh tokens
    * still work, and its next sign-in fails with `invalid_client`.
    */
   client?: number
+  /**
+   * How long a client is kept after it registers, until its first sign-in completes. Defaults
+   * to a day. Registration is open to anyone, so this is what keeps junk registrations from
+   * filling the store. Never longer than `client`; keep it longer than `transaction` plus
+   * `authorizationCode`, or a sign-in can lapse before it finishes.
+   */
+  unclaimedClient?: number
   /** For upstream refresh tokens that came without a lifetime. Defaults to 30 days. */
   refreshToken?: number
   /** How long a sign-in may take, from /oauth/authorize to the callback. Defaults to 10 minutes. */
@@ -57,6 +64,8 @@ export type Lifetimes = {
  *   stored tokens do not survive a restart; `false` stores them unencrypted.
  * - `jwtSigningKey` — signs issued tokens. Unset generates one per process, so tokens stop
  *   working on restart.
+ * - `refuseRegistration` — asked before each `/oauth/register`; a `Response` refuses it. See
+ *   the field.
  * - `scopes` — the most the server asks the provider for. A client's `scope` narrows the list
  *   and never adds to it; `openid` and `offline_access` stay whenever the list has them.
  * - `store` — where clients, codes and tokens live. Defaults to memory.
@@ -83,6 +92,15 @@ export type OAuthProxyConfig = {
   jwtSigningKey?: string
   lifetimes?: Lifetimes
   logger?: Pick<Logger, "error" | "warn">
+  /**
+   * Asked before each `/oauth/register`, with the request: a `Response` refuses the
+   * registration and is served as-is, so it can set its own status and `Retry-After`; nothing
+   * lets it through. Registration is open to anyone, so use it to rate-limit, for example by the
+   * client IP your proxy forwards. It runs before the body is read. If it throws, the
+   * registration is refused with a 500.
+   */
+  // eslint-disable-next-line functype/prefer-option -- consumer-facing callback; see the note in types/core.ts on why public types stay plain
+  refuseRegistration?: (request: Request) => Response | undefined | Promise<Response | undefined>
   scopes: ReadonlyArray<string>
   store?: TokenStore
   subjectClaim?: string
@@ -96,6 +114,7 @@ const DEFAULTS = {
   client: 7_776_000,
   refreshToken: 2_592_000,
   transaction: 600,
+  unclaimedClient: 86_400,
 } as const
 
 /**
@@ -144,6 +163,8 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     refreshToken: lifetime("refreshToken"),
     transaction: lifetime("transaction"),
   }
+  // An unclaimed client never outlives a claimed one.
+  const unclaimedClient = Math.min(lifetime("unclaimedClient"), lifetimes.client)
   checkBaseUrl(config.baseUrl)
   const redirectPatterns = redirectPatternsOrThrow(config.allowedRedirectUriPatterns)
   const allowPlainPkce = config.allowPlainPkce ?? false
@@ -161,6 +182,10 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     logger.warn(
       "[somamcp/oauth] lifetimes.client is shorter than lifetimes.refreshToken: clients can lapse while signed in.",
     )
+  if (unclaimedClient < lifetimes.transaction + lifetimes.authorizationCode)
+    logger.warn(
+      "[somamcp/oauth] lifetimes.unclaimedClient is shorter than lifetimes.transaction plus lifetimes.authorizationCode: a new client can lapse before its first sign-in finishes.",
+    )
   if (config.jwtSigningKey === undefined)
     logger.warn("[somamcp/oauth] no jwtSigningKey: issued tokens will stop working on restart.")
   const store =
@@ -169,7 +194,10 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
       : createEncryptedStore(plainStore, config.encryptionKey ?? randomHex(), logger)
 
   const records = createRecords(store)
-  const clients = createClientRegistry(records, redirectPatterns, lifetimes.client)
+  const clients = createClientRegistry(records, redirectPatterns, {
+    claimed: lifetimes.client,
+    unclaimed: unclaimedClient,
+  })
   const acceptSignIn = Option(config.acceptSignIn).map(
     (accept) => (claims: Readonly<Record<string, unknown>>) => Option(accept(claims)),
   )
@@ -249,6 +277,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     metadata,
     providerName: config.upstream.name,
     register: clients.register,
+    refuseRegistration: Option(config.refuseRegistration),
     resolve: grants.resolve,
     revokeUser: grants.revokeUser,
     scopes: config.scopes,

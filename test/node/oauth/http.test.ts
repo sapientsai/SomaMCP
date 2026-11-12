@@ -212,6 +212,75 @@ describe("scopes Microsoft reports with the Graph prefix", () => {
   })
 })
 
+describe("refuseRegistration", () => {
+  const registerRequest = (headers: Record<string, string> = {}): RequestInit => ({
+    body: JSON.stringify({ client_name: "Claude", redirect_uris: [CALLBACK] }),
+    headers: { "content-type": "application/json", ...headers },
+    method: "POST",
+  })
+  const clientKeys = async (store: ReturnType<typeof createMemoryStore>, id: string) => store.get(`client:${id}`)
+
+  it("serves the Response it returns as-is, and registers nothing", async () => {
+    const tokenStorage = createMemoryStore()
+    const save = vi.spyOn(tokenStorage, "save")
+    const env = setup({
+      refuseRegistration: (request) =>
+        request.headers.get("x-forwarded-for") === "203.0.113.9"
+          ? new Response("slow down", { headers: { "Retry-After": "60" }, status: 429 })
+          : undefined,
+      tokenStorage,
+    })
+    const refused = await env.request("/oauth/register", registerRequest({ "x-forwarded-for": "203.0.113.9" }))
+    expect(refused.status).toBe(429)
+    expect(refused.headers.get("retry-after")).toBe("60")
+    expect(await refused.text()).toBe("slow down")
+    expect(save.mock.calls.filter(([key]) => key.startsWith("client:"))).toEqual([])
+    tokenStorage.close?.()
+  })
+
+  it("registers as before when it returns nothing, sync or async", async () => {
+    for (const refuseRegistration of [() => undefined, () => Promise.resolve(undefined)]) {
+      const tokenStorage = createMemoryStore()
+      const env = setup({ refuseRegistration, tokenStorage })
+      const res = await env.request("/oauth/register", registerRequest())
+      expect(res.status).toBe(201)
+      const { client_id } = (await res.json()) as { client_id: string }
+      expect(await clientKeys(tokenStorage, client_id)).toBeDefined()
+      tokenStorage.close?.()
+    }
+  })
+
+  it("is asked before the body is read", async () => {
+    const env = setup({ refuseRegistration: () => new Response(null, { status: 403 }) })
+    const res = await env.request("/oauth/register", chunked(["{ not json"], "application/json", true))
+    expect(res.status).toBe(403)
+  })
+
+  it("refuses with a 500, and registers nothing, when it throws", async () => {
+    const tokenStorage = createMemoryStore()
+    const save = vi.spyOn(tokenStorage, "save")
+    const env = setup({
+      refuseRegistration: () => {
+        throw new Error("limiter down")
+      },
+      tokenStorage,
+    })
+    const res = await env.request("/oauth/register", registerRequest())
+    expect(res.status).toBe(500)
+    expect(save.mock.calls.filter(([key]) => key.startsWith("client:"))).toEqual([])
+    tokenStorage.close?.()
+  })
+
+  it("is not asked by any other endpoint", async () => {
+    const refuseRegistration = vi.fn(() => new Response(null, { status: 429 }))
+    const env = setup({ refuseRegistration })
+    await env.request("/.well-known/oauth-authorization-server")
+    await env.request("/oauth/authorize?client_id=x&redirect_uri=y")
+    await env.request("/oauth/token", form({ grant_type: "password" }))
+    expect(refuseRegistration).not.toHaveBeenCalled()
+  })
+})
+
 describe("baseUrl", () => {
   // The routes mount at the root, so a path in the issuer would advertise metadata and endpoints that 404.
   it.each(["http://localhost:3420/todo", "https://mcp.example.com/mcp/", "https://mcp.example.com/?x=1", "not a url"])(
@@ -456,7 +525,8 @@ describe("pages for people", () => {
     const asJson = await env.request("/oauth/authorize?client_id=nobody&redirect_uri=x")
     expect(await asJson.json()).toEqual({
       error: "invalid_client",
-      error_description: "This client is not registered with the server.",
+      error_description:
+        "This client is not registered with the server, or its registration lapsed. Remove the server from your MCP client and add it again.",
     })
   })
 

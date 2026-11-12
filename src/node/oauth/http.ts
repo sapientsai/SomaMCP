@@ -184,8 +184,14 @@ export const createOAuthRoutes = (
       { handler: protectedResource, method: "GET", path: `${PROTECTED_RESOURCE}/*` },
       {
         handler: (c) =>
-          guarded("client registration", () =>
-            withBody(c, async (body) => {
+          guarded("client registration", async () => {
+            // Asked first, so a refused registration costs no body read and no store write.
+            const refused = await server.refuseRegistration.fold(
+              () => Promise.resolve(Option.none<Response>()),
+              async (refuse) => Option(await refuse(c.req.raw)),
+            )
+            if (refused.isSome()) return refused.orThrow()
+            return withBody(c, async (body) => {
               const input = Try(() => JSON.parse(body) as unknown).toOption()
               if (input.isNone())
                 return json(
@@ -197,8 +203,8 @@ export const createOAuthRoutes = (
                 (error) => errorJson(error, NO_STORE),
                 (registration) => json(registration, 201, NO_STORE),
               )
-            }),
-          ),
+            })
+          }),
         method: "POST",
         path: "/oauth/register",
       },
