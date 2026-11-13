@@ -82,8 +82,9 @@ const server = createServer<Viewer>({
 
 - **Both protocol eras.** It's sent in the `initialize` result to 2025 clients and the `server/discover` result to 2026-07-28 clients.
 - **No session means `undefined`.** The function gets `undefined` when the server has no `authenticate`, or on stdio without one. On stdio, `authenticate` runs once, with no request, and the function gets what it resolved.
-- **When it runs.** On stdio, once per connection. Over HTTP, per request: on 2026-07-28 clients only for `server/discover`, which names its method in a header, and on 2025 clients for every request, because their method is only in the body. Cache in the function if the lookup is costly.
-- **A failure fails the request.** If the function throws or rejects, `server/discover` answers 500 and a 2025 request gets a JSON-RPC internal error, so a client never connects with its instructions missing. On 2025 clients that includes tool calls.
+- **When it runs.** On stdio, each time the connection builds a server: normally once, and twice when a client probes with `server/discover` and then falls back to `initialize`. Over HTTP, per request: on 2026-07-28 clients only for `server/discover`, which names its method in a header, and on 2025 clients for every request, because their method is only in the body. Cache in the function if the lookup is costly.
+- **A failure fails the request.** If the function throws, rejects or returns something other than a string, the request gets a JSON-RPC internal error (HTTP 500 over HTTP), and the cause goes to `logger`, so a client never connects with its instructions missing. On 2025 clients that includes tool calls. The client never sees the cause.
+- **Declare the parameter as `T | undefined`.** The type checker accepts a function that takes `T` alone, to keep `ServerConfig<T>` assignable as before, but it can still get `undefined`.
 - **An empty string means no instructions.**
 
 ## Identity & Health

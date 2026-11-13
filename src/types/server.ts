@@ -45,13 +45,17 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    * (2025 clients) and the `server/discover` result (2026-07-28 clients).
    *
    * A function gets the caller's session, so each one can get its own, such as its owner's
-   * conventions. With no `authenticate`, and on stdio without one, it gets `undefined`. On
-   * stdio it runs once per connection. Over HTTP it runs per request: on 2026-07-28 clients
-   * only for `server/discover`, and on 2025 clients for every request, because their method
-   * is only in the body. Cache in it if the lookup is costly. An empty string means none.
+   * conventions. With no `authenticate`, and on stdio without one, it gets `undefined`, so
+   * declare its parameter as `T | undefined` and handle that case. On stdio it runs each time
+   * the connection builds a server: normally once, and twice when a client probes with
+   * `server/discover` and falls back to `initialize`. Over HTTP it runs per request: on
+   * 2026-07-28 clients only for `server/discover`, and on 2025 clients for every request,
+   * because their method is only in the body. Cache in it if the lookup is costly. An empty
+   * string means none.
    *
-   * If it throws or rejects, that request fails (HTTP 500 for `server/discover`, a JSON-RPC
-   * internal error for a 2025 client), so a client never connects with instructions missing.
+   * If it throws, rejects, or resolves to something other than a string, that request fails
+   * with a JSON-RPC internal error (HTTP 500 over HTTP) and the cause goes to `logger`, so a
+   * client never connects with instructions missing.
    */
   instructions?: string | SessionInstructions<T>
   logger?: Logger

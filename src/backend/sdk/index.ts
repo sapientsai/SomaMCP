@@ -91,11 +91,13 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     version: config.version,
   }
   const { instructions } = config
+  const logSdkError = (error: Error): void => logger.forEach((l) => l.error("[somamcp/sdk]", error))
 
   /**
    * The server for one serving unit. A plain string goes in as it is, synchronously. A function
    * runs only when the unit may answer `initialize` or `server/discover`: a 2026-07-28 request
    * names its method in a header, while a 2025 request or a stdio connection might be either.
+   * @interop the SDK's server factory reports a failure by rejecting, and answers it -32603.
    */
   const serverFor = (session: Option<T>, needsInstructions: boolean) => {
     if (typeof instructions !== "function") return buildServer(registry, { ...identity, instructions }, session, tracer)
@@ -103,7 +105,12 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     // Inside then(), so a synchronous throw fails the request as a rejection does.
     return Promise.resolve()
       .then(() => instructions(session.orUndefined()))
-      .then((text) => buildServer(registry, { ...identity, instructions: text }, session, tracer))
+      .then((text: unknown) => {
+        // Checked here, so a JavaScript caller's number or object fails loudly, not as a malformed result.
+        if (typeof text !== "string")
+          throw new TypeError(`[somamcp] instructions must resolve to a string, got ${typeof text}.`)
+        return buildServer(registry, { ...identity, instructions: text }, session, tracer)
+      })
   }
 
   const keepAliveMs = Option(config.streamKeepalive)
@@ -132,7 +139,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
       {
         keepAliveMs: keepAliveMs.orUndefined(),
         maxRequestBodySize: config.maxRequestBodySize,
-        onerror: (error) => logger.forEach((l) => l.error("[somamcp/sdk]", error)),
+        onerror: logSdkError,
         responseMode,
       },
     )
@@ -325,7 +332,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     const transport = Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.stdioTransport))
       .orUndefined()
-    return serve.stdio(() => serverFor(session, true), transport)
+    return serve.stdio(() => serverFor(session, true), transport, logSdkError)
   }
 
   const startHttp = (serve: SdkTransports, http: HttpStreamConfig): Promise<Listener> => {

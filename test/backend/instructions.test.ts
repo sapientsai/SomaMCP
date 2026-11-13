@@ -56,22 +56,25 @@ describe("instructions", () => {
 
     it("fails the connection, rather than serving no instructions, when the function throws or rejects", async () => {
       for (const instructions of [
-        () => {
+        vi.fn(() => {
           throw new Error("conventions unavailable")
-        },
-        () => Promise.reject(new Error("conventions unavailable")),
+        }),
+        vi.fn(() => Promise.reject(new Error("conventions unavailable"))),
       ]) {
-        await expect(connect(as(serverWith(instructions), "ana"))).rejects.toThrow()
+        const failure = await connect(as(serverWith(instructions), "ana")).then(
+          () => "connected",
+          (error: Error) => error.message,
+        )
+        expect(instructions).toHaveBeenCalled()
+        expect(failure).not.toBe("connected")
+        expect(failure).not.toContain("conventions unavailable")
       }
     })
 
     it("serves an empty string as no instructions", async () => {
-      const client = await connect(
-        as(
-          serverWith(() => ""),
-          "ana",
-        ),
-      )
+      const instructions = vi.fn(() => "")
+      const client = await connect(as(serverWith(instructions), "ana"))
+      expect(instructions).toHaveBeenCalled()
       expect(client.getInstructions()).toBeUndefined()
       await client.close()
     })
@@ -90,26 +93,47 @@ describe("instructions", () => {
       await client.close()
     })
 
-    it("still answer a tool call when the function would fail", async () => {
-      const server = as(
-        serverWith(() => Promise.reject(new Error("conventions unavailable"))),
-        "ana",
-      )
-      const res = await server.fetch(rawRequest("tools/list", {}, { modern: true }))
-      expect(res.status).toBe(200)
-    })
-
-    it("answer server/discover with a 500 when the function fails", async () => {
-      const server = as(
-        serverWith(() => Promise.reject(new Error("conventions unavailable"))),
-        "ana",
-      )
-      const res = await server.fetch(rawRequest("server/discover", {}, { modern: true }))
-      expect(res.status).toBe(500)
+    it("answer a tool call without running a failing function, and server/discover with an internal error", async () => {
+      const instructions = vi.fn(() => Promise.reject(new Error("conventions unavailable")))
+      const server = as(serverWith(instructions), "ana")
+      expect((await server.fetch(rawRequest("tools/list", {}, { modern: true }))).status).toBe(200)
+      expect(instructions).not.toHaveBeenCalled()
+      const discover = await server.fetch(rawRequest("server/discover", {}, { modern: true }))
+      expect(instructions).toHaveBeenCalledOnce()
+      expect(discover.status).toBe(500)
+      const body = await discover.text()
+      expect(body).toContain("-32603")
+      expect(body).not.toContain("conventions unavailable")
     })
   })
 
+  it("answers server/discover with an internal error, not a malformed result, when the function returns a non-string", async () => {
+    const res = await as(
+      serverWith(() => Promise.resolve(42 as unknown as string)),
+      "ana",
+    ).fetch(rawRequest("server/discover", {}, { modern: true }))
+    expect(res.status).toBe(500)
+    expect(await res.text()).toContain("-32603")
+  })
+
   describe("2025 clients", () => {
+    it("get a JSON-RPC internal error, and not the cause, when the function fails", async () => {
+      const server = as(
+        serverWith(() => Promise.reject(new Error("conventions unavailable"))),
+        "ana",
+      )
+      const res = await server.fetch(
+        rawRequest("initialize", {
+          capabilities: {},
+          clientInfo: { name: "raw", version: "1" },
+          protocolVersion: "2025-11-25",
+        }),
+      )
+      const body = await res.text()
+      expect(body).toContain("-32603")
+      expect(body).not.toContain("conventions unavailable")
+    })
+
     it("run the function on every request, because the method is only in the body", async () => {
       const instructions = vi.fn((viewer: Viewer | undefined) => `Rules for ${viewer?.user}.`)
       const client = await connectLegacy(as(serverWith(instructions), "ana"))

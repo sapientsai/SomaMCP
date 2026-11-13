@@ -207,6 +207,14 @@ describe("createNodeBackend", () => {
     })
 
     describe("instructions as a function of the session", () => {
+      const logged: unknown[][] = []
+      const logger = {
+        debug: () => {},
+        error: (...a: unknown[]) => logged.push(a),
+        info: () => {},
+        log: () => {},
+        warn: () => {},
+      }
       const connectStdio = async (
         instructions: (session: Record<string, unknown> | undefined) => string | Promise<string>,
         authenticate?: () => Promise<Record<string, unknown>>,
@@ -216,6 +224,7 @@ describe("createNodeBackend", () => {
           ...(authenticate ? { authenticate } : {}),
           backendOptions: { stdioTransport: serverEnd },
           instructions,
+          logger,
           name: "node",
           version: "1.0.0",
         })
@@ -241,8 +250,20 @@ describe("createNodeBackend", () => {
         expect(client.getInstructions()).toBe("user: local")
       })
 
-      it("fails the connection when the function rejects", async () => {
-        await expect(connectStdio(() => Promise.reject(new Error("conventions unavailable")))).rejects.toThrow()
+      it("fails the connection with an internal error, logs why, and tells the client nothing more", async () => {
+        logged.length = 0
+        const instructions = vi.fn(() => Promise.reject(new Error("conventions unavailable")))
+        const failure = await connectStdio(instructions).then(
+          () => undefined,
+          (error: unknown) => error as { code?: number; message: string },
+        )
+        expect(instructions).toHaveBeenCalled()
+        expect(failure?.code).toBe(-32603)
+        expect(failure?.message).not.toContain("conventions unavailable")
+        const messages = logged
+          .flat()
+          .map((part) => (part instanceof Error ? `${part.message} ${String(part.cause)}` : String(part)))
+        expect(messages.join(" ")).toContain("conventions unavailable")
       })
     })
 

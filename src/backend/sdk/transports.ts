@@ -13,6 +13,9 @@ export type Listener = { close: () => Promise<void> }
 export type SdkTransports = {
   /** Serve the Hono app (MCP endpoint, artifacts and routes) on a port. Resolves once listening. */
   http: (app: Hono, config: HttpStreamConfig) => Promise<Listener>
-  /** Serve MCP over stdin/stdout, or over `transport` when given. */
-  stdio: (factory: McpServerFactory, transport?: Transport) => Promise<Listener>
+  /**
+   * Serve MCP over stdin/stdout, or over `transport` when given. `onerror` hears what the SDK
+   * can't answer with, such as a factory that fails.
+   */
+  stdio: (factory: McpServerFactory, transport?: Transport, onerror?: (error: Error) => void) => Promise<Listener>
 }
