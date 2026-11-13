@@ -73,6 +73,15 @@ describe("main entry in workerd (no nodejs_compat)", () => {
     expect(res.headers.get("www-authenticate")).toBe('Bearer error="insufficient_scope", scope="Mail.Send"')
   })
 
+  it.each([
+    ["2026-07-28", connectModern],
+    ["2025", connectLegacy],
+  ] as const)("gives a %s client the session's own instructions", async (_era, connect) => {
+    const client = await connect(authed, MCP_URL)
+    expect(client.getInstructions()).toBe("Instructions for u.")
+    await client.close()
+  })
+
   describe("2026-07-28 client", () => {
     it("lists and calls tools, with the session from authenticate", async () => {
       const client = await connectModern(authed, MCP_URL)

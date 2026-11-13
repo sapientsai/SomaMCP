@@ -28,4 +28,4 @@ export type {
 } from "./core.js"
 export { UserError } from "./core.js"
 export type { RouteConfig, RouteMethod } from "./routes.js"
-export type { HttpStreamConfig, Logger, ServerConfig, TransportConfig } from "./server.js"
+export type { HttpStreamConfig, Logger, ServerConfig, SessionInstructions, TransportConfig } from "./server.js"

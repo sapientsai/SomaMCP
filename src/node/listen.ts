@@ -43,10 +43,14 @@ export const listenHttp = (app: Hono, config: HttpStreamConfig): Promise<Listene
  * Serve MCP over the process's stdin/stdout, or over `transport` when given. Both
  * protocol eras are served; one server is pinned per connection.
  */
-export const listenStdio = (factory: McpServerFactory, transport?: Transport): Promise<Listener> =>
+export const listenStdio = (
+  factory: McpServerFactory,
+  transport?: Transport,
+  onerror?: (error: Error) => void,
+): Promise<Listener> =>
   // Inside then(), so a synchronous throw still rejects start().
   Promise.resolve().then(() => {
-    const handle = serveStdio(factory, transport ? { transport } : {})
+    const handle = serveStdio(factory, { ...(transport ? { transport } : {}), ...(onerror ? { onerror } : {}) })
     return { close: () => handle.close() }
   })
 

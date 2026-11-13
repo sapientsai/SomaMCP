@@ -9,6 +9,8 @@ const server = createServer<{ user: string }>({
   authenticate: (request) =>
     getRequestHeader(request, "x-api-key") === "k" ? Promise.resolve({ user: "u" }) : Promise.reject(new Error("no")),
   enableDashboard: false,
+  // A function of the session, resolved asynchronously, as a multi-tenant server would.
+  instructions: (session) => Promise.resolve(`Instructions for ${session?.user ?? "nobody"}.`),
   name: "worker",
   version: "1.0.0",
 })

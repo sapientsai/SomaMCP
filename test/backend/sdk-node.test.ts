@@ -206,6 +206,67 @@ describe("createNodeBackend", () => {
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
     })
 
+    describe("instructions as a function of the session", () => {
+      const logged: unknown[][] = []
+      const logger = {
+        debug: () => {},
+        error: (...a: unknown[]) => logged.push(a),
+        info: () => {},
+        log: () => {},
+        warn: () => {},
+      }
+      const connectStdio = async (
+        instructions: (session: Record<string, unknown> | undefined) => string | Promise<string>,
+        authenticate?: () => Promise<Record<string, unknown>>,
+      ) => {
+        const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+        const server = createServer<Record<string, unknown>>({
+          ...(authenticate ? { authenticate } : {}),
+          backendOptions: { stdioTransport: serverEnd },
+          instructions,
+          logger,
+          name: "node",
+          version: "1.0.0",
+        })
+        await server.start({ transportType: "stdio" })
+        running.push(server)
+        const client = new ModernClient({ name: "c", version: "1" }, { versionNegotiation: { mode: "auto" } })
+        await client.connect(clientEnd)
+        return client
+      }
+
+      it("gives the function undefined with no authenticate", async () => {
+        const instructions = vi.fn((session: Record<string, unknown> | undefined) => `session: ${String(session)}`)
+        const client = await connectStdio(instructions)
+        expect(client.getInstructions()).toBe("session: undefined")
+        expect(instructions).toHaveBeenCalledWith(undefined)
+      })
+
+      it("gives the function the session authenticate resolved once for the connection", async () => {
+        const client = await connectStdio(
+          (session) => `user: ${String(session?.user)}`,
+          () => Promise.resolve({ user: "local" }),
+        )
+        expect(client.getInstructions()).toBe("user: local")
+      })
+
+      it("fails the connection with an internal error, logs why, and tells the client nothing more", async () => {
+        logged.length = 0
+        const instructions = vi.fn(() => Promise.reject(new Error("conventions unavailable")))
+        const failure = await connectStdio(instructions).then(
+          () => undefined,
+          (error: unknown) => error as { code?: number; message: string },
+        )
+        expect(instructions).toHaveBeenCalled()
+        expect(failure?.code).toBe(-32603)
+        expect(failure?.message).not.toContain("conventions unavailable")
+        const messages = logged
+          .flat()
+          .map((part) => (part instanceof Error ? `${part.message} ${String(part.cause)}` : String(part)))
+        expect(messages.join(" ")).toContain("conventions unavailable")
+      })
+    })
+
     describe("a tool's requiredScopes", () => {
       const callWith = async (authenticate?: () => Promise<Record<string, unknown>>) => {
         const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
