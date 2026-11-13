@@ -67,6 +67,25 @@ const server = createServer({ name: "my-worker", version: "1.0.0" })
 export default { fetch: (request: Request) => server.fetch(request) }
 ```
 
+## Instructions
+
+`instructions` is what a client reads about the server when it connects. It's a string, or a function of the caller's session, so each caller can get its own:
+
+```typescript
+const server = createServer<Viewer>({
+  authenticate: verifyBearer,
+  instructions: async (viewer) => instructionsFor(await conventionsOf(viewer)),
+  name: "notes",
+  version: "1.0.0",
+})
+```
+
+- **Both protocol eras.** It's sent in the `initialize` result to 2025 clients and the `server/discover` result to 2026-07-28 clients.
+- **No session means `undefined`.** The function gets `undefined` when the server has no `authenticate`, or on stdio without one. On stdio, `authenticate` runs once, with no request, and the function gets what it resolved.
+- **When it runs.** On stdio, once per connection. Over HTTP, per request: on 2026-07-28 clients only for `server/discover`, which names its method in a header, and on 2025 clients for every request, because their method is only in the body. Cache in the function if the lookup is costly.
+- **A failure fails the request.** If the function throws or rejects, `server/discover` answers 500 and a 2025 request gets a JSON-RPC internal error, so a client never connects with its instructions missing. On 2025 clients that includes tool calls.
+- **An empty string means no instructions.**
+
 ## Identity & Health
 
 SomaMCP auto-registers one MCP introspection tool and three HTTP endpoints:

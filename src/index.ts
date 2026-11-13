@@ -78,6 +78,7 @@ export type {
   RouteMethod,
   ScopeChallenge,
   ServerConfig,
+  SessionInstructions,
   TransportConfig,
 } from "./types/index.js"
 export { UserError } from "./types/index.js"

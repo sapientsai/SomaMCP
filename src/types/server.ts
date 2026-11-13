@@ -14,6 +14,15 @@ export type Logger = {
 
 // ── Server Config ─────────────────────────────────────────────────────
 
+/**
+ * `instructions` as a function of the caller's session. Declared as a method, so its parameter
+ * is checked bivariantly and `ServerConfig<T>` stays assignable as `T` widens, as it was when
+ * `instructions` could only be a string.
+ */
+export type SessionInstructions<T extends SessionAuth = SessionAuth> = {
+  bivariant(session: T | undefined): string | Promise<string>
+}["bivariant"]
+
 export type ServerConfig<T extends SessionAuth = SessionAuth> = {
   /**
    * Authenticate a request; resolve to the session that tools see as `context.session`.
@@ -31,7 +40,20 @@ export type ServerConfig<T extends SessionAuth = SessionAuth> = {
    * See `AuthProvider`.
    */
   auth?: AuthProvider<T>
-  instructions?: string
+  /**
+   * What the server tells a client about itself when it connects: in the `initialize` result
+   * (2025 clients) and the `server/discover` result (2026-07-28 clients).
+   *
+   * A function gets the caller's session, so each one can get its own, such as its owner's
+   * conventions. With no `authenticate`, and on stdio without one, it gets `undefined`. On
+   * stdio it runs once per connection. Over HTTP it runs per request: on 2026-07-28 clients
+   * only for `server/discover`, and on 2025 clients for every request, because their method
+   * is only in the body. Cache in it if the lookup is costly. An empty string means none.
+   *
+   * If it throws or rejects, that request fails (HTTP 500 for `server/discover`, a JSON-RPC
+   * internal error for a 2025 client), so a client never connects with instructions missing.
+   */
+  instructions?: string | SessionInstructions<T>
   logger?: Logger
   /**
    * Largest MCP request body, in bytes, the server reads. A larger one is answered `413`
