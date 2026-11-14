@@ -174,11 +174,14 @@ export {
 } from "./feedback/index.js"
 
 // Gateway
+// Types only: the gateway code itself is in `somamcp/gateway`, so a server without gateways
+// never bundles the MCP client. createProxiedTools stays, since it loads no client.
+export { createProxiedTools } from "./gateway/toolProxy.js"
 export type {
   GatewayConfig,
   GatewayInfo,
   GatewayInstance,
+  GatewayManagerFactory,
   GatewayManagerInstance,
   GatewayStatus,
-} from "./gateway/index.js"
-export { createGateway, createGatewayManager, createProxiedTools } from "./gateway/index.js"
+} from "./gateway/types.js"

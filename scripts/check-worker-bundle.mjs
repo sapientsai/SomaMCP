@@ -19,7 +19,11 @@ import { init, parse } from "es-module-lexer"
 
 // The directory to check; defaults to the build output. Tests pass a fixture.
 const DIST = process.argv[2] ?? "dist"
-const WORKER_ENTRIES = ["index.js", "edge.js", "backend/index.js", "otel/index.js"]
+const WORKER_ENTRIES = ["index.js", "edge.js", "backend/index.js", "otel/index.js", "gateway/index.js"]
+// The MCP client: only somamcp/gateway and somamcp/node may load it, so a server without
+// gateways never bundles it.
+const GATEWAY_CLIENT = "@modelcontextprotocol/client"
+const GATEWAY_CLIENT_ENTRIES = ["gateway/index.js", "node/index.js"]
 // Optional peers: only somamcp/otel may load them, or a server without one fails on import.
 const OPTIONAL_PEER = "@opentelemetry/"
 const OPTIONAL_PEER_ENTRY = "otel/index.js"
@@ -155,6 +159,14 @@ for (const entry of [...WORKER_ENTRIES, "node/index.js"].filter((e) => e !== OPT
     specifiers
       .filter((s) => s.startsWith(OPTIONAL_PEER))
       .forEach((s) => problems.push(`${path} (loaded by ${entry}) imports the optional peer "${s}"`))
+  }
+}
+
+for (const entry of WORKER_ENTRIES.filter((e) => !GATEWAY_CLIENT_ENTRIES.includes(e))) {
+  for (const [path, specifiers] of await closure(entry)) {
+    specifiers
+      .filter((s) => s === GATEWAY_CLIENT || s.startsWith(`${GATEWAY_CLIENT}/`))
+      .forEach((s) => problems.push(`${path} (loaded by ${entry}) imports the MCP client "${s}"`))
   }
 }
 

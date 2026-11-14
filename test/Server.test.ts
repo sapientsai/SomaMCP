@@ -6,6 +6,7 @@ import { z } from "zod"
 import { createServer, type SessionAuth, type Tool, type ToolOptions } from "../src/index.js"
 import type { TelemetryCollector, TelemetryEvent } from "../src/telemetry/TelemetryCollector.js"
 import { connectModern, rawRequest } from "./backend/sdk-clients.js"
+import { createGatewayManager } from "../src/gateway/index.js"
 
 const createCollector = (): TelemetryCollector & {
   events: TelemetryEvent[]
@@ -271,6 +272,7 @@ describe("Server", () => {
     const server = createServer({
       enableDashboard: false,
       enableIntrospection: false,
+      gatewayManager: createGatewayManager,
       gateways: [{ id: "remote", url: "http://localhost:9999/mcp" }],
       name: "gw-server",
       version: "1.0.0",

@@ -4,7 +4,7 @@ import type { Hono } from "hono"
 import type { ArtifactConfig } from "./artifacts/types.js"
 import type { BackendFactory, BackendSession } from "./backend/adapter.js"
 import type { BuildInfo, RuntimeInfo } from "./buildInfo.js"
-import type { GatewayConfig, GatewayManagerInstance } from "./gateway/types.js"
+import type { GatewayConfig, GatewayManagerFactory, GatewayManagerInstance } from "./gateway/types.js"
 import type { TelemetryCollector, ToolCaptureConfig } from "./telemetry/TelemetryCollector.js"
 import type {
   Prompt,
@@ -34,6 +34,13 @@ export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfi
   enableHealthEndpoint?: boolean
   enableInfoEndpoint?: boolean
   enableIntrospection?: boolean
+  /**
+   * Builds the manager that connects `gateways`: `createGatewayManager` from `somamcp/gateway`.
+   * The main entry needs it whenever `gateways` is set, and throws without it, because the
+   * manager brings the MCP SDK client and a server without gateways shouldn't bundle that.
+   * `somamcp/node` passes it by default.
+   */
+  gatewayManager?: GatewayManagerFactory
   gateways?: GatewayConfig[]
   healthDetailPath?: string
   healthPath?: string

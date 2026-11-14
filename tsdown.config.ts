@@ -14,6 +14,7 @@ export default defineConfig({
   entry: {
     "backend/index": "src/backend/index.ts",
     edge: "src/edge.ts",
+    "gateway/index": "src/gateway/index.ts",
     index: "src/index.ts",
     "node/index": "src/node/index.ts",
     "otel/index": "src/otel/index.ts",

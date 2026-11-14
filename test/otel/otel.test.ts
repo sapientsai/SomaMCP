@@ -9,6 +9,7 @@ import { createOtelTracer, otelContextFrom } from "../../src/otel/index.js"
 import { createServerCore } from "../../src/Server.js"
 import type { Context } from "../../src/types/core.js"
 import { connectModern, ERAS, fetchInto, MCP_URL } from "../backend/sdk-clients.js"
+import { createGatewayManager } from "../../src/gateway/index.js"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const CLIENT_SPAN = "00f067aa0ba902b7"
@@ -293,6 +294,7 @@ describe("across a gateway", () => {
     const front = createServerCore({
       backend: createSdkBackend,
       enableIntrospection: false,
+      gatewayManager: createGatewayManager,
       gateways: [{ fetch: fetchInto(remote), id: "up", toolPrefix: "up_", url: MCP_URL.href }],
       name: "front",
       tracer: createOtelTracer({ tracer }),

@@ -123,6 +123,7 @@ An OAuth 2.1 authorization server in front of an upstream provider. `createAzure
 - `"somamcp/node"` — re-exports `somamcp`, plus `createServer` → `createNodeBackend` (port + stdio), `createJsonFileTelemetry`, and content helpers that read `{ path }`
 - `"somamcp/backend"` — backend adapter types and `createSdkBackend` for advanced use
 - `"somamcp/otel"` — `createOtelTracer` and `otelContextFrom`; WinterTC-safe, and the only entry that imports the optional peer `@opentelemetry/api`
+- `"somamcp/gateway"` — `createGatewayManager` and `createGateway`, WinterTC-safe; with `somamcp/node`, the only entry that loads `@modelcontextprotocol/client` (`scripts/check-worker-bundle.mjs` enforces it). The main entry exports only gateway types and `createProxiedTools`, and `createServerCore` uses the client-free `noGateways` unless `gatewayManager` is passed; it throws when `gateways` is set without one. `somamcp/node` defaults `gatewayManager` to `createGatewayManager`
 - `"somamcp/edge"` — alias of `somamcp`, kept through 2.x; removed in 3.0
 
 All entries build in one tsdown pass so they share chunks; see `tsdown.config.ts`.

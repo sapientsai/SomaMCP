@@ -11,8 +11,9 @@ import { createAuthMiddleware } from "./auth/index.js"
 import { resolveAuthenticate } from "./auth/resolve.js"
 import type { BackendFactory, BackendSession } from "./backend/adapter.js"
 import { getRuntimeInfo, resolveBuildInfo } from "./buildInfo.js"
-import { createGatewayManager } from "./gateway/GatewayManager.js"
+import { noGateways } from "./gateway/none.js"
 import { createProxiedTools } from "./gateway/toolProxy.js"
+import type { GatewayConfig, GatewayManagerFactory, GatewayManagerInstance } from "./gateway/types.js"
 import { createInfoTool } from "./introspection/infoTool.js"
 import { createLogLayerTelemetry } from "./telemetry/LogLayerTelemetry.js"
 import { NoopTelemetry } from "./telemetry/NoopTelemetry.js"
@@ -32,12 +33,33 @@ import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
 /**
+ * The manager for `gateways`. With none configured, a manager that connects nothing, so no MCP
+ * client is loaded.
+ * @interop Refused when the server is created: gateways set without a manager would never
+ * connect, and the factory has no other way to report a bad config.
+ */
+const gatewayManagerFor = (
+  gateways: ReadonlyArray<GatewayConfig>,
+  factory: GatewayManagerFactory | undefined,
+  telemetry: TelemetryCollector,
+): GatewayManagerInstance => {
+  if (factory !== undefined) return factory(telemetry)
+  if (gateways.length === 0) return noGateways
+  throw new Error(
+    '[somamcp] gateways need `gatewayManager: createGatewayManager` from "somamcp/gateway". It lives there so a server without gateways never bundles the MCP client. somamcp/node passes it for you.',
+  )
+}
+
+/**
  * Backend-agnostic server core.
  *
  * `backend` is required here on purpose: each entry binds its own default.
  * `somamcp` binds createSdkBackend, which serves through `fetch` only, and
  * `somamcp/node` binds createNodeBackend, which can also listen. A default here
  * would put the choice, and anything Node-only, in front of every entry.
+ *
+ * `gatewayManager` gets no default here either, on any entry, for the same reason: the real one
+ * loads the MCP client. Pass `createGatewayManager` from `somamcp/gateway` with `gateways`.
  */
 export const createServerCore = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T> & { backend: BackendFactory<T> },
@@ -51,6 +73,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
     enableHealthEndpoint,
     enableInfoEndpoint,
     enableIntrospection,
+    gatewayManager: gatewayManagerFactory,
     gateways,
     healthDetailPath,
     healthPath,
@@ -72,7 +95,7 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   const backend = backendFactory(serverConfig, backendOptions)
   // An explicit `authenticate`, else the auth provider's, for artifacts and protected routes.
   const authenticate = resolveAuthenticate(serverConfig)
-  const gatewayManager = createGatewayManager(telemetry)
+  const gatewayManager = gatewayManagerFor(gateways ?? [], gatewayManagerFactory, telemetry)
 
   const registeredTools: Array<{ description?: string; name: string }> = []
   const registeredResources: Array<{
