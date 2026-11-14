@@ -52,7 +52,27 @@ export type ServerIdentity = {
   authRequired: boolean
   instructions?: string
   name: string
+  /**
+   * The server serves one connection for its lifetime (stdio), so it advertises every capability:
+   * something registered after it was built must still be reachable. A per-request server (HTTP)
+   * advertises only what is registered.
+   */
+  pinned?: boolean
   version: string
+}
+
+type Advertised = { completions: boolean; prompts: boolean; resources: boolean }
+
+/**
+ * What a server built now should advertise. `tools` and `logging` always are: the `info` tool is
+ * always registered, and a tool's `context.log` sends `notifications/message`, which the SDK
+ * refuses unless `logging` is advertised. Completions only ever refer to a prompt or a template.
+ */
+const advertised = <T extends SessionAuth>(registry: Registry<T>, pinned: boolean): Advertised => {
+  if (pinned) return { completions: true, prompts: true, resources: true }
+  const prompts = registry.prompts().size > 0
+  const templates = registry.templates().size > 0
+  return { completions: prompts || templates, prompts, resources: templates || registry.resources().size > 0 }
 }
 
 const valuesOf = <V>(map: Map<string, V>): List<V> => List([...map].map(([, value]) => value))
@@ -149,10 +169,17 @@ export const buildServer = <T extends SessionAuth>(
   }
   const findTool = (name: string): Option<AnyTool<T>> => registry.tools().get(name).filter(canUse)
 
+  const advertise = advertised(registry, identity.pinned === true)
   const server = new Server(
     { name: identity.name, version: identity.version },
     {
-      capabilities: { completions: {}, logging: {}, prompts: {}, resources: {}, tools: {} },
+      capabilities: {
+        logging: {},
+        tools: {},
+        ...(advertise.completions ? { completions: {} } : {}),
+        ...(advertise.prompts ? { prompts: {} } : {}),
+        ...(advertise.resources ? { resources: {} } : {}),
+      },
       instructions: identity.instructions,
     },
   )
@@ -228,6 +255,20 @@ export const buildServer = <T extends SessionAuth>(
     )
   })
 
+  // The SDK refuses a handler for a capability the server doesn't advertise, and answers the
+  // method not found, as the spec expects of a server without that capability.
+  if (advertise.resources) registerResourceHandlers(server, registry, auth)
+  if (advertise.prompts) registerPromptHandlers(server, registry, auth)
+  if (advertise.completions) registerCompletionHandler(server, registry, auth)
+
+  return server
+}
+
+const registerResourceHandlers = <T extends SessionAuth>(
+  server: Server,
+  registry: Registry<T>,
+  auth: T | undefined,
+): void => {
   server.setRequestHandler("resources/list", () => ({
     resources: valuesOf(registry.resources())
       .map((r) => ({ description: r.description, mimeType: r.mimeType, name: r.name, uri: r.uri }))
@@ -264,7 +305,13 @@ export const buildServer = <T extends SessionAuth>(
     return toReadResult(await resource.load(), { mimeType: resource.mimeType, uri })
   }
   server.setRequestHandler("resources/read", (request) => readResource(request.params.uri))
+}
 
+const registerPromptHandlers = <T extends SessionAuth>(
+  server: Server,
+  registry: Registry<T>,
+  auth: T | undefined,
+): void => {
   server.setRequestHandler("prompts/list", () => ({
     prompts: valuesOf(registry.prompts())
       .map((p) => ({
@@ -295,7 +342,13 @@ export const buildServer = <T extends SessionAuth>(
     return toPromptResult(await prompt.load(args, auth))
   }
   server.setRequestHandler("prompts/get", (request) => getPrompt(request.params.name, request.params.arguments ?? {}))
+}
 
+const registerCompletionHandler = <T extends SessionAuth>(
+  server: Server,
+  registry: Registry<T>,
+  auth: T | undefined,
+): void => {
   type Completer = () => Promise<Completion>
 
   const promptCompleter = (name: string, argName: string, value: string): Option<Completer> => {
@@ -331,6 +384,4 @@ export const buildServer = <T extends SessionAuth>(
       ),
     )
   })
-
-  return server
 }
