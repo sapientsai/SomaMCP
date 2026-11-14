@@ -737,8 +737,9 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 **Gateway**
 
-- `createGateway`, `createGatewayManager`, `createProxiedTools`
-- Types: `GatewayConfig`, `GatewayInstance`, `GatewayManagerInstance`, `GatewayStatus`
+- `createProxiedTools`
+- `createGateway`, `createGatewayManager` (`somamcp/gateway` and `somamcp/node` only)
+- Types: `GatewayConfig`, `GatewayInstance`, `GatewayManagerFactory`, `GatewayManagerInstance`, `GatewayStatus`
 
 **Artifacts**
 

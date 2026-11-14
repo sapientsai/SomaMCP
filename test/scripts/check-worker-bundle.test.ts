@@ -90,6 +90,14 @@ describe("check-worker-bundle", () => {
     expect(output).toContain('imports the MCP client "@modelcontextprotocol/client"')
   })
 
+  it("fails the MCP client loaded by a dynamic import from the main entry", async () => {
+    const { code, output } = await check({
+      "index.js": `${CLEAN["index.js"]}export const load = () => import("@modelcontextprotocol/client")\n`,
+    })
+    expect(code).toBe(1)
+    expect(output).toContain('imports the MCP client "@modelcontextprotocol/client"')
+  })
+
   it("fails Node-only code reaching somamcp/gateway", async () => {
     const { code, output } = await check({ "gateway/index.js": `${CLEAN["gateway/index.js"]}import "node:fs"\n` })
     expect(code).toBe(1)

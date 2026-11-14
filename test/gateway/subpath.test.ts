@@ -30,6 +30,11 @@ describe("gateways on the main entry", () => {
     expect(server.getGatewayManager().getAll()).toEqual([])
   })
 
+  it("refuse a gateway added later, naming the import", () => {
+    const server = createServer({ name: "s", version: "1.0.0" })
+    expect(() => server.getGatewayManager().add(remote)).toThrow(/somamcp\/gateway/)
+  })
+
   it("count an empty list as none", () => {
     expect(() => createServer({ gateways: [], name: "s", version: "1.0.0" })).not.toThrow()
   })

@@ -33,14 +33,6 @@ import type { RouteConfig } from "./types/routes.js"
 import type { TransportConfig } from "./types/server.js"
 
 /**
- * Backend-agnostic server core.
- *
- * `backend` is required here on purpose: each entry binds its own default.
- * `somamcp` binds createSdkBackend, which serves through `fetch` only, and
- * `somamcp/node` binds createNodeBackend, which can also listen. A default here
- * would put the choice, and anything Node-only, in front of every entry.
- */
-/**
  * The manager for `gateways`. With none configured, a manager that connects nothing, so no MCP
  * client is loaded.
  * @interop Refused when the server is created: gateways set without a manager would never
@@ -58,6 +50,17 @@ const gatewayManagerFor = (
   )
 }
 
+/**
+ * Backend-agnostic server core.
+ *
+ * `backend` is required here on purpose: each entry binds its own default.
+ * `somamcp` binds createSdkBackend, which serves through `fetch` only, and
+ * `somamcp/node` binds createNodeBackend, which can also listen. A default here
+ * would put the choice, and anything Node-only, in front of every entry.
+ *
+ * `gatewayManager` gets no default here either, on any entry, for the same reason: the real one
+ * loads the MCP client. Pass `createGatewayManager` from `somamcp/gateway` with `gateways`.
+ */
 export const createServerCore = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T> & { backend: BackendFactory<T> },
 ): SomaServerInstance<T> => {
