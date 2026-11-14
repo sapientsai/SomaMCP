@@ -74,6 +74,31 @@ describe("methods for a capability the server doesn't advertise", () => {
     },
   )
 
+  it.each(["prompts/list", "resources/list", "resources/templates/list"])(
+    "answer a 2025 %s with method not found too",
+    async (method) => {
+      const res = await toolsOnly().fetch(rawRequest(method))
+      expect(await res.text()).toContain("-32601")
+    },
+  )
+
+  it("answer prompts/get and completion/complete with method not found on a tools-only server", async () => {
+    for (const [method, params] of [
+      ["prompts/get", { name: "greet" }],
+      ["completion/complete", { argument: { name: "a", value: "" }, ref: { name: "greet", type: "ref/prompt" } }],
+    ] as const) {
+      const res = await toolsOnly().fetch(rawRequest(method, params))
+      expect(await res.text()).toContain("-32601")
+    }
+  })
+
+  it("stop answering prompts/list once the last prompt is removed", async () => {
+    const server = withPrompt()
+    expect(await (await server.fetch(rawRequest("prompts/list", {}, { modern: true }))).text()).toContain('"greet"')
+    server.removePrompt("greet")
+    expect(await (await server.fetch(rawRequest("prompts/list", {}, { modern: true }))).text()).toContain("-32601")
+  })
+
   it("pick up a prompt registered after an earlier request", async () => {
     const server = toolsOnly()
     expect(await (await server.fetch(rawRequest("prompts/list", {}, { modern: true }))).text()).toContain("-32601")

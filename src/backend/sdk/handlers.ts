@@ -65,8 +65,8 @@ type Advertised = { completions: boolean; prompts: boolean; resources: boolean }
 
 /**
  * What a server built now should advertise. `tools` and `logging` always are: the `info` tool is
- * always registered, and a tool's `context.log` sends `notifications/message`, which the SDK
- * refuses unless `logging` is advertised. Completions only ever refer to a prompt or a template.
+ * always registered, and without `logging` the SDK drops a tool's `context.log` lines silently
+ * (`mcpReq.log` returns without sending). Completions only ever refer to a prompt or a template.
  */
 const advertised = <T extends SessionAuth>(registry: Registry<T>, pinned: boolean): Advertised => {
   if (pinned) return { completions: true, prompts: true, resources: true }
