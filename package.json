@@ -22,6 +22,11 @@
       "import": "./dist/edge.js",
       "default": "./dist/edge.js"
     },
+    "./gateway": {
+      "types": "./dist/gateway/index.d.ts",
+      "import": "./dist/gateway/index.js",
+      "default": "./dist/gateway/index.js"
+    },
     "./backend": {
       "types": "./dist/backend/index.d.ts",
       "import": "./dist/backend/index.js",

@@ -7,6 +7,7 @@ import type { TelemetryEvent } from "../../src/telemetry/TelemetryCollector.js"
 import type { Context } from "../../src/types/core.js"
 import type { ToolCallInfo, ToolTracer, TraceContext } from "../../src/types/tracing.js"
 import { ERAS, fetchInto, MCP_URL } from "./sdk-clients.js"
+import { createGatewayManager } from "../../src/gateway/index.js"
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
 const TRACEPARENT = `00-${TRACE_ID}-00f067aa0ba902b7-01`
@@ -75,6 +76,7 @@ describe.each(ERAS)("trace context over %s", (_era, connect) => {
     const front = createServerCore({
       backend: createSdkBackend,
       enableIntrospection: false,
+      gatewayManager: createGatewayManager,
       gateways: [{ fetch: fetchInto(remote), id: "up", toolPrefix: "up_", url: MCP_URL.href, versionNegotiation }],
       name: "front",
       version: "1.0.0",
@@ -121,6 +123,7 @@ describe("the tracer hook", () => {
     const remote = traceServer()
     const front = createServerCore({
       backend: createSdkBackend,
+      gatewayManager: createGatewayManager,
       gateways: [{ fetch: fetchInto(remote), id: "up", toolPrefix: "up_", url: MCP_URL.href }],
       name: "front",
       tracer: recordingTracer(calls),

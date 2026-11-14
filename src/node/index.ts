@@ -3,6 +3,7 @@
 // It shares the main entry's modules rather than copying them, so values such as
 // UserError are the same objects whichever entry a consumer imports them from.
 
+import { createGatewayManager } from "../gateway/GatewayManager.js"
 import { createServerCore } from "../Server.js"
 import type { SomaServerInstance, SomaServerOptions } from "../types.js"
 import type { SessionAuth } from "../types/core.js"
@@ -13,12 +14,19 @@ export * from "../index.js"
 /**
  * Create a server on the MCP SDK 2.x backend with Node transports. Identical to
  * `somamcp`'s `createServer`, except that `start()` can listen on a port
- * (`httpStream`) or serve stdio, which a bare `start()` does.
+ * (`httpStream`) or serve stdio, which a bare `start()` does, and that `gateways`
+ * work without passing `gatewayManager`: bundle size doesn't matter on Node.
  */
 export const createServer = <T extends SessionAuth = SessionAuth>(
   options: SomaServerOptions<T>,
-): SomaServerInstance<T> => createServerCore({ ...options, backend: options.backend ?? createNodeBackend<T> })
+): SomaServerInstance<T> =>
+  createServerCore({
+    ...options,
+    backend: options.backend ?? createNodeBackend<T>,
+    gatewayManager: options.gatewayManager ?? createGatewayManager,
+  })
 
+export { createGateway, createGatewayManager } from "../gateway/index.js"
 export { createNodeBackend } from "./backend.js"
 export type { NodeContentInput } from "./content.js"
 export { audioContent, imageContent } from "./content.js"

@@ -522,9 +522,13 @@ In 2.3 and earlier, a `UserError` with no category was labelled `validation` and
 Connect to remote MCP servers and proxy their tools as local tools.
 
 ```typescript
+import { createServer } from "somamcp"
+import { createGatewayManager } from "somamcp/gateway"
+
 const server = createServer({
   name: "gateway-server",
   version: "1.0.0",
+  gatewayManager: createGatewayManager,
   gateways: [
     {
       id: "upstream",
@@ -535,6 +539,8 @@ const server = createServer({
   ],
 })
 ```
+
+**Gateways live in `somamcp/gateway`.** They use the MCP SDK client, which is about 54 KiB gzipped on a Worker, so the main entry doesn't load it: a server without gateways never bundles it. On the main entry, pass `gatewayManager: createGatewayManager` from `somamcp/gateway` whenever you set `gateways`; `createServer` throws without it. `somamcp/node`'s `createServer` passes it for you, and `somamcp/node` also exports `createGateway` and `createGatewayManager`.
 
 Gateways use the MCP SDK 2.x client. They speak the `2026-07-28` revision to servers that offer it, and fall back to the 2025 `initialize` handshake for the rest. A gateway's `info.protocolVersion` reports what was negotiated.
 
@@ -621,6 +627,7 @@ await server.start({
 | `somamcp/node`    | Node (and Bun)           | `createNodeBackend`        | `start()` on a port or stdio, `createJsonFileTelemetry`, `{ path }` in the content helpers |
 | `somamcp/backend` | anywhere                 | —                          | `createSdkBackend` and the backend types, for writing or wrapping a backend                |
 | `somamcp/otel`    | anywhere                 | —                          | `createOtelTracer` and `otelContextFrom`. Needs the optional peer `@opentelemetry/api`.    |
+| `somamcp/gateway` | anywhere                 | —                          | `createGatewayManager` and `createGateway`, with the MCP client they need. See Gateways.   |
 | `somamcp/edge`    | anywhere                 | `createSdkBackend`         | Nothing: an alias of `somamcp` kept through 2.x so 1.x imports resolve. Removed in 3.0.    |
 
 `somamcp/node` re-exports everything in `somamcp` and shares its modules rather than copying them, so values such as `UserError` are the same whichever entry you import them from. `pnpm validate` fails if Node-only code reaches anything `somamcp` loads, or if the core is emitted twice. It also runs the main entry inside `workerd`, Cloudflare's Workers runtime, without `nodejs_compat`, with both protocol eras, auth, content helpers, errors and resources (`test/workers/`).

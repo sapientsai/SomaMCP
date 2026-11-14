@@ -1,6 +1,7 @@
 import type { FetchLike, Tool as MCPTool } from "@modelcontextprotocol/client"
 import type { Option } from "functype"
 
+import type { TelemetryCollector } from "../telemetry/TelemetryCollector.js"
 import type { TraceContext } from "../types/tracing.js"
 
 export type GatewayConfig = {
@@ -60,3 +61,10 @@ export type GatewayManagerInstance = {
   getAll: () => ReadonlyArray<GatewayInstance>
   getInfoAll: () => ReadonlyArray<GatewayInfo>
 }
+
+/**
+ * Builds the gateway manager a server uses. `createGatewayManager` from `somamcp/gateway` is one.
+ * It lives in its own entry because it brings the MCP SDK client, so a server without gateways
+ * never bundles it.
+ */
+export type GatewayManagerFactory = (telemetry: TelemetryCollector) => GatewayManagerInstance

@@ -13,14 +13,17 @@ import { afterEach, describe, expect, it } from "vitest"
 const SCRIPT = fileURLToPath(new URL("../../scripts/check-worker-bundle.mjs", import.meta.url))
 const run = promisify(execFile)
 
-/** A minimal dist: four worker entries and somamcp/node over one shared core chunk. */
+/** A minimal dist: five worker entries and somamcp/node over one shared core chunk. */
 const CLEAN: Record<string, string> = {
   "backend/index.js": 'export { b } from "../core.js"\n',
   "core.js":
     'export const b = 1\nexport var UserError = class extends Error { constructor(m) { super(m); this.name = "UserError" } }\n',
   "edge.js": 'export * from "./index.js"\n',
+  "gateway/index.js":
+    'import { Client } from "@modelcontextprotocol/client"\nimport { b } from "../core.js"\nexport { b, Client }\n',
   "index.js": 'import { b } from "./core.js"\nexport { b }\n',
-  "node/index.js": 'import { readFile } from "node:fs/promises"\nexport * from "../index.js"\nexport { readFile }\n',
+  "node/index.js":
+    'import { readFile } from "node:fs/promises"\nexport * from "../index.js"\nexport * from "../gateway/index.js"\nexport { readFile }\n',
   "otel/index.js": 'import { trace } from "@opentelemetry/api"\nimport { b } from "../core.js"\nexport { b, trace }\n',
 }
 
@@ -74,6 +77,23 @@ describe("check-worker-bundle", () => {
     const { code, output } = await check({ [file]: `import "@opentelemetry/api"\n${CLEAN[file]}` })
     expect(code).toBe(1)
     expect(output).toContain('imports the optional peer "@opentelemetry/api"')
+  })
+
+  it.each([
+    ["the main entry", "index.js"],
+    ["somamcp/backend", "backend/index.js"],
+    ["somamcp/otel", "otel/index.js"],
+    ["a chunk they share", "core.js"],
+  ])("fails the MCP client reaching %s, so a server without gateways never bundles it", async (_label, file) => {
+    const { code, output } = await check({ [file]: `import "@modelcontextprotocol/client"\n${CLEAN[file]}` })
+    expect(code).toBe(1)
+    expect(output).toContain('imports the MCP client "@modelcontextprotocol/client"')
+  })
+
+  it("fails Node-only code reaching somamcp/gateway", async () => {
+    const { code, output } = await check({ "gateway/index.js": `${CLEAN["gateway/index.js"]}import "node:fs"\n` })
+    expect(code).toBe(1)
+    expect(output).toContain('imports Node-only "node:fs"')
   })
 
   it("fails Node-only code reaching somamcp/otel", async () => {
