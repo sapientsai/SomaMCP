@@ -206,6 +206,18 @@ describe("createNodeBackend", () => {
       expect(JSON.stringify(await client.callTool({ arguments: { text: "s" }, name: "echo" }))).toContain("echo: s")
     })
 
+    it("advertises every capability, so a prompt registered after the connection opens is still listed", async () => {
+      const [clientEnd, serverEnd] = InMemoryTransport.createLinkedPair()
+      const server = makeServer({ stdioTransport: serverEnd })
+      await server.start({ transportType: "stdio" })
+      running.push(server)
+      const client = new LegacyClient({ name: "c", version: "1" })
+      await client.connect(clientEnd)
+      expect(client.getServerCapabilities()).toMatchObject({ completions: {}, prompts: {}, resources: {} })
+      server.addPrompt({ load: () => Promise.resolve("hi"), name: "late" })
+      expect((await client.listPrompts()).prompts.map((p) => p.name)).toEqual(["late"])
+    })
+
     describe("instructions as a function of the session", () => {
       const logged: unknown[][] = []
       const logger = {

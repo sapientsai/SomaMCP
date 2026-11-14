@@ -99,9 +99,10 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
    * names its method in a header, while a 2025 request or a stdio connection might be either.
    * @interop the SDK's server factory reports a failure by rejecting, and answers it -32603.
    */
-  const serverFor = (session: Option<T>, needsInstructions: boolean) => {
-    if (typeof instructions !== "function") return buildServer(registry, { ...identity, instructions }, session, tracer)
-    if (!needsInstructions) return buildServer(registry, identity, session, tracer)
+  const serverFor = (session: Option<T>, needsInstructions: boolean, pinned = false) => {
+    const base = { ...identity, pinned }
+    if (typeof instructions !== "function") return buildServer(registry, { ...base, instructions }, session, tracer)
+    if (!needsInstructions) return buildServer(registry, base, session, tracer)
     // Inside then(), so a synchronous throw fails the request as a rejection does.
     return Promise.resolve()
       .then(() => instructions(session.orUndefined()))
@@ -109,7 +110,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
         // Checked here, so a JavaScript caller's number or object fails loudly, not as a malformed result.
         if (typeof text !== "string")
           throw new TypeError(`[somamcp] instructions must resolve to a string, got ${typeof text}.`)
-        return buildServer(registry, { ...identity, instructions: text }, session, tracer)
+        return buildServer(registry, { ...base, instructions: text }, session, tracer)
       })
   }
 
@@ -332,7 +333,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
     const transport = Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.stdioTransport))
       .orUndefined()
-    return serve.stdio(() => serverFor(session, true), transport, logSdkError)
+    return serve.stdio(() => serverFor(session, true, true), transport, logSdkError)
   }
 
   const startHttp = (serve: SdkTransports, http: HttpStreamConfig): Promise<Listener> => {
