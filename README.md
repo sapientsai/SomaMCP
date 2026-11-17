@@ -789,6 +789,7 @@ somamcp 2.0 drops FastMCP. If you need FastMCP, stay on somamcp `^1.5`, which ha
 
 ```bash
 pnpm validate       # Pre-commit: format + lint + typecheck + test + build
+pnpm run ci         # validate's checks without fixing, as CI runs them (type `run`: `pnpm ci` is a clean install)
 pnpm test           # Run tests
 pnpm build          # Build via tsdown
 pnpm dev            # Watch mode

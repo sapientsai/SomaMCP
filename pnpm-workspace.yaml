@@ -22,8 +22,8 @@ overrides:
   "minimatch@<11.0.1": "^11.0.1"
 
 minimumReleaseAgeExclude:
+  - ts-builds
   - "*functype*"
-  - "ts-builds"
   - "@modelcontextprotocol/client@2.4.0"
   - "@modelcontextprotocol/core@2.4.0"
   - "@modelcontextprotocol/server@2.4.0"
