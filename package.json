@@ -43,6 +43,7 @@
   ],
   "scripts": {
     "validate": "ts-builds validate",
+    "ci": "ts-builds ci",
     "format": "ts-builds format",
     "format:check": "ts-builds format:check",
     "lint": "ts-builds lint",
@@ -54,7 +55,7 @@
     "build": "ts-builds build && pnpm check:bundle",
     "dev": "ts-builds dev",
     "clean": "rimraf dist",
-    "prepublishOnly": "pnpm validate && pnpm check:bundle",
+    "prepublishOnly": "pnpm run ci && pnpm check:bundle",
     "check:bundle": "node scripts/check-worker-bundle.mjs"
   },
   "keywords": [
@@ -102,7 +103,7 @@
     "esbuild": "^0.28.2",
     "get-port-please": "^3.2.0",
     "miniflare": "^4.20260730.0",
-    "ts-builds": "^4.5.0",
+    "ts-builds": "^4.7.0",
     "tsdown": "^0.23.7"
   },
   "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61"

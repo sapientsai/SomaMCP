@@ -12,6 +12,7 @@ somamcp is a framework for building MCP (Model Context Protocol) servers with te
 
 ```bash
 pnpm validate                              # Pre-commit: format + lint + typecheck + test + build
+pnpm run ci                                # validate's checks without fixing, as CI runs them (type `run`: `pnpm ci` is a clean install)
 pnpm test                                  # Run tests once
 pnpm vitest run test/Server.test.ts        # Run single test file
 pnpm build                                 # Production build via tsdown
