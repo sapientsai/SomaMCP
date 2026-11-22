@@ -103,7 +103,8 @@ const tooLarge = (): Response =>
     },
   )
 
-const formDecode = (part: string): string => Try(() => decodeURIComponent(part.replace(/\+/g, " "))).orElse(part)
+const formDecode = (part: string): string =>
+  Try(() => decodeURIComponent(part.replace(/\+/g, " "))).getOrElse(() => part)
 
 /** `id:secret` split at the first colon, each part form-decoded (RFC 6749 §2.3.1). */
 const splitCredentials = (decoded: string): { id: string; secret: string } => {
@@ -150,7 +151,14 @@ export const createOAuthRoutes = (
       (error) => {
         if (!wantsHtml(c)) return errorJson(error)
         const wire = toWireError(error)
-        return html(errorPage(wire.code, wire.description.orElse(wire.code), host), wire.status)
+        return html(
+          errorPage(
+            wire.code,
+            wire.description.getOrElse(() => wire.code),
+            host,
+          ),
+          wire.status,
+        )
       },
       (next) =>
         next._tag === "Redirect"
@@ -203,7 +211,7 @@ export const createOAuthRoutes = (
                   400,
                   NO_STORE,
                 )
-              return (await server.register(input.orElse(null))).fold(
+              return (await server.register(input.getOrElse(() => null))).fold(
                 (error) => errorJson(error, NO_STORE),
                 (registration) => json(registration, 201, NO_STORE),
               )
@@ -242,7 +250,7 @@ export const createOAuthRoutes = (
               const basic = basicCredentials(Option(c.req.header("authorization")))
               const field = (name: string): Option<string> => Option(form.get(name)).filter((v) => v !== "")
               const issued = await server.token({
-                clientId: basic.map((b) => b.id).orElse(form.get("client_id") ?? ""),
+                clientId: basic.map((b) => b.id).getOrElse(() => form.get("client_id") ?? ""),
                 code: field("code").orUndefined(),
                 codeVerifier: field("code_verifier").orUndefined(),
                 grantType: form.get("grant_type") ?? "",

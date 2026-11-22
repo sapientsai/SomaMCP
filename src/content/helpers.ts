@@ -49,7 +49,7 @@ const toBase64 = (bytes: Uint8Array): string =>
   )
 
 const mimeOf = (source: Option<string>, mimeMap: Record<string, string>, fallback: string): string =>
-  source.flatMap((s) => Option(mimeMap[extensionOf(s)])).orElse(fallback)
+  source.flatMap((s) => Option(mimeMap[extensionOf(s)])).getOrElse(() => fallback)
 
 /** Encode bytes as image content; `source` (a URL or path) picks the MIME type by extension. */
 export const encodeImage = (data: Uint8Array, source: Option<string>): ImageContent => ({

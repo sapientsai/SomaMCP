@@ -11,7 +11,7 @@ import type { ServerConfig } from "../types/server.js"
 export const resolveAuthenticate = <T extends SessionAuth>(
   config: ServerConfig<T>,
 ): Option<NonNullable<ServerConfig<T>["authenticate"]>> =>
-  Option(config.authenticate).or(
+  Option(config.authenticate).orElse(() =>
     Option(config.auth).map(
       // Nullish already means "no session" to every caller, so the provider's wider return type is safe.
       (auth) => auth.authenticate as NonNullable<ServerConfig<T>["authenticate"]>,

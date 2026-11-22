@@ -81,13 +81,13 @@ export const getRuntimeInfo = (): RuntimeInfo =>
     ? {
         arch: nodeProcess()
           .flatMap((p) => Option(p.arch))
-          .orElse(UNKNOWN),
+          .getOrElse(() => UNKNOWN),
         nodeVersion: nodeProcess()
           .flatMap((p) => Option(p.version))
-          .orElse(UNKNOWN),
+          .getOrElse(() => UNKNOWN),
         platform: nodeProcess()
           .flatMap((p) => Option(p.platform))
-          .orElse(UNKNOWN),
+          .getOrElse(() => UNKNOWN),
         runtime: "node",
       }
     : {
@@ -96,6 +96,6 @@ export const getRuntimeInfo = (): RuntimeInfo =>
         // Workers reports "Cloudflare-Workers" here; it is the only platform signal
         // available. Node fields are reported as unknown even under nodejs_compat,
         // where they would describe the compatibility shim rather than the runtime.
-        platform: userAgent().orElse(UNKNOWN),
+        platform: userAgent().getOrElse(() => UNKNOWN),
         runtime: "edge",
       }

@@ -88,7 +88,15 @@ export const createGrants = (
 
   /** Keep the upstream tokens as long as any token standing for them can still be used. */
   const keepUpstream = (key: string, tokens: UpstreamTokens): Promise<void> =>
-    records.upstream.save(key, tokens, Math.max(accessLifetime(tokens), refreshLifetime(tokens).orElse(0), 1))
+    records.upstream.save(
+      key,
+      tokens,
+      Math.max(
+        accessLifetime(tokens),
+        refreshLifetime(tokens).getOrElse(() => 0),
+        1,
+      ),
+    )
 
   const grantFor = async (
     clientId: string,
@@ -264,9 +272,13 @@ export const createGrants = (
     const refusal = declined.orThrow()
     const transient = TRANSIENT.includes(refusal.code)
     logger.warn(
-      `[somamcp/oauth] the provider refused the server's scopes on a refresh (${refusal.code}: ${refusal.description.orElse("no description")}); asked for the grant's${transient ? "" : ", and will not widen this sign-in again for a day"}.`,
+      `[somamcp/oauth] the provider refused the server's scopes on a refresh (${refusal.code}: ${refusal.description.getOrElse(() => "no description")}); asked for the grant's${transient ? "" : ", and will not widen this sign-in again for a day"}.`,
     )
-    if (!transient) await rememberDeclined(key, asked.orElse(""))
+    if (!transient)
+      await rememberDeclined(
+        key,
+        asked.getOrElse(() => ""),
+      )
     return upstream.refresh(refreshToken, scope)
   }
 
@@ -281,7 +293,12 @@ export const createGrants = (
     if (await isRevoked(current)) return Left(Errors.signInRefused(REVOKED))
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
-    const refreshed = await refreshUpstream(grant.upstreamTokenKey, upstreamRefresh.orElse(""), scope, widened)
+    const refreshed = await refreshUpstream(
+      grant.upstreamTokenKey,
+      upstreamRefresh.getOrElse(() => ""),
+      scope,
+      widened,
+    )
     return refreshed.fold(
       (error) => Promise.resolve(Left<OAuthError, TokenResponse>(error)),
       async (fresh) => {
@@ -293,12 +310,12 @@ export const createGrants = (
           ...fresh,
           idToken: Option(fresh.idToken)
             .filter((idToken) => idToken !== "")
-            .or(Option(current.idToken).filter((idToken) => idToken !== ""))
+            .orElse(() => Option(current.idToken).filter((idToken) => idToken !== ""))
             .orUndefined(),
           scope: fresh.scope.length > 0 ? fresh.scope : current.scope,
         }
         const refused = refusal(tokens)
-        if (refused.isSome()) return Left<OAuthError, TokenResponse>(Errors.signInRefused(refused.orElse("")))
+        if (refused.isSome()) return Left<OAuthError, TokenResponse>(Errors.signInRefused(refused.getOrElse(() => "")))
         await keepUpstream(grant.upstreamTokenKey, tokens)
         return Right<OAuthError, TokenResponse>(await issuePair(grant.clientId, tokens, grant.upstreamTokenKey))
       },
@@ -388,7 +405,7 @@ export const createGrants = (
       .filter(usableAs("access"))
       .map((claims) => claims.jti)
     if (jti.isNone()) return Option.none()
-    const grant = await records.grants.find(jti.orElse(""))
+    const grant = await records.grants.find(jti.getOrElse(() => ""))
     const tokens = await grant.fold(
       () => Promise.resolve(Option.none<UpstreamTokens>()),
       (g) => records.upstream.find(g.upstreamTokenKey),

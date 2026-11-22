@@ -96,7 +96,12 @@ const recordRejection = (span: Span, error: Error): void => {
   code
     .filter((value) => value === INVALID_PARAMS)
     .fold(
-      () => markFailed(span, error, code.orElse(error.name)),
+      () =>
+        markFailed(
+          span,
+          error,
+          code.getOrElse(() => error.name),
+        ),
       () => undefined,
     )
 }
@@ -126,7 +131,10 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
       otelContextFrom(call.trace, ambient),
     )
     // With no SDK registered and no parent, the span has no ids to pass on.
-    const trace = Option(span.spanContext()).filter(isSpanContextValid).map(toTraceContext).or(Option(call.trace))
+    const trace = Option(span.spanContext())
+      .filter(isSpanContextValid)
+      .map(toTraceContext)
+      .orElse(() => Option(call.trace))
     const result = await Try.fromPromise(
       otelContext.with(otelTrace.setSpan(ambient, span), () => run(trace.orUndefined())),
     )

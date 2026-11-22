@@ -181,7 +181,7 @@ const proof = (name: Option<string>): string =>
 
 /** The page that asks the user to approve an app. `server` is the server's own host. */
 export const consentPage = (screen: ConsentScreen, server: string): string => {
-  const name = screen.clientName.orElse("an app")
+  const name = screen.clientName.getOrElse(() => "an app")
   const app = escapeHtml(name)
   const provider = escapeHtml(screen.provider)
   const returnsTo = escapeHtml(screen.returnsTo)

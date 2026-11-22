@@ -132,11 +132,13 @@ export const createUpstream = (
     idToken: body.id_token,
     issuedAt: new Date(),
     refreshExpiresIn: body.refresh_expires_in,
-    refreshToken: Option(body.refresh_token).or(previousRefresh).orUndefined(),
+    refreshToken: Option(body.refresh_token)
+      .orElse(() => previousRefresh)
+      .orUndefined(),
     scope: Option(body.scope)
       .filter((s) => s !== "")
       .map((s) => s.split(" "))
-      .orElse([...scope]),
+      .getOrElse(() => [...scope]),
     tokenType: body.token_type ?? "Bearer",
   })
 

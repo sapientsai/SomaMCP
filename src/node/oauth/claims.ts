@@ -58,7 +58,7 @@ export const createClaimsCopier = (policy: boolean | ClaimsPolicy, logger: Pick<
       ? token
           .flatMap(readClaims)
           .map((claims) => Object.fromEntries(Object.entries(claims).filter(wanted)))
-          .orElse({})
+          .getOrElse(() => ({}))
       : {}
 
   return ({ accessToken, idToken }) => {
@@ -80,7 +80,7 @@ export const createClaimsCopier = (policy: boolean | ClaimsPolicy, logger: Pick<
  * The claims of an id token, or `{}` when it cannot be read. The signature is not checked: the server took the id token straight from the
  * provider's token endpoint over TLS, which OpenID Connect Core 1.0 §3.1.3.7 accepts in its place.
  */
-export const idTokenClaims = (idToken: string): Record<string, unknown> => readClaims(idToken).orElse({})
+export const idTokenClaims = (idToken: string): Record<string, unknown> => readClaims(idToken).getOrElse(() => ({}))
 
 /** The length of a value as JSON, or infinity when it cannot be serialized. */
 const jsonLength = (value: object): number =>
