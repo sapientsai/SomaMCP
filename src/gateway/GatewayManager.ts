@@ -9,7 +9,7 @@ import type { GatewayConfig, GatewayInfo, GatewayInstance, GatewayManagerInstanc
 
 export const createGatewayManager = (telemetry: TelemetryCollector): GatewayManagerInstance => {
   const gateways = Ref(Map.empty<string, GatewayInstance>())
-  const values = (): GatewayInstance[] => [...gateways.get()].map(([, g]) => g)
+  const values = (): ReadonlyArray<GatewayInstance> => [...gateways.get()].map(([, g]) => g)
 
   return {
     get connectedCount() {

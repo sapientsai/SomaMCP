@@ -20,7 +20,7 @@ import type { RouteConfig } from "./types/routes.js"
 import type { ServerConfig, TransportConfig } from "./types/server.js"
 
 export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfig<T> & {
-  artifacts?: ArtifactConfig[]
+  artifacts?: ReadonlyArray<ArtifactConfig>
   /**
    * Backend implementation. Defaults to the MCP SDK 2.x backend: `createSdkBackend`
    * from `somamcp`, or `createNodeBackend` (the same, plus a port and stdio) from
@@ -41,7 +41,7 @@ export type SomaServerOptions<T extends SessionAuth = SessionAuth> = ServerConfi
    * `somamcp/node` passes it by default.
    */
   gatewayManager?: GatewayManagerFactory
-  gateways?: GatewayConfig[]
+  gateways?: ReadonlyArray<GatewayConfig>
   healthDetailPath?: string
   healthPath?: string
   infoPath?: string
@@ -108,10 +108,10 @@ export type SomaServerInstance<T extends SessionAuth = SessionAuth> = {
   readonly name: string
   readonly serverState: ServerStatus
   readonly sessions: ReadonlyArray<BackendSession<T>>
-  addPrompt: <Args extends PromptArgument<T>[]>(prompt: Prompt<T, Args>) => void
-  addPrompts: <Args extends PromptArgument<T>[]>(prompts: Prompt<T, Args>[]) => void
+  addPrompt: <Args extends ReadonlyArray<PromptArgument<T>>>(prompt: Prompt<T, Args>) => void
+  addPrompts: <Args extends ReadonlyArray<PromptArgument<T>>>(prompts: ReadonlyArray<Prompt<T, Args>>) => void
   addResource: (resource: Resource<T>) => void
-  addResources: (resources: Resource<T>[]) => void
+  addResources: (resources: ReadonlyArray<Resource<T>>) => void
   addResourceTemplate: (template: ResourceTemplate<T>) => void
   addRoute: (route: RouteConfig) => void
   /** Register a tool. `captureConfig` sets its telemetry capture level and redaction. */

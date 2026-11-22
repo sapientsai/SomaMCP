@@ -156,7 +156,7 @@ export const createAzureProvider = (config: AzureProviderConfig): OAuthAuthProvi
     : Option.none<ReturnType<typeof sameTenant>>()
   const ownRule = Option(acceptSignIn)
   if (!scopes.includes("openid")) {
-    const skipped = [
+    const skipped: ReadonlyArray<string> = [
       ...tenantCheck.fold(
         () => [],
         () => ["the tenant is not checked"],

@@ -29,7 +29,7 @@ export const narrowScope = (
   requested: ReadonlyArray<string>,
   allowed: ReadonlyArray<string>,
   key: ScopeKey = exactly,
-): Option<string[]> => {
+): Option<ReadonlyArray<string>> => {
   const asked = List(requested.map(key))
   const wanted = (scope: string): boolean => asked.contains(key(scope))
   if (!allowed.some(wanted)) return Option.none()

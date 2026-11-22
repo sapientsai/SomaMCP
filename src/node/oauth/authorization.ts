@@ -152,9 +152,12 @@ export const createAuthorization = (
         id: randomToken(),
         proxyCodeChallenge: ownPkce.challenge,
         proxyCodeVerifier: ownPkce.verifier,
-        scope: Option(params.scope)
-          .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
-          .getOrElse(() => [...settings.scopes]),
+        // A copy: the stored record's schema holds a mutable array.
+        scope: [
+          ...Option(params.scope)
+            .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
+            .getOrElse(() => settings.scopes),
+        ],
         state,
       }
       await records.pending.save(request)

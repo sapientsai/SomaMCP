@@ -33,7 +33,7 @@ import {
 } from "./mapping.js"
 
 export type AnyTool<T extends SessionAuth> = Tool<T, SchemaParams>
-export type AnyPrompt<T extends SessionAuth> = Prompt<T, PromptArgument<T>[]>
+export type AnyPrompt<T extends SessionAuth> = Prompt<T, ReadonlyArray<PromptArgument<T>>>
 
 /**
  * Read access to somamcp's registry. Each getter returns the current immutable
@@ -132,9 +132,9 @@ const validate = (tool: AnyTool<SessionAuth>, args: Record<string, unknown>): Pr
   )
 
 /** URI template variables as plain strings; a multi-valued variable is comma-joined. */
-const flattenVariables = (variables: Record<string, string | string[]>): Record<string, string> =>
+const flattenVariables = (variables: Record<string, string | ReadonlyArray<string>>): Record<string, string> =>
   Object.fromEntries(
-    Object.entries(variables).map(([key, value]) => [key, Array.isArray(value) ? value.join(",") : value]),
+    Object.entries(variables).map(([key, value]) => [key, typeof value === "string" ? value : value.join(",")]),
   )
 
 // ── Server ────────────────────────────────────────────────────────────

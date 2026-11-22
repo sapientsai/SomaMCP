@@ -89,7 +89,7 @@ export const redact = (
     { counts: Map.empty<string, number>(), text: input },
   )
 
-  const matches = [...counts].map(([name, count]) => ({ count, name }))
+  const matches = Array.from(counts, ([name, count]) => ({ count, name }))
   return {
     matches,
     redacted: matches.length > 0,

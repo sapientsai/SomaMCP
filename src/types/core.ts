@@ -72,7 +72,7 @@ export type ResourceLink = {
 export type Content = AudioContent | ImageContent | ResourceContent | ResourceLink | TextContent
 
 export type ContentResult = {
-  content: Content[]
+  content: ReadonlyArray<Content>
   isError?: boolean
 }
 
@@ -99,7 +99,7 @@ export type Context<T extends SessionAuth = SessionAuth> = {
   requestId?: string
   session: T | undefined
   sessionId?: string
-  streamContent: (content: Content | Content[]) => Promise<void>
+  streamContent: (content: Content | ReadonlyArray<Content>) => Promise<void>
   /**
    * W3C Trace Context for this call: the current span's when a `tracer` is set, otherwise
    * what the client sent in `_meta`, if it was valid. Pass it on when calling another service.
@@ -139,7 +139,7 @@ export type Tool<T extends SessionAuth = SessionAuth, P extends SchemaParams = S
 
 // ── Resource ──────────────────────────────────────────────────────────
 
-export type Completion = { hasMore?: boolean; total?: number; values: string[] }
+export type Completion = { hasMore?: boolean; total?: number; values: ReadonlyArray<string> }
 
 export type ResourceResult =
   { blob: string; mimeType?: string; uri?: string } | { mimeType?: string; text: string; uri?: string }
@@ -147,7 +147,7 @@ export type ResourceResult =
 export type Resource<T extends SessionAuth = SessionAuth> = {
   complete?: (name: string, value: string, auth?: T) => Promise<Completion>
   description?: string
-  load: (auth?: T) => Promise<ResourceResult | ResourceResult[]>
+  load: (auth?: T) => Promise<ResourceResult | ReadonlyArray<ResourceResult>>
   mimeType?: string
   name: string
   uri: string
@@ -165,10 +165,10 @@ export type ResourceTemplateArgument<T extends SessionAuth = SessionAuth> = Read
  * `load` receives the variables matched from the requested URI.
  */
 export type ResourceTemplate<T extends SessionAuth = SessionAuth> = {
-  arguments: ResourceTemplateArgument<T>[]
+  arguments: ReadonlyArray<ResourceTemplateArgument<T>>
   complete?: (name: string, value: string, auth?: T) => Promise<Completion>
   description?: string
-  load: (args: Record<string, string>, auth?: T) => Promise<ResourceResult | ResourceResult[]>
+  load: (args: Record<string, string>, auth?: T) => Promise<ResourceResult | ReadonlyArray<ResourceResult>>
   mimeType?: string
   name: string
   uriTemplate: string
@@ -179,14 +179,17 @@ export type ResourceTemplate<T extends SessionAuth = SessionAuth> = {
 export type PromptArgument<T extends SessionAuth = SessionAuth> = Readonly<{
   complete?: (value: string, auth?: T) => Promise<Completion>
   description?: string
-  enum?: string[]
+  enum?: ReadonlyArray<string>
   name: string
   required?: boolean
 }>
 
-export type PromptResult = { messages: unknown[] } | string
+export type PromptResult = { messages: ReadonlyArray<unknown> } | string
 
-export type Prompt<T extends SessionAuth = SessionAuth, Args extends PromptArgument<T>[] = PromptArgument<T>[]> = {
+export type Prompt<
+  T extends SessionAuth = SessionAuth,
+  Args extends ReadonlyArray<PromptArgument<T>> = ReadonlyArray<PromptArgument<T>>,
+> = {
   arguments?: Args
   complete?: (name: string, value: string, auth?: T) => Promise<Completion>
   description?: string

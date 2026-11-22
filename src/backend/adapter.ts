@@ -32,7 +32,7 @@ export type BackendAdapter<T extends SessionAuth = SessionAuth> = {
   readonly serverState: ServerStatus
   readonly sessions: ReadonlyArray<BackendSession<T>>
 
-  addPrompt: <Args extends PromptArgument<T>[]>(prompt: Prompt<T, Args>) => void
+  addPrompt: <Args extends ReadonlyArray<PromptArgument<T>>>(prompt: Prompt<T, Args>) => void
   addResource: (resource: Resource<T>) => void
   addResourceTemplate: (template: ResourceTemplate<T>) => void
   addTool: <P extends SchemaParams>(tool: Tool<T, P>) => void

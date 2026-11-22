@@ -5,7 +5,7 @@ import { registerArtifacts } from "./artifacts/ArtifactManager.js"
 import { createDashboardArtifact } from "./artifacts/DashboardArtifact.js"
 import { createHealthArtifact, createHealthDetailArtifact } from "./artifacts/HealthArtifact.js"
 import { createInfoArtifact } from "./artifacts/InfoArtifact.js"
-import type { ArtifactAuthenticate } from "./artifacts/types.js"
+import type { ArtifactAuthenticate, ArtifactConfig } from "./artifacts/types.js"
 import type { Authenticate } from "./auth/index.js"
 import { createAuthMiddleware } from "./auth/index.js"
 import { resolveAuthenticate } from "./auth/resolve.js"
@@ -97,13 +97,9 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   const authenticate = resolveAuthenticate(serverConfig)
   const gatewayManager = gatewayManagerFor(gateways ?? [], gatewayManagerFactory, telemetry)
 
-  const registeredTools: Array<{ description?: string; name: string }> = []
-  const registeredResources: Array<{
-    description?: string
-    name: string
-    uri: string
-  }> = []
-  const registeredPrompts: Array<{ description?: string; name: string }> = []
+  const registeredTools = Ref<ServerCapabilities["tools"]>([])
+  const registeredResources = Ref<ServerCapabilities["resources"]>([])
+  const registeredPrompts = Ref<ServerCapabilities["prompts"]>([])
 
   const startedAt = Ref(0)
 
@@ -127,17 +123,17 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   }
 
   const getCapabilities = (): ServerCapabilities => ({
-    prompts: registeredPrompts,
-    resources: registeredResources,
-    tools: registeredTools,
+    prompts: registeredPrompts.get(),
+    resources: registeredResources.get(),
+    tools: registeredTools.get(),
   })
 
   const getInfo = (): ServerInfo => ({
     build,
     capabilities: {
-      prompts: registeredPrompts.length,
-      resources: registeredResources.length,
-      tools: registeredTools.length,
+      prompts: registeredPrompts.get().length,
+      resources: registeredResources.get().length,
+      tools: registeredTools.get().length,
     },
     name: serverName,
     runtime,
@@ -155,8 +151,11 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
    * are unique, so re-registering must not inflate the count.
    */
   const trackTool = (tool: { description?: string; name: string }): void => {
-    if (registeredTools.some((registered) => registered.name === tool.name)) return
-    registeredTools.push({ description: tool.description, name: tool.name })
+    registeredTools.update((tools) =>
+      tools.some((registered) => registered.name === tool.name)
+        ? tools
+        : [...tools, { description: tool.description, name: tool.name }],
+    )
   }
 
   /**
@@ -165,10 +164,9 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
    * Skipped when the backend cannot actually remove anything (the edge backend
    * only warns), because a capability that is still served must still be counted.
    */
-  const untrack = (inventory: Array<{ name: string }>, name: string): void => {
+  const untrack = <E extends { name: string }>(inventory: Ref<ReadonlyArray<E>>, name: string): void => {
     if (backend.supportsRemoval === false) return
-    const index = inventory.findIndex((entry) => entry.name === name)
-    if (index >= 0) inventory.splice(index, 1)
+    inventory.update((entries) => entries.filter((entry) => entry.name !== name))
   }
 
   // Register introspection MCP tool (default: enabled). Only `info` — safe for agents.
@@ -179,23 +177,25 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   }
 
   // Register artifacts on the Hono app
-  const allArtifacts = [...(artifacts ?? [])]
-  if (enableHealthEndpoint !== false) {
-    allArtifacts.push(createHealthArtifact(() => getHealth(), healthPath))
-    allArtifacts.push(createHealthDetailArtifact(() => getHealth(), healthDetailPath))
-  }
-  if (enableInfoEndpoint !== false) {
-    allArtifacts.push(createInfoArtifact(() => getInfo(), infoPath))
-  }
-  if (enableDashboard !== false) {
-    allArtifacts.push(
-      createDashboardArtifact(
-        () => getHealth(),
-        () => getCapabilities(),
-        () => gatewayManager.getInfoAll(),
-      ),
-    )
-  }
+  const allArtifacts: ReadonlyArray<ArtifactConfig> = [
+    ...(artifacts ?? []),
+    ...(enableHealthEndpoint !== false
+      ? [
+          createHealthArtifact(() => getHealth(), healthPath),
+          createHealthDetailArtifact(() => getHealth(), healthDetailPath),
+        ]
+      : []),
+    ...(enableInfoEndpoint !== false ? [createInfoArtifact(() => getInfo(), infoPath)] : []),
+    ...(enableDashboard !== false
+      ? [
+          createDashboardArtifact(
+            () => getHealth(),
+            () => getCapabilities(),
+            () => gatewayManager.getInfoAll(),
+          ),
+        ]
+      : []),
+  ]
   if (allArtifacts.length > 0) {
     registerArtifacts(
       backend.getApp(),
@@ -231,20 +231,16 @@ export const createServerCore = <T extends SessionAuth = SessionAuth>(
   const addResource = (resource: Parameters<SomaServerInstance<T>["addResource"]>[0]): void => {
     const wrapped = wrapResource(resource, telemetry)
     backend.addResource(wrapped)
-    registeredResources.push({
-      description: resource.description,
-      name: resource.name,
-      uri: resource.uri,
-    })
+    registeredResources.update((resources) => [
+      ...resources,
+      { description: resource.description, name: resource.name, uri: resource.uri },
+    ])
   }
 
   const addPrompt = (prompt: Parameters<SomaServerInstance<T>["addPrompt"]>[0]): void => {
     const wrapped = wrapPrompt(prompt, telemetry)
     backend.addPrompt(wrapped)
-    registeredPrompts.push({
-      description: prompt.description,
-      name: prompt.name,
-    })
+    registeredPrompts.update((prompts) => [...prompts, { description: prompt.description, name: prompt.name }])
   }
 
   const addRoute = (route: RouteConfig): void => {

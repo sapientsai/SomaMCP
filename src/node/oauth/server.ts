@@ -109,6 +109,20 @@ export type OAuthProxyConfig = {
   widenScopesOnRefresh?: boolean
 }
 
+/** Authorization server metadata (RFC 8414), as served at `/.well-known/oauth-authorization-server`. */
+type AuthorizationServerMetadata = {
+  readonly authorization_endpoint: string
+  readonly authorization_response_iss_parameter_supported?: boolean
+  readonly code_challenge_methods_supported: ReadonlyArray<string>
+  readonly grant_types_supported: ReadonlyArray<string>
+  readonly issuer: string
+  readonly registration_endpoint: string
+  readonly response_types_supported: ReadonlyArray<string>
+  readonly scopes_supported: ReadonlyArray<string>
+  readonly token_endpoint: string
+  readonly token_endpoint_auth_methods_supported: ReadonlyArray<string>
+}
+
 const DEFAULTS = {
   accessToken: 3600,
   authorizationCode: 300,
@@ -257,7 +271,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   })
 
   /** Authorization server metadata (RFC 8414), with keys in the order FastMCP served them. */
-  const metadata = () => ({
+  const metadata = (): AuthorizationServerMetadata => ({
     authorization_endpoint: endpoint("/oauth/authorize"),
     ...(sendIssuer ? { authorization_response_iss_parameter_supported: true } : {}),
     code_challenge_methods_supported: allowPlainPkce ? ["S256", "plain"] : ["S256"],

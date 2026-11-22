@@ -65,7 +65,7 @@ export const errorResult = (message: string): CallToolResult => ({
 
 /** Every result is served; resources are not truncated to their first entry. */
 export const toReadResult = (
-  loaded: ResourceResult | ResourceResult[],
+  loaded: ResourceResult | ReadonlyArray<ResourceResult>,
   defaults: { mimeType?: string; uri: string },
 ): ReadResourceResult => ({
   contents: (Array.isArray(loaded) ? loaded : [loaded]).map((r) => ({
@@ -83,9 +83,11 @@ export const toPromptResult = (loaded: PromptResult): GetPromptResult =>
 
 const EMPTY_COMPLETION: Completion = { values: [] }
 
-export const toCompleteResult = (completion: Option<Completion>) => ({
-  completion: completion.getOrElse(() => EMPTY_COMPLETION),
-})
+export const toCompleteResult = (completion: Option<Completion>) => {
+  const found = completion.getOrElse(() => EMPTY_COMPLETION)
+  // A copy: the SDK's result type takes a mutable array.
+  return { completion: { ...found, values: Array.from(found.values) } }
+}
 
 /** Completion from a fixed list of allowed values, filtered by the typed prefix. */
 export const completeFromEnum = (values: ReadonlyArray<string>, prefix: string): Completion => {
