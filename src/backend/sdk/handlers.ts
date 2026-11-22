@@ -112,9 +112,9 @@ type Validated = { value: unknown } | { issues: ReadonlyArray<SchemaIssue> }
 
 /** A key as it is, or the `key` of a `{ key }` segment; `?` for one that can't be read or written as text. */
 const segmentName = (segment: unknown): string =>
-  Try(() => String(segment !== null && typeof segment === "object" && "key" in segment ? segment.key : segment)).orElse(
-    "?",
-  )
+  Try(() =>
+    String(segment !== null && typeof segment === "object" && "key" in segment ? segment.key : segment),
+  ).getOrElse(() => "?")
 
 /** `recurrence.pattern.dayOfMonth: <message>`, so a model can tell which argument to fix. An issue about the whole input keeps its message alone. */
 const describeIssue = (issue: SchemaIssue): string => {
@@ -294,7 +294,7 @@ const registerResourceHandlers = <T extends SessionAuth>(
           .map((template) => ({ template, variables: Option(new UriTemplate(template.uriTemplate).match(uri)) }))
           .find((m) => m.variables.isSome())
           .map(({ template, variables }) => ({
-            load: () => template.load(flattenVariables(variables.orElse({})), auth),
+            load: () => template.load(flattenVariables(variables.getOrElse(() => ({}))), auth),
             mimeType: template.mimeType,
           })),
     )

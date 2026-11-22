@@ -156,7 +156,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
   const lifetime = (name: keyof typeof DEFAULTS): number =>
     Option(config.lifetimes?.[name])
       .filter((seconds) => seconds > 0)
-      .orElse(DEFAULTS[name])
+      .getOrElse(() => DEFAULTS[name])
   const lifetimes = {
     accessToken: lifetime("accessToken"),
     authorizationCode: lifetime("authorizationCode"),
@@ -181,7 +181,7 @@ export const createAuthorizationServer = (config: OAuthProxyConfig) => {
     () => Option(createMemoryStore()),
     () => Option.none<TokenStore>(),
   )
-  const plainStore = ownStore.orElse(config.store as TokenStore)
+  const plainStore = ownStore.getOrElse(() => config.store as TokenStore)
   if (config.store !== undefined && config.encryptionKey === undefined && !isEncryptedStore(plainStore))
     logger.warn("[somamcp/oauth] no encryptionKey: stored tokens will not survive a restart.")
   if (lifetimes.client < lifetimes.refreshToken)

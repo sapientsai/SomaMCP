@@ -50,7 +50,9 @@ export type OAuthAuthProvider<S extends OAuthSession = OAuthSession> = AuthProvi
 
 const toSession = (tokens: UpstreamTokens): OAuthSession => ({
   accessToken: tokens.accessToken,
-  claims: Option(tokens.idToken).map(idTokenClaims).orElse({}),
+  claims: Option(tokens.idToken)
+    .map(idTokenClaims)
+    .getOrElse(() => ({})),
   expiresAt: Math.floor(tokens.issuedAt.getTime() / 1000) + tokens.expiresIn,
   idToken: tokens.idToken,
   refreshToken: tokens.refreshToken,
@@ -116,7 +118,9 @@ const azureSession = (tokens: UpstreamTokens): AzureSession => {
     ...session,
     oid: text(session.claims, "oid").orUndefined(),
     tid: text(session.claims, "tid").orUndefined(),
-    upn: text(session.claims, "preferred_username").or(text(session.claims, "upn")).orUndefined(),
+    upn: text(session.claims, "preferred_username")
+      .orElse(() => text(session.claims, "upn"))
+      .orUndefined(),
   }
 }
 
@@ -131,7 +135,7 @@ const sameTenant =
     const issuer = text(claims, "iss")
     const matches =
       tid.contains(tenantId.toLowerCase()) &&
-      issuer.contains(`https://login.microsoftonline.com/${tid.orElse("")}/v2.0`)
+      issuer.contains(`https://login.microsoftonline.com/${tid.getOrElse(() => "")}/v2.0`)
     return matches ? Option.none() : Option("This account belongs to another organization.")
   }
 

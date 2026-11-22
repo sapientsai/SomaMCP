@@ -145,7 +145,7 @@ export const createAuthorization = (
     const ownPkce = createPkcePair()
     const request: PendingAuthorization = {
       clientCallbackUrl: redirectUri,
-      clientCodeChallenge: challenge.orElse(""),
+      clientCodeChallenge: challenge.getOrElse(() => ""),
       clientCodeChallengeMethod: method,
       clientId,
       createdAt: new Date(),
@@ -155,7 +155,7 @@ export const createAuthorization = (
       proxyCodeVerifier: ownPkce.verifier,
       scope: Option(params.scope)
         .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
-        .orElse([...settings.scopes]),
+        .getOrElse(() => [...settings.scopes]),
       state,
     }
     await records.pending.save(request)
@@ -267,7 +267,7 @@ export const createAuthorization = (
       return Right(
         back(
           Errors.providerRejected(
-            providerError.orElse(""),
+            providerError.getOrElse(() => ""),
             Option(url.searchParams.get("error_description")).filter((d) => d !== ""),
           ),
         ),
@@ -277,7 +277,7 @@ export const createAuthorization = (
       return Right(back(Errors.providerUnavailable("The provider returned neither a code nor an error.")))
 
     const exchanged = await upstream.exchangeCode({
-      code: code.orElse(""),
+      code: code.getOrElse(() => ""),
       redirectUri: settings.callbackUrl,
       scope: request.scope,
       verifier: request.proxyCodeVerifier,

@@ -150,7 +150,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
   const mcpPath = Ref(
     Option(backendOptions as SdkBackendOptions)
       .flatMap((o) => Option(o.mcpPath))
-      .orElse(DEFAULT_MCP_PATH),
+      .getOrElse(() => DEFAULT_MCP_PATH),
   )
   const corsMiddleware = Ref<Option<MiddlewareHandler>>(Option.none())
   const listener = Ref<Option<Listener>>(Option.none())
@@ -225,7 +225,7 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
             .get(name)
             // A tool `canAccess` hides stays hidden: the SDK answers that it's unknown.
             // One that throws isn't refused here: the SDK runs it again, and reports the error.
-            .filter((tool) => Try(() => !tool.canAccess || tool.canAccess(session)).orElse(false))
+            .filter((tool) => Try(() => !tool.canAccess || tool.canAccess(session)).getOrElse(() => false))
             .fold<ReadonlyArray<string>>(
               () => [],
               (tool) => missingScopes(tool.requiredScopes ?? [], session),

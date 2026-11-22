@@ -46,7 +46,7 @@ export const toJsonSchema = (params: Option<SchemaParams>): ObjectSchema =>
   params
     .flatMap((p) => Option((p as JsonSchemaCapable)["~standard"].jsonSchema))
     .map((js) => js.input({ target: "draft-2020-12" }) as ObjectSchema)
-    .orElse(EMPTY_OBJECT_SCHEMA)
+    .getOrElse(() => EMPTY_OBJECT_SCHEMA)
 
 // ── Results ───────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ export const toPromptResult = (loaded: PromptResult): GetPromptResult =>
 const EMPTY_COMPLETION: Completion = { values: [] }
 
 export const toCompleteResult = (completion: Option<Completion>) => ({
-  completion: completion.orElse(EMPTY_COMPLETION),
+  completion: completion.getOrElse(() => EMPTY_COMPLETION),
 })
 
 /** Completion from a fixed list of allowed values, filtered by the typed prefix. */
@@ -125,7 +125,9 @@ export const createToolContext = <T extends SessionAuth>(
   const progressToken = Option(ctx.mcpReq._meta?.progressToken)
   // A 2026-07-28 request carries it; a 2025 connection sent it once, during `initialize`. The SDK
   // validates the envelope only on 2026-07-28 requests, so a 2025 request's `_meta` can hold anything.
-  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY]).filter(namesItself).or(connectionClient)
+  const clientInfo = Option(ctx.mcpReq.envelope?.[CLIENT_INFO_META_KEY])
+    .filter(namesItself)
+    .orElse(() => connectionClient)
   const meta = ctx.mcpReq._meta
   const trace = readTraceContext(meta?.[TRACEPARENT_META_KEY], meta?.[TRACESTATE_META_KEY])
 

@@ -61,8 +61,8 @@ const parsePattern = (pattern: string): Either<string, RedirectPattern> => {
   return Right({
     host: name,
     // A pattern without a path allows any path on its origin.
-    path: globToRegExp(Option(path).orElse("*")),
-    port: anyPort ? "*" : portNumber.map(String).orElse(DEFAULT_PORT[lower]),
+    path: globToRegExp(Option(path).getOrElse(() => "*")),
+    port: anyPort ? "*" : portNumber.map(String).getOrElse(() => DEFAULT_PORT[lower]),
     scheme: lower,
   })
 }
@@ -172,7 +172,7 @@ export const createClientRegistry = (
     }
     const request = parsed.data
     const refused = Option(request.redirect_uris.find((uri) => !isAllowedRedirectUri(uri, patterns)))
-    if (refused.isSome()) return Left(OAuthError.redirectUriNotAllowed(refused.orElse("")))
+    if (refused.isSome()) return Left(OAuthError.redirectUriNotAllowed(refused.getOrElse(() => "")))
 
     const client: RegisteredClient = {
       callbackUrl: request.redirect_uris[0] ?? "",

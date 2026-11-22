@@ -78,7 +78,7 @@ const guessFromMessage = (error: unknown): ErrorCategory => {
 export const classifyError = (error: unknown): ErrorCategory =>
   reportedBy(error).fold(
     () => (isSchemaError(error) ? "validation" : guessFromMessage(error)),
-    (reported) => reported.category.orElse("execution"),
+    (reported) => reported.category.getOrElse(() => "execution"),
   )
 
 const getSuggestions = (
@@ -122,7 +122,7 @@ export const createEnrichedError = (
   const message = messageOf(error)
   const suggestions = reportedBy(error)
     .flatMap((reported) => reported.suggestions)
-    .orElse(getSuggestions(errorCategory, context))
+    .getOrElse(() => getSuggestions(errorCategory, context))
   const relatedState: Record<string, unknown> = {
     ...(context?.gatewayStatus && { gatewayStatus: context.gatewayStatus }),
     ...(context?.toolName && { toolName: context.toolName }),

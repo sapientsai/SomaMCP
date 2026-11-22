@@ -48,7 +48,7 @@ type FeedbackToolParams = z.infer<typeof PARAMETERS>
 const formatRedactionSummary = (titleRes: RedactionResult, bodyRes: RedactionResult): Option<string> => {
   if (!titleRes.redacted && !bodyRes.redacted) return Option.none()
   const seen = [...titleRes.matches, ...bodyRes.matches].reduce(
-    (acc, m) => acc.add(Tuple<[string, number]>([m.name, acc.get(m.name).orElse(0) + m.count])),
+    (acc, m) => acc.add(Tuple<[string, number]>([m.name, acc.get(m.name).getOrElse(() => 0) + m.count])),
     Map.empty<string, number>(),
   )
   const lines = [...seen].map(([name, count]) => `- ${name}: ${String(count)}`)
