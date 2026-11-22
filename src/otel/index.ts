@@ -69,11 +69,11 @@ const callAttributes = (call: ToolCallInfo): Attributes => ({
 })
 
 /** The server's ambient span, such as an HTTP span, which the conventions say to link rather than parent. */
-const linksToAmbient = (call: ToolCallInfo, ambient: OtelContext): Link[] =>
+const linksToAmbient = (call: ToolCallInfo, ambient: OtelContext): ReadonlyArray<Link> =>
   Option(call.trace)
     .flatMap(() => Option(otelTrace.getSpanContext(ambient)))
     .filter(isSpanContextValid)
-    .fold<Link[]>(
+    .fold<ReadonlyArray<Link>>(
       () => [],
       (context) => [{ context }],
     )
@@ -127,7 +127,7 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
     const ambient = otelContext.active()
     const span = tracer.startSpan(
       call.name === undefined ? TOOL_CALL_METHOD : `${TOOL_CALL_METHOD} ${call.name}`,
-      { attributes: callAttributes(call), kind: SpanKind.SERVER, links: linksToAmbient(call, ambient) },
+      { attributes: callAttributes(call), kind: SpanKind.SERVER, links: [...linksToAmbient(call, ambient)] },
       otelContextFrom(call.trace, ambient),
     )
     // With no SDK registered and no parent, the span has no ids to pass on.
@@ -145,6 +145,7 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
       },
     )
     span.end()
-    return result.orThrow()
+    // Rejects with the tool's own error when it threw.
+    return result.toPromise()
   },
 })

@@ -8,7 +8,7 @@ import type { GatewayConfig, GatewayInstance, GatewayStatus } from "./types.js"
 export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollector): GatewayInstance => {
   const client = Ref<Option<Client>>(Option.none())
   const transport = Ref<Option<StreamableHTTPClientTransport>>(Option.none())
-  const remoteTools = Ref<MCPTool[]>([])
+  const remoteTools = Ref<ReadonlyArray<MCPTool>>([])
   const currentStatus = Ref<GatewayStatus>("disconnected")
   const reconnectTimer = Ref<Option<ReturnType<typeof setTimeout>>>(Option.none())
 
@@ -137,10 +137,11 @@ export const createGateway = (config: GatewayConfig, telemetry: TelemetryCollect
       reconnectTimer.set(Option.none())
 
       const currentClient = client.get()
-      if (currentClient.isSome()) {
-        // Try swallows close errors — disconnect is best-effort
-        await Try.fromPromise(currentClient.value.close())
-      }
+      // Disconnect is best-effort: a close error is dropped on purpose.
+      await currentClient.foldAsync(
+        () => undefined,
+        (current) => Try.fromPromise(current.close()).then(() => undefined),
+      )
 
       client.set(Option.none())
       transport.set(Option.none())

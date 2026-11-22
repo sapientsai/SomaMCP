@@ -1,5 +1,5 @@
 import { createMcpHandler, type McpHttpHandler, type Transport } from "@modelcontextprotocol/server"
-import { type Either, Map, Option, Ref, Try, Tuple } from "functype"
+import { type Either, Map, Option, Ref, Try, Tuple, type Wire } from "functype"
 import { type Context as HonoContext, Hono, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 
@@ -39,7 +39,7 @@ const SESSION_KEY = "somamcp/session"
 
 /** The tools a request calls: one message, or each message of a batch. */
 const calledTools = (message: unknown): ReadonlyArray<string> =>
-  (Array.isArray(message) ? (message as unknown[]) : [message]).flatMap((entry) => {
+  (Array.isArray(message) ? (message as Wire<ReadonlyArray<unknown>>) : [message]).flatMap((entry) => {
     const call = entry as { method?: unknown; params?: { name?: unknown } | null } | null
     return call?.method === "tools/call" && typeof call.params?.name === "string" ? [call.params.name] : []
   })
@@ -405,10 +405,17 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
         return
       }
       const started = await Try.fromPromise(openListener(transport))
-      if (started.isFailure()) state.set("error")
-      // Rethrows the original error on failure, so a bad port still rejects start().
-      listener.set(started.orThrow())
-      state.set("running")
+      // Rejects with the original error on failure, so a bad port still rejects start().
+      return started.foldAsync(
+        (error) => {
+          state.set("error")
+          return Promise.reject(error)
+        },
+        (opened) => {
+          listener.set(opened)
+          state.set("running")
+        },
+      )
     },
 
     stop: async () => {

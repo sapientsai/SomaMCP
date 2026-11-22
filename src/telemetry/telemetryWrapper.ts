@@ -133,7 +133,10 @@ export const wrapResource = <T extends SessionAuth>(
   },
 })
 
-export const wrapPrompt = <T extends SessionAuth, Args extends PromptArgument<T>[] = PromptArgument<T>[]>(
+export const wrapPrompt = <
+  T extends SessionAuth,
+  Args extends ReadonlyArray<PromptArgument<T>> = ReadonlyArray<PromptArgument<T>>,
+>(
   prompt: Prompt<T, Args>,
   telemetry: TelemetryCollector,
 ): Prompt<T, Args> => ({

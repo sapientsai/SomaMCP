@@ -202,20 +202,23 @@ export const createOAuthRoutes = (
                   await refuse(new Request(c.req.raw.url, { headers: c.req.raw.headers, method: c.req.raw.method })),
                 ),
             )
-            if (refused.isSome()) return refused.orThrow()
-            return withBody(c, async (body) => {
-              const input = Try(() => JSON.parse(body) as unknown).toOption()
-              if (input.isNone())
-                return json(
-                  { error: "invalid_client_metadata", error_description: "The request body must be JSON." },
-                  400,
-                  NO_STORE,
-                )
-              return (await server.register(input.getOrElse(() => null))).fold(
-                (error) => errorJson(error, NO_STORE),
-                (registration) => json(registration, 201, NO_STORE),
-              )
-            })
+            return refused.foldAsync<Response>(
+              () =>
+                withBody(c, async (body) => {
+                  const input = Try(() => JSON.parse(body) as unknown).toOption()
+                  if (input.isNone())
+                    return json(
+                      { error: "invalid_client_metadata", error_description: "The request body must be JSON." },
+                      400,
+                      NO_STORE,
+                    )
+                  return (await server.register(input.getOrElse(() => null))).fold(
+                    (error) => errorJson(error, NO_STORE),
+                    (registration) => json(registration, 201, NO_STORE),
+                  )
+                }),
+              (response) => response,
+            )
           }),
         method: "POST",
         path: "/oauth/register",

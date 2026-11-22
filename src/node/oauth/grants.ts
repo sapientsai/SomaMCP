@@ -179,26 +179,35 @@ export const createGrants = (
     if (request.clientId === "" || (await clients.find(request.clientId)).isNone())
       return Left(Errors.unknownClient(request.clientId))
     const code = request.code ?? ""
-    const peeked = await records.codes.peek(code)
-    if (peeked.isNone()) return Left(invalidCode())
-    const seen = peeked.orThrow()
-    if (seen._tag === "Spent") return Left(usedCode())
-    const problem = redeemProblem(seen.code, request)
-    if (problem.isSome()) return Left(problem.orThrow())
+    return (await records.codes.peek(code)).foldAsync<Either<OAuthError, TokenResponse>>(
+      () => Left(invalidCode()),
+      (seen) =>
+        seen._tag === "Spent"
+          ? Left(usedCode())
+          : redeemProblem(seen.code, request).foldAsync<Either<OAuthError, TokenResponse>>(
+              () => claimCode(code),
+              (problem) => Left(problem),
+            ),
+    )
+  }
 
-    const redemption = await records.codes.redeem(code)
-    if (redemption.isNone()) return Left(invalidCode())
-    const claimed = redemption.orThrow()
-    // Written back whatever happens next, so a second attempt is told the code was used.
-    await records.codes.spend(code, claimed._tag === "Active" ? claimed.code.expiresAt : claimed.expiresAt)
-    if (claimed._tag === "Spent") return Left(usedCode())
+  /** Takes a code that passed its checks, and issues tokens for it if this caller won it. */
+  const claimCode = async (code: string): Promise<Either<OAuthError, TokenResponse>> =>
+    (await records.codes.redeem(code)).foldAsync<Either<OAuthError, TokenResponse>>(
+      () => Left(invalidCode()),
+      async (claimed) => {
+        // Written back whatever happens next, so a second attempt is told the code was used.
+        await records.codes.spend(code, claimed._tag === "Active" ? claimed.code.expiresAt : claimed.expiresAt)
+        return claimed._tag === "Spent" ? Left(usedCode()) : Right(await issueFor(claimed.code))
+      },
+    )
 
-    const issued = claimed.code
+  const issueFor = async (issued: AuthorizationCode): Promise<TokenResponse> => {
     const key = randomToken()
     await keepUpstream(key, issued.upstreamTokens)
     const pair = await issuePair(issued.clientId, issued.upstreamTokens, key)
     await keepClient(issued.clientId)
-    return Right(pair)
+    return pair
   }
 
   /**
@@ -268,8 +277,20 @@ export const createGrants = (
         error._tag === "ProviderRejected" ? Option<ProviderRejected>(error) : Option.none<ProviderRejected>(),
       () => Option.none<ProviderRejected>(),
     )
-    if (declined.isNone()) return wide
-    const refusal = declined.orThrow()
+    return declined.foldAsync(
+      () => wide,
+      (refusal) => narrowAfter(refusal, key, asked, refreshToken, scope),
+    )
+  }
+
+  /** Logs a provider's refusal of the server's scopes, remembers it unless transient, and refreshes with the grant's. */
+  const narrowAfter = async (
+    refusal: ProviderRejected,
+    key: string,
+    asked: Option<string>,
+    refreshToken: string,
+    scope: Option<string>,
+  ): Promise<Either<OAuthError, UpstreamTokens>> => {
     const transient = TRANSIENT.includes(refusal.code)
     logger.warn(
       `[somamcp/oauth] the provider refused the server's scopes on a refresh (${refusal.code}: ${refusal.description.getOrElse(() => "no description")}); asked for the grant's${transient ? "" : ", and will not widen this sign-in again for a day"}.`,
@@ -287,9 +308,18 @@ export const createGrants = (
     scope: Option<string>,
     widened: Option<string>,
   ): Promise<Either<OAuthError, TokenResponse>> => {
-    const stored = await records.upstream.find(grant.upstreamTokenKey)
-    if (stored.isNone()) return Left(Errors.invalidGrant("The sign-in behind this refresh token has expired."))
-    const current = stored.orThrow()
+    return (await records.upstream.find(grant.upstreamTokenKey)).foldAsync<Either<OAuthError, TokenResponse>>(
+      () => Left(Errors.invalidGrant("The sign-in behind this refresh token has expired.")),
+      (current) => rotateFrom(grant, current, scope, widened),
+    )
+  }
+
+  const rotateFrom = async (
+    grant: TokenGrant,
+    current: UpstreamTokens,
+    scope: Option<string>,
+    widened: Option<string>,
+  ): Promise<Either<OAuthError, TokenResponse>> => {
     if (await isRevoked(current)) return Left(Errors.signInRefused(REVOKED))
     const upstreamRefresh = Option(current.refreshToken)
     if (upstreamRefresh.isNone()) return Left(Errors.invalidGrant("The provider issued no refresh token."))
@@ -350,9 +380,14 @@ export const createGrants = (
       () => "",
       (c) => c.jti,
     )
-    const claimed = await records.grants.take(jti)
-    if (claimed.isNone()) return Left(Errors.invalidGrant("The refresh token was already used or has expired."))
-    const grant = claimed.orThrow()
+    return (await records.grants.take(jti)).foldAsync<Either<OAuthError, TokenResponse>>(
+      () => Left(Errors.invalidGrant("The refresh token was already used or has expired.")),
+      (grant) => refreshGrant(grant, request),
+    )
+  }
+
+  /** Refreshes a grant this caller took, putting it back when the refresh fails in a way that may be retried. */
+  const refreshGrant = async (grant: TokenGrant, request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
     const putBack = (): Promise<void> =>
       restore(grant).catch((error: unknown) => {
         logger.error("[somamcp/oauth] could not put back a refresh token after a failed refresh:", error)
@@ -379,16 +414,17 @@ export const createGrants = (
         ),
       ),
     )
-    if (outcome.isFailure()) {
-      await putBack()
-      return outcome.orThrow()
-    }
-    const result = outcome.orThrow()
-    await result.fold(
-      (error) => (retryable(error) ? putBack() : Promise.resolve()),
-      () => keepClient(grant.clientId),
+    // A rejected rotate puts the grant back, then rejects with the same error.
+    return outcome.foldAsync(
+      (error) => putBack().then(() => Promise.reject(error)),
+      async (result) => {
+        await result.fold(
+          (error) => (retryable(error) ? putBack() : Promise.resolve()),
+          () => keepClient(grant.clientId),
+        )
+        return result
+      },
     )
-    return result
   }
 
   const token = (request: TokenRequest): Promise<Either<OAuthError, TokenResponse>> => {
@@ -410,8 +446,7 @@ export const createGrants = (
       () => Promise.resolve(Option.none<UpstreamTokens>()),
       (g) => records.upstream.find(g.upstreamTokenKey),
     )
-    if (tokens.isNone()) return tokens
-    return (await isRevoked(tokens.orThrow())) ? Option.none() : tokens
+    return tokens.flatMapAsync(async (current) => ((await isRevoked(current)) ? Option.none() : Option(current)))
   }
 
   return { resolve, revokeUser, token }

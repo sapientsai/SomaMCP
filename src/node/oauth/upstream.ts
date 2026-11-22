@@ -162,20 +162,19 @@ export const createUpstream = (
         signal: AbortSignal.timeout(config.timeoutMs ?? DEFAULT_TIMEOUT_MS),
       }),
     )
-    if (sent.isFailure()) {
-      const error = sent.fold(
-        (e) => e,
-        () => new Error("unreachable"),
-      )
-      if (isTimeout(error)) return Left(OAuthError.providerUnavailable("The provider did not answer in time."))
-      options.logger.error("[somamcp/oauth] could not reach the token endpoint:", error)
-      return Left(OAuthError.providerUnavailable("The provider could not be reached."))
-    }
-    const response = sent.orThrow()
-    if (!response.ok) return Left(await failureFrom(response))
-    return (await parseTokenResponse(response)).fold(
-      () => Left(OAuthError.providerUnavailable("The provider sent a token response that could not be read.")),
-      (tokens) => Right(toTokens(tokens, scope, previousRefresh)),
+    return sent.foldAsync<Either<OAuthError, UpstreamTokens>>(
+      (error) => {
+        if (isTimeout(error)) return Left(OAuthError.providerUnavailable("The provider did not answer in time."))
+        options.logger.error("[somamcp/oauth] could not reach the token endpoint:", error)
+        return Left(OAuthError.providerUnavailable("The provider could not be reached."))
+      },
+      async (response) => {
+        if (!response.ok) return Left(await failureFrom(response))
+        return (await parseTokenResponse(response)).fold(
+          () => Left(OAuthError.providerUnavailable("The provider sent a token response that could not be read.")),
+          (tokens) => Right(toTokens(tokens, scope, previousRefresh)),
+        )
+      },
     )
   }
 

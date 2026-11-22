@@ -139,41 +139,48 @@ export const createAuthorization = (
     const challenge = Option(params.code_challenge).filter((c) => c !== "")
     // RFC 7636 §4.3: a challenge without a method is "plain".
     const method = params.code_challenge_method ?? "plain"
-    const problem = pkceProblem(challenge, method)
-    if (problem.isSome()) return Right(errorToClient(redirectUri, state, problem.orThrow()))
-
-    const ownPkce = createPkcePair()
-    const request: PendingAuthorization = {
-      clientCallbackUrl: redirectUri,
-      clientCodeChallenge: challenge.getOrElse(() => ""),
-      clientCodeChallengeMethod: method,
-      clientId,
-      createdAt: new Date(),
-      expiresAt: secondsFromNow(settings.transactionLifetime),
-      id: randomToken(),
-      proxyCodeChallenge: ownPkce.challenge,
-      proxyCodeVerifier: ownPkce.verifier,
-      scope: Option(params.scope)
-        .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
-        .getOrElse(() => [...settings.scopes]),
-      state,
+    /** Saves the verified request and sends the user on: to the consent page, or to the provider. */
+    const begin = async (): Promise<Either<OAuthError, BrowserStep>> => {
+      const ownPkce = createPkcePair()
+      const request: PendingAuthorization = {
+        clientCallbackUrl: redirectUri,
+        clientCodeChallenge: challenge.getOrElse(() => ""),
+        clientCodeChallengeMethod: method,
+        clientId,
+        createdAt: new Date(),
+        expiresAt: secondsFromNow(settings.transactionLifetime),
+        id: randomToken(),
+        proxyCodeChallenge: ownPkce.challenge,
+        proxyCodeVerifier: ownPkce.verifier,
+        // A copy: the stored record's schema holds a mutable array.
+        scope: [
+          ...Option(params.scope)
+            .flatMap((s) => narrowScope(splitScope(s), settings.scopes))
+            .getOrElse(() => settings.scopes),
+        ],
+        state,
+      }
+      await records.pending.save(request)
+      if (!settings.consentRequired) return Right(toProvider(request))
+      return Right({
+        _tag: "Consent",
+        screen: {
+          action: settings.consentUrl,
+          clientName: client
+            .flatMap((c) => Option(c.metadata?.client_name))
+            .map((name) => name.trim())
+            .filter((name) => name !== ""),
+          provider: settings.providerName,
+          returnsTo: hostOf(redirectUri),
+          scope: request.scope,
+          transactionId: request.id,
+        },
+      })
     }
-    await records.pending.save(request)
-    if (!settings.consentRequired) return Right(toProvider(request))
-    return Right({
-      _tag: "Consent",
-      screen: {
-        action: settings.consentUrl,
-        clientName: client
-          .flatMap((c) => Option(c.metadata?.client_name))
-          .map((name) => name.trim())
-          .filter((name) => name !== ""),
-        provider: settings.providerName,
-        returnsTo: hostOf(redirectUri),
-        scope: request.scope,
-        transactionId: request.id,
-      },
-    })
+    return pkceProblem(challenge, method).foldAsync<Either<OAuthError, BrowserStep>>(
+      () => begin(),
+      (problem) => Right(errorToClient(redirectUri, state, problem)),
+    )
   }
 
   /** The user's answer on the consent page. */
@@ -183,23 +190,27 @@ export const createAuthorization = (
       return Left(Errors.invalidRequest('The consent form must answer "approve" or "deny".'))
     const transactionId = form.get("transaction_id") ?? ""
     if (transactionId === "") return Left(Errors.invalidRequest("The consent form has no transaction_id."))
-    const found = await records.pending.find(transactionId)
-    if (found.isNone())
-      return Left(Errors.invalidRequest("This sign-in request has expired. Start again from your app."))
-    const request = found.orThrow()
-    if (action === "approve") {
-      const approved = { ...request, consentGiven: true }
-      await records.pending.save(approved)
-      return Right(toProvider(approved))
+    const answer = async (request: PendingAuthorization): Promise<Either<OAuthError, BrowserStep>> => {
+      if (action === "approve") {
+        const approved = { ...request, consentGiven: true }
+        await records.pending.save(approved)
+        return Right(toProvider(approved))
+      }
+      await records.pending.delete(transactionId)
+      return (await notReturnable(request)).fold<Either<OAuthError, BrowserStep>>(
+        () =>
+          Right(
+            toClient(request.clientCallbackUrl, request.state, {
+              error: "access_denied",
+              error_description: "The user declined to authorize the app.",
+            }),
+          ),
+        (problem) => Left(problem),
+      )
     }
-    await records.pending.delete(transactionId)
-    const denied = await notReturnable(request)
-    if (denied.isSome()) return Left(denied.orThrow())
-    return Right(
-      toClient(request.clientCallbackUrl, request.state, {
-        error: "access_denied",
-        error_description: "The user declined to authorize the app.",
-      }),
+    return (await records.pending.find(transactionId)).foldAsync<Either<OAuthError, BrowserStep>>(
+      () => Left(Errors.invalidRequest("This sign-in request has expired. Start again from your app.")),
+      answer,
     )
   }
 
@@ -252,11 +263,18 @@ export const createAuthorization = (
     const state = url.searchParams.get("state") ?? ""
     if (state === "") return Left(Errors.invalidRequest("The provider's response has no state."))
     // Consumed whatever the outcome, so one sign-in cannot be completed twice.
-    const found = await records.pending.take(state)
-    if (found.isNone()) return Left(Errors.invalidRequest("This sign-in request has expired or was already completed."))
-    const request = found.orThrow()
-    const gone = await notReturnable(request)
-    if (gone.isSome()) return Left(gone.orThrow())
+    return (await records.pending.take(state)).foldAsync<Either<OAuthError, BrowserStep>>(
+      () => Left(Errors.invalidRequest("This sign-in request has expired or was already completed.")),
+      async (request) =>
+        (await notReturnable(request)).foldAsync<Either<OAuthError, BrowserStep>>(
+          () => complete(request, url),
+          (problem) => Left(problem),
+        ),
+    )
+  }
+
+  /** Finishes a sign-in the provider sent back, whose request can still return to its client. */
+  const complete = async (request: PendingAuthorization, url: URL): Promise<Either<OAuthError, BrowserStep>> => {
     // Without consent on record, the user was sent to the provider some other way than the consent page.
     if (settings.consentRequired && request.consentGiven !== true)
       return Left(Errors.invalidRequest("This sign-in request was not approved on the consent page."))

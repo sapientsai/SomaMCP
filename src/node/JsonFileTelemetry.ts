@@ -13,7 +13,7 @@ export type JsonFileTelemetryOptions = {
 const DEFAULT_FLUSH_INTERVAL_MS = 1000
 
 export const createJsonFileTelemetry = (options: JsonFileTelemetryOptions): TelemetryCollector => {
-  const buffer = Ref<TelemetryEvent[]>([])
+  const buffer = Ref<ReadonlyArray<TelemetryEvent>>([])
   const flushTimer = Ref<Option<ReturnType<typeof setTimeout>>>(Option.none())
   const dirEnsured = Ref(false)
 

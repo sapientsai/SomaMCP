@@ -41,17 +41,28 @@ const globToRegExp = (glob: string): RegExp =>
       .join("")}$`,
   )
 
-const parsePattern = (pattern: string): Either<string, RedirectPattern> => {
-  const parts = Option(PATTERN.exec(pattern))
-  if (parts.isNone()) return Left(`"${pattern}" is not a pattern this server accepts`)
-  const [, scheme, host, port, path] = parts.orThrow()
-  // Groups 3 and 4 are optional: a pattern without them leaves them undefined.
-  const portGlob = Option(port)
-  const lower = scheme.toLowerCase() as Scheme
-  // The host as a browser reads it, so `127.1` or an upper-case name compares like the URI's.
-  const hostname = Try(() => new URL(`${lower}://${host}`).hostname).toOption()
-  if (hostname.isNone()) return Left(`"${pattern}" has a host that is not valid`)
-  const name = hostname.orThrow()
+const parsePattern = (pattern: string): Either<string, RedirectPattern> =>
+  Option(PATTERN.exec(pattern))
+    .toEither(`"${pattern}" is not a pattern this server accepts`)
+    .flatMap(([, scheme, host, port, path]) => {
+      const lower = scheme.toLowerCase() as Scheme
+      // The host as a browser reads it, so `127.1` or an upper-case name compares like the URI's.
+      return (
+        Try(() => new URL(`${lower}://${host}`).hostname)
+          .toOption()
+          .toEither(`"${pattern}" has a host that is not valid`)
+          // Groups 3 and 4 are optional: a pattern without them leaves them undefined.
+          .flatMap((name) => checkPattern(pattern, lower, name, Option(port), path))
+      )
+    })
+
+const checkPattern = (
+  pattern: string,
+  lower: Scheme,
+  name: string,
+  portGlob: Option<string>,
+  path: string | undefined,
+): Either<string, RedirectPattern> => {
   const loopback = LOOPBACK_HOSTS.includes(name)
   const anyPort = portGlob.contains("*")
   if (lower === "http" && !loopback) return Left(`"${pattern}" uses http on a host that is not loopback`)

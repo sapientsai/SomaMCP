@@ -1,4 +1,4 @@
-import { Option } from "functype"
+import { Option, type Wire } from "functype"
 
 const readFetchHeader = (headers: unknown, lower: string): Option<string> => {
   if (typeof (headers as { get?: unknown }).get !== "function") return Option.none()
@@ -6,8 +6,9 @@ const readFetchHeader = (headers: unknown, lower: string): Option<string> => {
 }
 
 const readNodeHeader = (headers: unknown, lower: string, original: string): Option<string> => {
-  const bag = headers as Record<string, string | string[] | undefined>
-  return Option(bag[lower] ?? bag[original]).map((raw) => (Array.isArray(raw) ? (raw[0] ?? "") : raw))
+  // Node's IncomingHttpHeaders: a repeated header arrives as an array.
+  const bag = headers as Wire<Record<string, string | ReadonlyArray<string> | undefined>>
+  return Option(bag[lower] ?? bag[original]).map((raw) => (typeof raw === "string" ? raw : (raw[0] ?? "")))
 }
 
 const readAny = (headers: unknown, lower: string, original: string): Option<string> =>
