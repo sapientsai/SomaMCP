@@ -145,6 +145,7 @@ export const createOtelTracer = ({ tracer = otelTrace.getTracer("somamcp") }: Ot
       },
     )
     span.end()
-    return result.orThrow()
+    // Rejects with the tool's own error when it threw.
+    return result.toPromise()
   },
 })

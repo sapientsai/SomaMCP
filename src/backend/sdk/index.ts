@@ -405,10 +405,17 @@ export const buildSdkBackend = <T extends SessionAuth = SessionAuth>(
         return
       }
       const started = await Try.fromPromise(openListener(transport))
-      if (started.isFailure()) state.set("error")
-      // Rethrows the original error on failure, so a bad port still rejects start().
-      listener.set(started.orThrow())
-      state.set("running")
+      // Rejects with the original error on failure, so a bad port still rejects start().
+      return started.foldAsync(
+        (error) => {
+          state.set("error")
+          return Promise.reject(error)
+        },
+        (opened) => {
+          listener.set(opened)
+          state.set("running")
+        },
+      )
     },
 
     stop: async () => {

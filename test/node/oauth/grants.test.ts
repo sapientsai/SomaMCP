@@ -428,6 +428,21 @@ describe("refreshing", () => {
     expect(saves.filter((s) => s.key.startsWith("mapping:")).map((s) => s.ttl)).toEqual([400])
   })
 
+  it("puts the token back, and rejects with the store's error, when a refresh can't read the sign-in", async () => {
+    const inner = createMemoryStore()
+    const failing = { fail: false }
+    const store: TokenStore = {
+      ...inner,
+      get: (key) => (failing.fail && key.startsWith("upstream:") ? Promise.reject(new Error("down")) : inner.get(key)),
+    }
+    const { clientId, server, tokens } = await signedIn({ store })
+    failing.fail = true
+    await expect(refreshWith(server, clientId, tokens.refresh_token ?? "")).rejects.toThrow("down")
+    failing.fail = false
+    expect(right(await refreshWith(server, clientId, tokens.refresh_token ?? "")).access_token).toBeTruthy()
+    inner.close?.()
+  })
+
   it("still reports the provider's refusal when putting the token back fails", async () => {
     const env = await signedIn()
     const errors: unknown[][] = []
