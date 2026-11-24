@@ -405,12 +405,61 @@ describe("createSdkBackend", () => {
       const server = makeServer()
       server.addPrompt({
         arguments: [{ name: "topic", required: true }],
+        description: "A short piece on a topic",
         load: (args) => Promise.resolve(`Write about ${args.topic}`),
         name: "write",
       })
       const client = await connect(server)
-      expect(textOf(await client.getPrompt({ arguments: { topic: "otters" }, name: "write" }))).toContain("otters")
+      const got = await client.getPrompt({ arguments: { topic: "otters" }, name: "write" })
+      expect(textOf(got)).toContain("otters")
+      expect(got.description).toBe("A short piece on a topic")
       await expect(client.getPrompt({ arguments: {}, name: "write" })).rejects.toThrow(/topic/)
+    })
+
+    it("keeps a description that load gives over the prompt's own", async () => {
+      const server = makeServer()
+      server.addPrompt({
+        description: "registered",
+        load: () => Promise.resolve({ description: "from load", messages: [] }),
+        name: "own",
+      })
+      server.addPrompt({ load: () => Promise.resolve("plain"), name: "bare" })
+      const client = await connectModern(server)
+      expect((await client.getPrompt({ name: "own" })).description).toBe("from load")
+      expect((await client.getPrompt({ name: "bare" })).description).toBeUndefined()
+    })
+
+    it("sends a resource_link's description and title as given", async () => {
+      const server = makeServer()
+      server.addTool({
+        execute: () =>
+          Promise.resolve({
+            content: [
+              {
+                description: "The quarterly report",
+                mimeType: "application/pdf",
+                name: "q3.pdf",
+                size: 2048,
+                title: "Q3 report",
+                type: "resource_link",
+                uri: "docs://q3",
+              },
+            ],
+          }),
+        name: "link",
+      })
+      const { content } = (await (await connectModern(server)).callTool({ arguments: {}, name: "link" })) as {
+        content: Array<Record<string, unknown>>
+      }
+      expect(content[0]).toEqual({
+        description: "The quarterly report",
+        mimeType: "application/pdf",
+        name: "q3.pdf",
+        size: 2048,
+        title: "Q3 report",
+        type: "resource_link",
+        uri: "docs://q3",
+      })
     })
 
     it("completes prompt arguments from enum and from complete()", async () => {

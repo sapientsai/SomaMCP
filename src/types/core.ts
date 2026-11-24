@@ -62,9 +62,14 @@ export type ResourceContent = {
   type: "resource"
 }
 
+/** A link to a resource the client can read, as the MCP spec's `ResourceLink`. */
 export type ResourceLink = {
+  description?: string
   mimeType?: string
   name?: string
+  /** The size of the resource's content in bytes, when known. */
+  size?: number
+  title?: string
   type: "resource_link"
   uri: string
 }

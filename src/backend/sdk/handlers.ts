@@ -339,7 +339,7 @@ const registerPromptHandlers = <T extends SessionAuth>(
         `Prompt '${name}' is missing required arguments: ${names}`,
       )
     }
-    return toPromptResult(await prompt.load(args, auth))
+    return toPromptResult(await prompt.load(args, auth), prompt.description)
   }
   server.setRequestHandler("prompts/get", (request) => getPrompt(request.params.name, request.params.arguments ?? {}))
 }
