@@ -189,7 +189,8 @@ export type PromptArgument<T extends SessionAuth = SessionAuth> = Readonly<{
   required?: boolean
 }>
 
-export type PromptResult = { messages: ReadonlyArray<unknown> } | string
+/** A prompt's messages, or a string sent as one user message. A `description` here wins over the prompt's own. */
+export type PromptResult = { description?: string; messages: ReadonlyArray<unknown> } | string
 
 export type Prompt<
   T extends SessionAuth = SessionAuth,

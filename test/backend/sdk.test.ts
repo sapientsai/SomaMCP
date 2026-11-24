@@ -5,7 +5,7 @@ import { z } from "zod"
 import { createSdkBackend } from "../../src/backend/index.js"
 import { createToolContext } from "../../src/backend/sdk/mapping.js"
 import { createServer } from "../../src/index.js"
-import { type SchemaParams, UserError } from "../../src/types/core.js"
+import { type ResourceLink, type SchemaParams, UserError } from "../../src/types/core.js"
 import {
   connectAuto,
   connectLegacy,
@@ -423,31 +423,31 @@ describe("createSdkBackend", () => {
         load: () => Promise.resolve({ description: "from load", messages: [] }),
         name: "own",
       })
+      server.addPrompt({
+        description: "registered",
+        load: () => Promise.resolve({ description: undefined, messages: [] }),
+        name: "unset",
+      })
       server.addPrompt({ load: () => Promise.resolve("plain"), name: "bare" })
       const client = await connectModern(server)
       expect((await client.getPrompt({ name: "own" })).description).toBe("from load")
+      expect((await client.getPrompt({ name: "unset" })).description).toBe("registered")
       expect((await client.getPrompt({ name: "bare" })).description).toBeUndefined()
     })
 
     it("sends a resource_link's description and title as given", async () => {
       const server = makeServer()
-      server.addTool({
-        execute: () =>
-          Promise.resolve({
-            content: [
-              {
-                description: "The quarterly report",
-                mimeType: "application/pdf",
-                name: "q3.pdf",
-                size: 2048,
-                title: "Q3 report",
-                type: "resource_link",
-                uri: "docs://q3",
-              },
-            ],
-          }),
-        name: "link",
-      })
+      // Typed as ResourceLink, so the test fails to compile if the type loses a spec field.
+      const link: ResourceLink = {
+        description: "The quarterly report",
+        mimeType: "application/pdf",
+        name: "q3.pdf",
+        size: 2048,
+        title: "Q3 report",
+        type: "resource_link",
+        uri: "docs://q3",
+      }
+      server.addTool({ execute: () => Promise.resolve({ content: [link] }), name: "link" })
       const { content } = (await (await connectModern(server)).callTool({ arguments: {}, name: "link" })) as {
         content: Array<Record<string, unknown>>
       }

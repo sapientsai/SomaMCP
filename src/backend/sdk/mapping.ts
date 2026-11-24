@@ -84,7 +84,7 @@ export const toPromptResult = (loaded: PromptResult, description?: string): GetP
     typeof loaded === "string"
       ? { messages: [{ content: { text: loaded, type: "text" }, role: "user" }] }
       : (loaded as GetPromptResult)
-  return description === undefined || result.description !== undefined ? result : { description, ...result }
+  return description === undefined || result.description !== undefined ? result : { ...result, description }
 }
 
 const EMPTY_COMPLETION: Completion = { values: [] }
