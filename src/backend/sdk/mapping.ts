@@ -75,11 +75,17 @@ export const toReadResult = (
   })),
 })
 
-/** A bare string prompt result becomes one user message, as FastMCP does. */
-export const toPromptResult = (loaded: PromptResult): GetPromptResult =>
-  typeof loaded === "string"
-    ? { messages: [{ content: { text: loaded, type: "text" }, role: "user" }] }
-    : (loaded as GetPromptResult)
+/**
+ * A bare string prompt result becomes one user message, as FastMCP does. The prompt's own
+ * description goes on the result too, unless `load` gave one.
+ */
+export const toPromptResult = (loaded: PromptResult, description?: string): GetPromptResult => {
+  const result: GetPromptResult =
+    typeof loaded === "string"
+      ? { messages: [{ content: { text: loaded, type: "text" }, role: "user" }] }
+      : (loaded as GetPromptResult)
+  return description === undefined || result.description !== undefined ? result : { ...result, description }
+}
 
 const EMPTY_COMPLETION: Completion = { values: [] }
 
