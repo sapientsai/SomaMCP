@@ -799,3 +799,7 @@ pnpm typecheck      # Type check only
 ## License
 
 MIT © Jordan Burke
+
+---
+
+**A <a href="https://sapientsai.com/"><img src="https://sapientsai.com/images/logo.svg" alt="" width="20" style="vertical-align: middle;"> SapientsAI</a> project** · Maintained by [Jordan Burke](https://github.com/jordanburke)
