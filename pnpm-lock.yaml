@@ -214,7 +214,7 @@ importers:
         version: 2.0.0
       functype-log:
         specifier: ^2.0.0
-        version: 2.0.0(functype@2.0.0)
+        version: 2.2.0(functype@2.0.0)
       hono:
         specifier: ^4.13.19
         version: 4.13.19
@@ -1854,8 +1854,8 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  functype-log@2.0.0:
-    resolution: {integrity: sha512-o5sbrWRMBiF28W4MVVeMBvGF88Oluz0IZGPFB84LZmXu43/Lz5q4j4f87Pk0rXIGawemDhqKLoUPl5qm6DdtQg==}
+  functype-log@2.2.0:
+    resolution: {integrity: sha512-K5xwbC98weoWpt7n/5xeDe30W64Jk5UPV81Ft7Ueo3G02sVhH+crPYppC9r/3//50yqlIVb2CniLXDPB91g8iQ==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
       functype: '>=0.60.0'
@@ -4132,7 +4132,7 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-log@2.0.0(functype@2.0.0):
+  functype-log@2.2.0(functype@2.0.0):
     dependencies:
       functype: 2.0.0
 
